@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "b3485bc53c82",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "api/cmd/api/main.go",
+    "api/internal/api/admin_handlers.go",
+    "api/internal/api/brevo_handlers.go",
+    "api/internal/api/brevo_handlers_test.go",
+    "api/internal/api/invite_handlers.go",
+    "api/internal/api/server.go",
+    "api/internal/api/team_handlers.go",
+    "api/internal/api/team_handlers_test.go",
+    "api/internal/db/migrations/019_add_email_provider.sql",
+    "api/internal/db/migrations/020_add_team_invite_token.sql",
+    "api/internal/email/brevo.go",
+    "api/internal/email/brevo_test.go",
+    "mcp/src/api.ts",
+    "web/src/App.tsx",
+    "web/src/lib/api.ts",
+    "web/src/routes/AcceptTeamInvite.tsx",
+    "web/src/routes/Admin.test.tsx",
+    "web/src/routes/Admin.tsx",
+    "web/src/routes/Login.test.tsx",
+    "web/src/routes/Login.tsx",
+    "web/src/routes/Settings.tsx",
+    "web/src/routes/Signup.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b3/485bc53c82/0/metadata.json",
+      "transcript": "/b3/485bc53c82/0/full.jsonl",
+      "context": "/b3/485bc53c82/0/context.md",
+      "content_hash": "/b3/485bc53c82/0/content_hash.txt",
+      "prompt": "/b3/485bc53c82/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 113,
+    "cache_creation_tokens": 135816,
+    "cache_read_tokens": 11123501,
+    "output_tokens": 3039,
+    "api_call_count": 103
+  }
+}
