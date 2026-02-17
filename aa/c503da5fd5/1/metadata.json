@@ -1,9 +1,11 @@
 {
   "cli_version": "0.4.2",
   "checkpoint_id": "aac503da5fd5",
+  "session_id": "70515e69-241b-4985-b5d3-6390746eba7b",
   "strategy": "manual-commit",
+  "created_at": "2026-02-17T23:35:13.042017Z",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 0,
   "files_touched": [
     ".claude/skills/deploy.md",
     ".claude/skills/production-commands.md",
@@ -22,31 +24,24 @@
     "docker-compose.yml",
     "mcp/Dockerfile",
     "web/Dockerfile",
-    "web/src/lib/sync/syncService.ts",
     "webhook/config.sample.yaml",
     "webhook/config.yaml"
   ],
-  "sessions": [
-    {
-      "metadata": "/aa/c503da5fd5/0/metadata.json",
-      "transcript": "/aa/c503da5fd5/0/full.jsonl",
-      "context": "/aa/c503da5fd5/0/context.md",
-      "content_hash": "/aa/c503da5fd5/0/content_hash.txt",
-      "prompt": "/aa/c503da5fd5/0/prompt.txt"
-    },
-    {
-      "metadata": "/aa/c503da5fd5/1/metadata.json",
-      "transcript": "/aa/c503da5fd5/1/full.jsonl",
-      "context": "/aa/c503da5fd5/1/context.md",
-      "content_hash": "/aa/c503da5fd5/1/content_hash.txt",
-      "prompt": "/aa/c503da5fd5/1/prompt.txt"
-    }
-  ],
+  "agent": "Claude Code",
   "token_usage": {
-    "input_tokens": 132,
-    "cache_creation_tokens": 204906,
-    "cache_read_tokens": 9128800,
-    "output_tokens": 7225,
-    "api_call_count": 118
+    "input_tokens": 86,
+    "cache_creation_tokens": 112692,
+    "cache_read_tokens": 6359534,
+    "output_tokens": 6852,
+    "api_call_count": 82
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-17T23:35:12.938423Z",
+    "agent_lines": 310,
+    "human_added": 119,
+    "human_modified": 56,
+    "human_removed": 0,
+    "total_committed": 485,
+    "agent_percentage": 63.91752577319587
   }
 }

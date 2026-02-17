@@ -1,0 +1,203 @@
+Implement the following plan:
+
+# Plan: Rename SprintSpark → TaskAI + Pipeline Alignment
+
+## Context
+
+The project identity has shifted from "SprintSpark" to "TaskAI" (taskai.cc is already the production domain). This plan renames all code, config, infra references, and aligns the CI/CD pipeline with the folioworth pattern (webhook-based, CI-gated staging, manual production promotion).
+
+### Key Decisions
+- Staging domain: `sprintspark.biswas.me` → `staging.taskai.cc`
+- MCP staging domain: `mcp.sprintspark.biswas.me` → `mcp.staging.taskai.cc`
+- DB filename: `sprintspark.db` → `taskai.db`
+- Go module: `sprintspark` → `taskai`
+- GitHub repo: `anchoo2kewl/SprintSpark` → `anchoo2kewl/taskai`
+- Local folder: `~/play/SprintSpark` → `~/play/taskai`
+- Server paths: `/home/ubuntu/sprintspark[-staging]` → `/home/ubuntu/taskai[-staging]`
+
+---
+
+## Step 1: Go Module Rename
+
+Rename Go module and all import paths from `sprintspark` to `taskai`.
+
+**Files:**
+- `api/go.mod` — module name `sprintspark` → `taskai`
+- `api/cmd/api/main.go` — 3 imports
+- `api/internal/api/server.go` — 3 imports
+- `api/internal/api/auth_handlers.go` — 1 import
+- `api/internal/api/middleware.go` — 1 import
+- `api/internal/api/testing.go` — 3 imports
+- `api/internal/api/admin_handlers_test.go` — 3 imports
+- `api/internal/api/api_key_handlers_test.go` — 1 import
+- `api/internal/e2e/e2e_test.go` — 3 imports
+
+**Action:** Replace `"sprintspark/internal/` with `"taskai/internal/` in all Go files, and `module sprintspark` → `module taskai` in go.mod.
+
+## Step 2: Go Config & Binary
+
+- `api/internal/config/config.go:43` — default DB_PATH `./data/sprintspark.db` → `./data/taskai.db`
+- `api/internal/config/config_test.go:372-373` — expected default path assertions
+- `api/Makefile:4` — `DB_PATH ?= ./data/sprintspark.db` → `./data/taskai.db`
+- `api/Makefile:79` — binary name `bin/sprintspark` → `bin/taskai`
+- `api/Makefile:14` — "Starting SprintSpark API..." message
+- `api/.env.example:6` — `DB_PATH=./data/sprintspark.db` → `./data/taskai.db`
+
+## Step 3: Dockerfiles
+
+### api/Dockerfile
+- Line 20-21: binary name `sprintspark` → `taskai`
+- Line 28-29: user/group `sprintspark` → `taskai`
+- Line 37: COPY binary path
+- Line 46: USER directive
+- Line 56: CMD
+
+### web/Dockerfile
+- Line 32-33: user/group `sprintspark` → `taskai`
+
+### mcp/Dockerfile
+- Line 17-18: user/group `sprintspark` → `taskai`
+- Line 25: USER directive
+
+## Step 4: Docker Compose (local)
+
+`docker-compose.yml`:
+- Line 9: `DB_PATH=/data/sprintspark.db` → `/data/taskai.db`
+- Lines 17-19: volume `sprintspark-data` → `taskai-data`, network `sprintspark` → `taskai`
+- Line 35-36: network ref
+- Lines 57-58: network ref
+- Lines 70-75: volume/network definitions
+
+## Step 5: Deployment Templates
+
+`deployment/templates/docker-compose.prod.yml.j2`:
+- Line 14: `DB_PATH: /data/sprintspark.db` → `/data/taskai.db`
+- Line 1: Comment "SprintSpark" → "TaskAI"
+
+`deployment/inventory.example.yml`:
+- Lines 15-18: staging domain, app_name, app_dir → `staging.taskai.cc`, `taskai-staging`, `/home/ubuntu/taskai-staging`
+- Lines 21-24: production app_name, app_dir → `taskai`, `/home/ubuntu/taskai`
+- Line 41: github_repo URL → `anchoo2kewl/taskai`
+- Add MCP domain entries
+
+`deployment/deploy-simple.yml`:
+- Line 7: task name "Deploy SprintSpark Application" → "Deploy TaskAI Application"
+
+## Step 6: GitHub Workflows — Pipeline Alignment (folioworth pattern)
+
+### deploy-staging.yml — Rewrite
+Change from SSH/rsync to webhook-based, CI-gated:
+```yaml
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+```
+Steps: trigger staging webhook → wait → verify health at `staging.taskai.cc`
+
+### deploy-production.yml — Rewrite
+Change from SSH/rsync + confirm to webhook-based manual trigger:
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to deploy'
+        required: false
+        default: 'main'
+```
+Steps: trigger production webhook → wait → verify health at `taskai.cc`
+
+### ci.yml — No structural changes needed
+Just verify no SprintSpark references exist.
+
+## Step 7: script/server
+
+Complete rename of all paths, domains, URLs throughout the 1500-line script:
+- Header: "SprintSpark" → "TaskAI"
+- `STAGING_DEPLOY_PATH` → `/home/ubuntu/taskai-staging`
+- `STAGING_DOMAIN` → `staging.taskai.cc`
+- `STAGING_MCP_DOMAIN` → `mcp.staging.taskai.cc`
+- `PROD_DEPLOY_PATH` → `/home/ubuntu/taskai`
+- GitHub URLs → `anchoo2kewl/taskai`
+- All `sprintspark` references in DB paths, volume names, log files, etc.
+
+## Step 8: Webhook Config
+
+`webhook/config.yaml` and `webhook/config.sample.yaml`:
+- Rename `sprintspark` project → split into `taskai-staging` and `taskai` entries
+- Update repository to `anchoo2kewl/taskai`
+- Update local_paths to new server directories
+- Add separate webhook secrets for staging and production
+
+## Step 9: Documentation & Skills
+
+Update all remaining references in:
+- `claude.md` (CLAUDE.md) — project name, paths, DB references
+- `README.md`
+- `CONTRIBUTING.md`
+- `docs/TROUBLESHOOTING.md`
+- `docs/API_EXAMPLES.md`
+- `.claude/skills/deploy.md`
+- `.claude/skills/production-commands.md`
+- `.claude/skills/ssh-access.md`
+- `script/populate_demo_data.sh`
+- `Makefile` (root)
+- `api/internal/db/migrations/001_init.sql` (comment only)
+- Memory files in `.claude/projects/` (update MEMORY.md after folder rename)
+
+## Step 10: Misc files
+
+- `sonar-project.properties` — already uses `taskai`, no change needed
+- `PRD_LINEAR_TRANSFORMATION.md`, `LINEAR_MIGRATION_*.md`, `USER_MANAGEMENT.md` — scan for references
+- `package-lock.json` — will update via npm if needed
+
+## Step 11: GitHub Repo Rename
+
+```bash
+gh repo rename taskai
+```
+
+This will automatically set up redirects from the old URL.
+
+## Step 12: Local Folder Rename
+
+```bash
+mv ~/play/SprintSpark ~/play/taskai
+```
+
+Update git remote URL if needed (GitHub handles redirects, but explicit is better):
+```bash
+git remote set-url origin git@github.com:anchoo2kewl/taskai.git
+```
+
+---
+
+## Server-Side Changes (post-deploy)
+
+These happen on the server after the code changes are pushed:
+
+1. **DNS**: Create `staging.taskai.cc` and `mcp.staging.taskai.cc` A records pointing to `31.97.102.48`
+2. **Rename server directories**: `/home/ubuntu/sprintspark-staging` → `/home/ubuntu/taskai-staging`, `/home/ubuntu/sprintspark` → `/home/ubuntu/taskai`
+3. **DB file rename**: Inside Docker volumes, rename `sprintspark.db` → `taskai.db`
+4. **Update webhook server config** on the server at `/home/ubuntu/webhooks/config.yaml`
+5. **Nginx**: Add configs for `staging.taskai.cc` and `mcp.staging.taskai.cc`, add `/webhook/` proxy rules
+6. **SSL**: Certbot for new domains
+7. **GitHub secrets**: Add `STAGING_WEBHOOK_SECRET` and `PRODUCTION_WEBHOOK_SECRET`
+
+---
+
+## Verification
+
+1. `cd api && go build ./cmd/api` — Go module compiles
+2. `cd api && go test ./...` — all tests pass
+3. `cd web && npm run build` — web builds
+4. `docker compose build` — Docker images build
+5. `gh repo view` — confirms repo renamed
+6. Grep for any remaining `sprintspark` or `SprintSpark` references
+7. After server-side changes: `./script/server staging health` and `./script/server prod health`
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/anshumanbiswas/.REDACTED.jsonl
