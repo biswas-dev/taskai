@@ -1,0 +1,633 @@
+Implement the following plan:
+
+# TaskAI: Wiki Feature + Postgres Migration Implementation Plan
+
+## Context
+
+TaskAI is a task management system currently using SQLite. The user wants to add collaborative wiki functionality as a **secondary feature** while keeping tasks as the primary product. This requires migrating from SQLite to Postgres to support advanced full-text search and real-time collaboration.
+
+**Why this change:**
+- **Wiki need:** Projects need rich documentation alongside tasks
+- **Real-time collaboration:** Multiple users editing docs simultaneously via Yjs CRDT
+- **Search capability:** Fast full-text search across wiki content
+- **Postgres migration:** SQLite FTS insufficient; Postgres provides better FTS, concurrency, and production scalability
+
+**Goals:**
+- ✅ Keep all existing task features working
+- ✅ Zero downtime migration to Postgres
+- ✅ Add collaborative wiki (Yjs + WebSocket)
+- ✅ Full-text search with Postgres FTS
+- ✅ Expose wiki via MCP tools
+
+---
+
+## High-Level Strategy
+
+**7-Phase Incremental Approach** (14-22 days total):
+
+1. **Phase 0-1:** SQLite → Postgres migration (3-5 days)
+2. **Phase 2:** Wiki REST API & schema (2-3 days)
+3. **Phase 3:** WebSocket infrastructure (2-3 days)
+4. **Phase 4:** Yjs integration (3-4 days)
+5. **Phase 5:** Full-text search (2-3 days)
+6. **Phase 6:** MCP server tools (1-2 days)
+7. **Phase 7:** Production deployment (1-2 days)
+
+Each phase is independently testable with clear rollback procedures.
+
+---
+
+## Technology Decisions
+
+### Database
+- **Postgres Driver:** `github.com/jackc/pgx/v5/stdlib` (handles query placeholders automatically)
+- **Migration:** Custom Go tool to copy data from SQLite to Postgres
+- **Why Postgres:** Superior FTS (tsvector + GIN indexes), better concurrency for WebSockets
+
+### Real-time Collaboration
+- **WebSocket:** `github.com/gorilla/websocket` (Go standard)
+- **CRDT:** Yjs (client-side) + Node.js microservice for server-side processing
+- **Why Node.js microservice:** No mature Go Yjs library; pragmatic to use JavaScript-native Yjs in separate service
+
+### Search
+- **Postgres FTS:** Built-in `tsvector` with generated columns
+- **Trigram:** `pg_trgm` extension for fuzzy title autocomplete
+- **Indexing:** GIN indexes on `search_vector` column
+
+---
+
+## Database Schema Changes
+
+### New Postgres Tables (Migration 024)
+
+```sql
+-- Wiki pages
+CREATE TABLE wiki_pages (
+    id BIGSERIAL PRIMARY KEY,
+    project_id BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title VARCHAR(500) NOT NULL,
+    slug VARCHAR(500) NOT NULL,
+    created_by BIGINT NOT NULL REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(project_id, slug)
+);
+
+-- Yjs updates (append-only log)
+CREATE TABLE yjs_updates (
+    id BIGSERIAL PRIMARY KEY,
+    page_id BIGINT NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+    update_data BYTEA NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by BIGINT REFERENCES users(id)
+);
+
+-- Page snapshots
+CREATE TABLE page_versions (
+    id BIGSERIAL PRIMARY KEY,
+    page_id BIGINT NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL,
+    yjs_state BYTEA NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(page_id, version_number)
+);
+
+-- Content blocks (for search)
+CREATE TABLE wiki_blocks (
+    id BIGSERIAL PRIMARY KEY,
+    page_id BIGINT NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+    block_type VARCHAR(50) NOT NULL,
+    level INTEGER,
+    headings_path TEXT,
+    canonical_json JSONB,
+    plain_text TEXT,
+    position INTEGER NOT NULL,
+    search_vector tsvector GENERATED ALWAYS AS (
+        setweight(to_tsvector('english', COALESCE(headings_path, '')), 'A') ||
+        setweight(to_tsvector('english', COALESCE(plain_text, '')), 'B')
+    ) STORED
+);
+
+CREATE INDEX idx_wiki_blocks_search ON wiki_blocks USING GIN(search_vector);
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
+
+---
+
+## Critical Files to Modify/Create
+
+### Phase 0-1: Postgres Migration
+
+**Modify:**
+- `api/internal/db/db.go` - Add Postgres driver support (`pgx` instead of `sqlite`)
+- `api/internal/config/config.go` - Add `DB_DRIVER`, `DB_DSN` config fields
+- `api/go.mod` - Add `github.com/jackc/pgx/v5 v5.5.0`
+
+**Create:**
+- `api/cmd/migrate-db/main.go` - Data migration tool (SQLite → Postgres)
+- `api/internal/db/migrations/postgres/` - Directory for Postgres-specific migrations
+- `api/internal/db/migrations/postgres/001-023_*.sql` - Convert all 23 existing SQLite migrations to Postgres syntax
+
+**Key changes:**
+- Replace `modernc.org/sqlite` with `github.com/jackc/pgx/v5/stdlib`
+- Convert `INTEGER AUTOINCREMENT` → `BIGSERIAL`
+- Rewrite triggers using Postgres `CREATE FUNCTION` syntax
+
+### Phase 2: Wiki REST API
+
+**Create:**
+- `api/internal/api/wiki_handlers.go` - CRUD endpoints for wiki pages
+  - `HandleListWikiPages`
+  - `HandleCreateWikiPage`
+  - `HandleGetWikiPage`
+  - `HandleUpdateWikiPage`
+  - `HandleDeleteWikiPage`
+  - `HandleGetWikiPageBlocks`
+
+**Modify:**
+- `api/cmd/api/main.go` - Add routes:
+  ```go
+  r.Get("/api/projects/{projectId}/wiki/pages", server.HandleListWikiPages)
+  r.Post("/api/projects/{projectId}/wiki/pages", server.HandleCreateWikiPage)
+  r.Get("/api/wiki/pages/{pageId}", server.HandleGetWikiPage)
+  r.Patch("/api/wiki/pages/{pageId}", server.HandleUpdateWikiPage)
+  r.Delete("/api/wiki/pages/{pageId}", server.HandleDeleteWikiPage)
+  r.Get("/api/wiki/pages/{pageId}/blocks", server.HandleGetWikiPageBlocks)
+  ```
+
+### Phase 3: WebSocket
+
+**Create:**
+- `api/internal/collab/manager.go` - WebSocket connection manager with room-based broadcasting
+- `api/internal/api/wiki_ws_handlers.go` - WebSocket upgrade handler, message routing, Yjs update persistence
+
+**Modify:**
+- `api/cmd/api/main.go` - Add WebSocket route:
+  ```go
+  r.Get("/api/wiki/collab", server.HandleWikiWebSocket)
+  ```
+- `api/internal/api/server.go` - Add `collabManager *collab.Manager` field
+- `api/go.mod` - Add `github.com/gorilla/websocket v1.5.1`
+
+### Phase 4: Yjs Integration
+
+**Create:**
+- `api/internal/yjs-processor/` - Node.js microservice for Yjs document processing
+  - `package.json` - Dependencies: `yjs`, `express`, `lib0`
+  - `index.js` - HTTP endpoints: `/apply-updates`, `/extract-blocks`
+  - `Dockerfile` - Node.js 20 Alpine
+- `api/internal/yjs/client.go` - Go HTTP client for yjs-processor service
+- `api/internal/api/wiki_snapshot.go` - Background worker to generate snapshots every 5 minutes
+- `api/internal/api/wiki_indexing.go` - Background worker to extract blocks and update search index
+
+**Modify:**
+- `docker-compose.yml` - Add `yjs-processor` service
+- `api/internal/api/server.go` - Add `yjsClient *yjs.Client` field, start background workers
+
+### Phase 5: Full-Text Search
+
+**Create:**
+- `api/internal/api/wiki_search_handlers.go` - Search endpoints:
+  - `HandleSearchWiki` - Full-text search with Postgres FTS
+  - `HandleAutocompletePages` - Fuzzy page title autocomplete with trigram
+
+**Modify:**
+- `api/cmd/api/main.go` - Add search routes:
+  ```go
+  r.Post("/api/wiki/search", server.HandleSearchWiki)
+  r.Get("/api/wiki/autocomplete", server.HandleAutocompletePages)
+  ```
+
+### Phase 6: MCP Tools
+
+**Modify:**
+- `mcp/src/index.ts` - Add 5 new tools:
+  - `search_wiki(query, project_id, limit?, recency_days?)`
+  - `get_block(block_id)`
+  - `get_page_outline(page_id)`
+  - `get_page(page_id, mode?)`
+  - `get_recent_changes(project_id, since_iso)`
+- `mcp/src/api.ts` - Add API client methods for wiki endpoints
+
+---
+
+## Implementation Phases (Detailed)
+
+### Phase 0-1: Postgres Migration (3-5 days)
+
+**Objective:** Migrate from SQLite to Postgres with zero data loss
+
+**Steps:**
+
+1. **Install Postgres on staging/production servers**
+   ```bash
+   ssh ubuntu@129.213.82.37  # Staging
+   sudo apt install postgresql postgresql-contrib
+   sudo -u postgres psql
+   CREATE DATABASE taskai_staging;
+   CREATE USER taskai WITH PASSWORD 'secure-password';
+   GRANT ALL PRIVILEGES ON DATABASE taskai_staging TO taskai;
+   ```
+
+2. **Convert migrations to Postgres**
+   - Create `api/internal/db/migrations/postgres/` directory
+   - Convert all 23 SQLite migrations:
+     - `INTEGER PRIMARY KEY AUTOINCREMENT` → `BIGSERIAL PRIMARY KEY`
+     - Triggers: SQLite `BEGIN...END` → Postgres `CREATE FUNCTION` + `CREATE TRIGGER`
+     - `PRAGMA` statements: Remove for Postgres
+
+3. **Build data migration tool**
+   - `api/cmd/migrate-db/main.go`
+   - Copy tables in batches (1000 rows)
+   - Update sequence values: `SELECT setval('users_id_seq', MAX(id))`
+   - Verify row counts match
+
+4. **Update Go code for Postgres**
+   - Replace `modernc.org/sqlite` with `github.com/jackc/pgx/v5/stdlib`
+   - Update `api/internal/db/db.go`:
+     ```go
+     // Change from:
+     sqlDB, err := sql.Open("sqlite", cfg.DBPath)
+     // To:
+     sqlDB, err := sql.Open("pgx", cfg.DBDSN)
+     ```
+   - Remove SQLite-specific PRAGMAs
+
+5. **Deploy to staging**
+   ```bash
+   # Run migration
+   ./migrate-db --source ./data/taskai.db --dest "postgres://taskai:pass@localhost/taskai_staging"
+
+   # Update environment
+   export DB_DRIVER=postgres
+   export DB_DSN="postgres://taskai:pass@postgres:5432/taskai?sslmode=disable"
+
+   # Restart
+   docker-compose up -d --build api
+   ```
+
+6. **Validate**
+   - Run full E2E test suite
+   - Verify all task features work
+   - Compare API response times (should be within 10% of SQLite)
+
+**Rollback:** Change `DB_DRIVER` back to `sqlite`, restore SQLite backup, restart
+
+### Phase 2: Wiki REST API (2-3 days)
+
+**Objective:** Basic wiki CRUD operations
+
+**Steps:**
+
+1. **Create migration 024:** `api/internal/db/migrations/postgres/024_add_wiki_tables.sql`
+   - Tables: `wiki_pages`, `yjs_updates`, `page_versions`, `wiki_blocks`
+   - Indexes: Foreign keys, timestamps, search vector
+
+2. **Implement handlers:** `api/internal/api/wiki_handlers.go`
+   - Authorization: Reuse `verifyProjectAccess()` pattern from tasks
+   - Slug generation: `title="Hello World"` → `slug="hello-world"`
+   - Return JSON responses
+
+3. **Add routes:** `api/cmd/api/main.go`
+   - Protect with `JWTAuth` middleware
+   - Rate limit with existing `RateLimitMiddleware`
+
+4. **Test:**
+   - Unit tests for each handler
+   - Integration test: Create project → Create wiki page → List pages
+   - Authorization test: Verify user can't access other team's wiki
+
+**Deliverable:** Basic wiki pages can be created/read/updated/deleted via REST API
+
+### Phase 3: WebSocket Infrastructure (2-3 days)
+
+**Objective:** Real-time collaboration via WebSocket
+
+**Steps:**
+
+1. **Create connection manager:** `api/internal/collab/manager.go`
+   - Room-based architecture (one room per wiki page)
+   - Broadcast queue with worker goroutine
+   - Connection lifecycle: add/remove clients
+   - Graceful cleanup when room empty
+
+2. **Implement WebSocket handler:** `api/internal/api/wiki_ws_handlers.go`
+   - Upgrade HTTP → WebSocket
+   - Authenticate via JWT (from query param or header)
+   - Verify access to wiki page's project
+   - Handle messages: `{type: "update", payload: {update: "base64..."}}`
+   - Persist Yjs updates to `yjs_updates` table
+   - Broadcast to other connected clients
+   - Ping/pong heartbeat every 54 seconds
+
+3. **Add to Server struct:** `api/internal/api/server.go`
+   ```go
+   type Server struct {
+       // ... existing fields ...
+       collabManager *collab.Manager
+   }
+   ```
+
+4. **Test:**
+   - Connect 2 clients to same page
+   - Send update from client A
+   - Verify client B receives broadcast
+   - Disconnect client A, verify cleanup
+
+**Deliverable:** Multiple users can connect to same wiki page and receive real-time updates
+
+### Phase 4: Yjs Integration (3-4 days)
+
+**Objective:** Yjs document processing and block extraction
+
+**Steps:**
+
+1. **Create Yjs processor microservice:** `api/internal/yjs-processor/`
+   - Node.js Express server
+   - POST `/apply-updates`: Apply array of Yjs updates, return current state
+   - POST `/extract-blocks`: Parse Yjs doc, extract blocks with plain text
+   - Dockerfile for deployment
+
+2. **Create Go client:** `api/internal/yjs/client.go`
+   ```go
+   client := yjs.NewClient("http://yjs-processor:3001")
+   state, err := client.ApplyUpdates([]string{"base64update1", "base64update2"})
+   blocks, err := client.ExtractBlocks(state)
+   ```
+
+3. **Snapshot worker:** `api/internal/api/wiki_snapshot.go`
+   - Run every 5 minutes
+   - Find pages updated since last snapshot
+   - Fetch all `yjs_updates` for page
+   - Call `yjsClient.ApplyUpdates()` to generate snapshot
+   - Store in `page_versions` table
+
+4. **Indexing worker:** `api/internal/api/wiki_indexing.go`
+   - Run every 2 minutes
+   - Find recently updated pages
+   - Load latest snapshot
+   - Call `yjsClient.ExtractBlocks()`
+   - Replace blocks in `wiki_blocks` table
+   - Postgres auto-generates `search_vector` via trigger
+
+5. **Add to docker-compose.yml:**
+   ```yaml
+   yjs-processor:
+     build: ./api/internal/yjs-processor
+     networks: [taskai]
+   ```
+
+6. **Start workers in main.go:**
+   ```go
+   go server.StartSnapshotWorker(bgCtx)
+   go server.StartIndexingWorker(bgCtx)
+   ```
+
+**Deliverable:** Wiki pages automatically snapshotted and indexed for search
+
+### Phase 5: Full-Text Search (2-3 days)
+
+**Objective:** Fast search across wiki content
+
+**Steps:**
+
+1. **Implement search:** `api/internal/api/wiki_search_handlers.go`
+   ```go
+   func HandleSearchWiki(w http.ResponseWriter, r *http.Request) {
+       // Parse request: query, project_id, limit, recency_days
+       // SQL:
+       SELECT wb.page_id, wp.title, wb.id, wb.block_type,
+              ts_headline('english', wb.plain_text, websearch_to_tsquery($1)),
+              ts_rank(wb.search_vector, websearch_to_tsquery($1)) as rank
+       FROM wiki_blocks wb
+       JOIN wiki_pages wp ON wp.id = wb.page_id
+       WHERE wp.project_id = $2
+         AND wb.search_vector @@ websearch_to_tsquery($1)
+       ORDER BY rank DESC
+       LIMIT $3
+   }
+   ```
+
+2. **Implement autocomplete:**
+   ```sql
+   SELECT id, title, slug
+   FROM wiki_pages
+   WHERE project_id = $1 AND title % $2  -- Trigram similarity
+   ORDER BY similarity(title, $2) DESC
+   LIMIT 10
+   ```
+
+3. **Add routes:**
+   ```go
+   r.Post("/api/wiki/search", server.HandleSearchWiki)
+   r.Get("/api/wiki/autocomplete", server.HandleAutocompletePages)
+   ```
+
+4. **Test:**
+   - Create wiki page with content "Postgres installation guide"
+   - Search for "postgres"
+   - Verify result includes snippet and correct rank
+   - Measure query time (target: <100ms)
+
+**Deliverable:** Search returns relevant results with snippets in <100ms
+
+### Phase 6: MCP Tools (1-2 days)
+
+**Objective:** Expose wiki via MCP protocol
+
+**Steps:**
+
+1. **Update MCP server:** `mcp/src/index.ts`
+   - Add 5 new tools with Zod schemas
+   - Reuse `formatResponse()` and `verbose` pattern from task tools
+
+2. **Update API client:** `mcp/src/api.ts`
+   - Add methods: `searchWiki()`, `getWikiBlock()`, `getWikiPage()`, etc.
+   - Follow existing `TaskAIClient` patterns
+
+3. **Test:**
+   - Call each MCP tool via protocol
+   - Verify responses match direct API calls
+   - Test `verbose=false` returns compact JSON
+
+**Deliverable:** MCP clients can search and read wiki content
+
+### Phase 7: Production Deployment (1-2 days)
+
+**Objective:** Deploy to production safely
+
+**Steps:**
+
+1. **Staging validation:**
+   - [ ] All 6 phases deployed and tested
+   - [ ] E2E tests passing
+   - [ ] WebSocket stress test (50 concurrent connections)
+   - [ ] Search performance test (<100ms queries)
+
+2. **Production deployment:**
+   ```bash
+   # Manually trigger workflow
+   gh workflow run deploy-production.yml -f ref="main"
+
+   # Or use script
+   ./script/server promote
+   ```
+
+3. **Post-deployment checks:**
+   - [ ] Health endpoint: `curl https://taskai.cc/healthz`
+   - [ ] Test wiki page creation
+   - [ ] Test WebSocket connection
+   - [ ] Test search
+   - [ ] Test MCP tools
+
+4. **Monitor:**
+   - WebSocket connection count
+   - Search query latency (Postgres logs)
+   - API error rates
+   - Yjs processor health
+
+**Rollback:** Revert Docker image if issues detected within 30 minutes
+
+---
+
+## Testing Strategy
+
+### Per-Phase Testing
+
+**Phase 1 (Postgres):**
+- Run full E2E test suite on Postgres
+- Compare API response times: SQLite baseline vs Postgres (accept <10% slowdown)
+- Verify row counts match: `SELECT COUNT(*) FROM tasks` on both databases
+
+**Phase 2 (Wiki REST):**
+- Unit tests: Mock DB, test each handler
+- Integration: Create → Read → Update → Delete workflow
+- Authorization: Verify 403 when accessing other team's wiki
+
+**Phase 3 (WebSocket):**
+- 2-client sync test
+- Connection lifecycle test (connect → send → disconnect → verify cleanup)
+- Load test: 50 concurrent connections, measure broadcast latency
+
+**Phase 4 (Yjs):**
+- Yjs processor unit tests (apply updates, extract blocks)
+- Snapshot generation test (apply 100 updates, verify snapshot correct)
+- Indexing test (extract blocks, verify `wiki_blocks` table updated)
+
+**Phase 5 (Search):**
+- Relevance test: Known content → verify top result
+- Performance test: Index 10,000 blocks, measure query time
+- Autocomplete test: Fuzzy matching
+
+**Phase 6 (MCP):**
+- MCP protocol tests for each tool
+- Compare MCP responses to direct API calls
+
+### E2E Test Suite
+
+**Scenario:** Collaborative wiki editing
+1. User A creates wiki page "API Documentation"
+2. User B connects via WebSocket
+3. User A edits content (sends Yjs update via WebSocket)
+4. User B receives update in real-time
+5. Snapshot worker creates snapshot after 5 minutes
+6. Indexing worker extracts blocks
+7. User C searches for "API", finds page
+8. MCP client retrieves page via `get_page` tool
+
+---
+
+## Rollback Plans
+
+### Per-Phase Rollback
+
+| Phase | Rollback Trigger | Action | Data Loss |
+|-------|------------------|--------|-----------|
+| 1 | Database errors, slow queries | Revert `DB_DRIVER` to `sqlite`, restart | None |
+| 2 | Migration failure | Drop wiki tables, revert migration | Wiki only |
+| 3 | WebSocket crashes | Disable WebSocket endpoint, use polling fallback | None |
+| 4 | Yjs corruption | Disable snapshot/indexing workers | Delayed indexing |
+| 5 | Search errors | Disable search endpoint | None |
+| 6 | MCP integration issues | Revert MCP server version | None |
+| 7 | Production outage | Revert Docker image, restore DB snapshot | Last N minutes |
+
+### Emergency Procedures
+
+**If production crashes:**
+1. Immediately revert to last known good Docker image: `docker-compose up -d --build api:<previous-tag>`
+2. Check logs: `docker-compose logs -f api | grep ERROR`
+3. If database issue: Verify Postgres connection with `psql -h <host> -U taskai -d taskai -c "SELECT 1"`
+4. Disable problematic feature: Set env var `WIKI_ENABLED=false`, restart
+
+**If data corruption detected:**
+1. Stop all writes: `docker-compose stop api`
+2. Restore from latest backup: `pg_restore -U taskai -d taskai backup.dump`
+3. Investigate root cause offline
+4. Fix and redeploy
+
+---
+
+## Verification Steps (Post-Implementation)
+
+After implementing all phases, verify:
+
+### Functional Tests
+- [ ] Create wiki page via REST API
+- [ ] Edit wiki page via WebSocket (2 concurrent clients)
+- [ ] Verify real-time sync works (latency <200ms)
+- [ ] Search for content, verify results relevant
+- [ ] Use MCP tools to search and retrieve wiki content
+- [ ] Verify all existing task features still work
+
+### Performance Tests
+- [ ] Search query time <100ms (90th percentile)
+- [ ] WebSocket broadcast latency <200ms
+- [ ] Snapshot generation completes within 5 minutes
+- [ ] API response times within 10% of baseline
+
+### Production Checks
+- [ ] Postgres running and healthy
+- [ ] Yjs processor service responding
+- [ ] WebSocket connections stable (no leaks)
+- [ ] Background workers running (snapshots, indexing)
+- [ ] MCP server returning wiki data correctly
+
+---
+
+## Success Metrics
+
+**Migration Success:**
+- ✅ 100% of existing features work on Postgres
+- ✅ API response times <110% of SQLite baseline
+- ✅ Zero data loss during migration
+- ✅ All 23 migrations applied successfully
+
+**Wiki Feature Success:**
+- ✅ Real-time collaboration works (<200ms latency)
+- ✅ Search returns relevant results (<100ms queries)
+- ✅ Snapshots generated within 5 minutes
+- ✅ MCP tools return correct data
+- ✅ No WebSocket memory leaks after 24 hours
+
+---
+
+## Notes
+
+- **Pragmatic trade-off:** Using Node.js microservice for Yjs instead of building Go library from scratch saves 3-4 weeks
+- **Backward compatibility:** Tasks remain primary feature; wiki is additive
+- **Production-ready:** Every phase independently testable and rollbackable
+- **Security:** All wiki operations project-scoped using existing auth patterns
+- **Scalability:** Postgres + WebSocket architecture supports 100+ concurrent editors per page
+
+This plan follows TaskAI's philosophy of **small, perfect commits** and **production-quality code**. Each phase can be deployed independently to staging, validated, then promoted to production.
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/anshumanbiswas/.REDACTED.jsonl
+
+---
+
+full ent migration
+
+---
+
+Start refactoring handlers (beginning with authentication)
