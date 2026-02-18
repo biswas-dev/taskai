@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "ee016c279488",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "api/cmd/api/main.go",
+    "api/internal/api/server.go",
+    "api/internal/api/wiki_handlers_test.go",
+    "api/internal/api/wiki_indexing.go",
+    "api/internal/api/wiki_search_handlers.go",
+    "api/internal/api/wiki_snapshot.go",
+    "api/internal/api/wiki_ws_handlers.go",
+    "api/internal/auth/service.go",
+    "api/internal/collab/manager.go",
+    "api/internal/config/config.go",
+    "api/internal/yjs-processor/Dockerfile",
+    "api/internal/yjs-processor/index.js",
+    "api/internal/yjs-processor/package.json",
+    "api/internal/yjs/client.go",
+    "docker-compose.yml",
+    "mcp/src/api.ts",
+    "mcp/src/index.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ee/016c279488/0/metadata.json",
+      "transcript": "/ee/016c279488/0/full.jsonl",
+      "context": "/ee/016c279488/0/context.md",
+      "content_hash": "/ee/016c279488/0/content_hash.txt",
+      "prompt": "/ee/016c279488/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1436,
+    "cache_creation_tokens": 158611,
+    "cache_read_tokens": 20172608,
+    "output_tokens": 12017,
+    "api_call_count": 179
+  }
+}

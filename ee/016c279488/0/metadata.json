@@ -1,0 +1,48 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "ee016c279488",
+  "session_id": "cea2bb46-757a-470c-8561-c787f4a0fad9",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-18T20:25:44.023569Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "api/cmd/api/main.go",
+    "api/internal/api/server.go",
+    "api/internal/api/wiki_handlers_test.go",
+    "api/internal/api/wiki_indexing.go",
+    "api/internal/api/wiki_search_handlers.go",
+    "api/internal/api/wiki_snapshot.go",
+    "api/internal/api/wiki_ws_handlers.go",
+    "api/internal/auth/service.go",
+    "api/internal/collab/manager.go",
+    "api/internal/config/config.go",
+    "api/internal/yjs-processor/Dockerfile",
+    "api/internal/yjs-processor/index.js",
+    "api/internal/yjs-processor/package.json",
+    "api/internal/yjs/client.go",
+    "docker-compose.yml",
+    "mcp/src/api.ts",
+    "mcp/src/index.ts"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "ad1a954e-8dc2-47c7-a7e9-3eb680d667f8",
+  "checkpoint_transcript_start": 3355,
+  "transcript_lines_at_start": 3355,
+  "token_usage": {
+    "input_tokens": 1436,
+    "cache_creation_tokens": 158611,
+    "cache_read_tokens": 20172608,
+    "output_tokens": 12017,
+    "api_call_count": 179
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-18T20:25:43.492083Z",
+    "agent_lines": 2225,
+    "human_added": 79,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2304,
+    "agent_percentage": 96.57118055555556
+  }
+}
