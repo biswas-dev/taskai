@@ -1,0 +1,114 @@
+make sure we know our project is https://taskai.cc/app/projects/1 commit to memory - please improve the MCP server, it is returning too many tokens that drones and overwhelm the llm. please allow all tokens but default behaviour should be to minimize tokens all the time
+
+---
+
+- Task management per project is out of scope; we only implement "each project has a wiki".
+- Wiki pages support rich formatting via a CRDT doc (Yjs). Formatting must be separate from search text.
+- Searches must be lightning fast using ONLY Postgres: full-text search on plain text + metadata, block-level.
+- Real-time collaboration editing via WebSocket using Yjs, persisted to Postgres.
+- Expose content via MCP: tools search_wiki, get_block, get_page_outline, get_page, get_recent_changes.
+- Provide stable citations: project_id/page_id/version/block_id. 2) WebSocket endpoint for real-time Yjs:
+   - ws://localhost:3000/collab?doc=page:<pageId>
+   - clients sync doc updates; server persists updates to Postgres, broadcasts to peers
+3) Indexing pipeline (app-level, Postgres-only):
+   - store CRDT updates
+   - periodically create Yjs snapshot per page version OR on demand
+   - derive "blocks" from a simplified renderer that converts Yjs doc to block list + plain text
+   - store blocks with:
+     - canonical_json (formatting+structure)
+     - plain_text (search)
+     - render_html (optional minimal)
+     - headings_path (for boosting)
+   - Postgres FTS:
+     - tsvector generated from plain_text + headings_path + title
+     - GIN index
+     - trigram index on title for autocomplete
+4) MCP server:
+   - tool search_wiki(query, project_id, limit, recency_days?) -> block hits with snippet + citations
+   - tool get_block(block_id) -> full plain text + metadata
+   - tool get_page_outline(page_id) -> headings tree
+   - tool get_page(page_id, mode=full|outline) -> blocks in order
+   - tool get_recent_changes(project_id, since_iso) -> changed pages
+5) Security baseline:
+   - project_id scoping on all queries
+   - simple API key auth header (X-API-Key) with env var; ok for MVP
+   - permissions_ref column exists but not enforced beyond project scope (leave hooks)
+
+DATABASE MODEL (POSTGRES)
+- Use UUID primary keys.
+- Use separate tables for canonical doc + search blocks.
+- Store Yjs updates append-only, plus periodic snapshots.
+
+CREATE MIGRATIONS (SQL FILES)
+migrations/001_init.sql must create:
+
+EXTENSIONS:
+  create extension if not exists pg_trgm;
+
+TABLES:
+projects(
+  id uuid pk default gen_random_uuid(),
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+pages(
+  id uuid pk default gen_random_uuid(),
+  project_id uuid not null references projects(id) on delete cascade,
+  title text not null,
+  status text not null default 'active',
+  current_version int not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+page_versions(
+  id uuid pk default gen_random_uuid(),
+  page_id uuid not null references pages(id) on delete cascade,
+  version int not null,
+  created_at timestamptz not null default now(),
+  created_by text,
+  snapshot bytea, -- optional compressed Yjs state (ydoc state vector snapshot)
+  unique(page_id, version)
+);
+
+yjs_updates(
+  id bigserial pk,
+  page_id uuid not null references pages(id) on delete cascade,
+  version int not null,
+  created_at timestamptz not null default now(),
+  update bytea not null
+);
+index yjs_updates_page_time on yjs_updates(page_id, created_at);
+
+blocks(
+  id uuid pk default gen_random_uuid(),
+  page_id uuid not null references pages(id) on delete cascade,
+  version int not null,
+  ordinal int not null, -- order within page
+  block_type text not null, -- heading, paragraph, list_item, code, table_row, etc.
+  headings_path text, -- e.g. "H1 Title > H2 Section"
+  canonical_json jsonb not null, -- structure+formatting
+  plain_text text not null, -- formatting stripped
+  render_html text, -- optional minimal
+  created_at timestamptz not null default now(),
+  unique(page_id, version, ordinal)
+);
+
+FULL-TEXT:
+- Add generated column search_vector on blocks:
+  search_vector tsvector generated always as (
+    setweight(to_tsvector('english', coalesce(headings_path,'')), 'A') ||
+    setweight(to_tsvector('english', coalesce(plain_text,'')), 'B')
+  ) stored;
+
+- Create indexes:
+  create index blocks_search_gin on blocks using gin(search_vector);
+  create index pages_title_trgm on pages using gin(title gin_trgm_ops);
+
+TRIGGERS:
+- updated_at trigger for pages.
+
+---
+
+[Request interrupted by user for tool use]
