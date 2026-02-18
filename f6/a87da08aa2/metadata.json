@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "f6a87da08aa2",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/deploy-production.yml",
+    ".github/workflows/deploy-staging.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f6/a87da08aa2/0/metadata.json",
+      "transcript": "/f6/a87da08aa2/0/full.jsonl",
+      "context": "/f6/a87da08aa2/0/context.md",
+      "content_hash": "/f6/a87da08aa2/0/content_hash.txt",
+      "prompt": "/f6/a87da08aa2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 33,
+    "cache_creation_tokens": 43061,
+    "cache_read_tokens": 1600901,
+    "output_tokens": 2116,
+    "api_call_count": 29
+  }
+}
