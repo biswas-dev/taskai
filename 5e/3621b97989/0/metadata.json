@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "5e3621b97989",
+  "session_id": "cea2bb46-757a-470c-8561-c787f4a0fad9",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-18T19:10:21.269099Z",
+  "branch": "main",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "api/ent/schema/tasktag.go",
+    "api/ent/schema/useractivity.go",
+    "api/internal/api/admin_handlers.go",
+    "api/internal/api/invite_handlers.go",
+    "api/internal/api/project_handlers.go",
+    "api/internal/api/sprint_tag_handlers.go",
+    "api/internal/api/swim_lane_handlers.go",
+    "api/internal/api/task_comment_handlers.go",
+    "api/internal/api/task_handlers.go",
+    "api/internal/api/team_handlers.go",
+    "api/internal/db/api_keys.go",
+    "api/internal/db/api_keys_test.go",
+    "api/internal/db/migrations/024_add_task_tags_id.sql",
+    "api/internal/e2e/e2e_test.go"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "2e881b76-93b4-496b-8952-d23bfa59d21c",
+  "checkpoint_transcript_start": 741,
+  "transcript_lines_at_start": 741,
+  "token_usage": {
+    "input_tokens": 2346,
+    "cache_creation_tokens": 416266,
+    "cache_read_tokens": 31738701,
+    "output_tokens": 24671,
+    "api_call_count": 291
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-18T19:10:20.910365Z",
+    "agent_lines": 1737,
+    "human_added": 399,
+    "human_modified": 18,
+    "human_removed": 0,
+    "total_committed": 2154,
+    "agent_percentage": 80.64066852367688
+  }
+}
