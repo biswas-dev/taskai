@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "3457633747c2",
+  "session_id": "cea2bb46-757a-470c-8561-c787f4a0fad9",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-18T20:59:44.048545Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "web/package.json",
+    "web/src/App.tsx",
+    "web/src/components/WikiEditor.tsx",
+    "web/src/lib/api.ts",
+    "web/src/routes/ProjectDetail.tsx",
+    "web/src/routes/ProjectSettings.tsx",
+    "web/src/routes/Wiki.tsx"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "b651ffe2-549a-48b5-9ed2-ff7b511f666f",
+  "checkpoint_transcript_start": 4262,
+  "transcript_lines_at_start": 4262,
+  "token_usage": {
+    "input_tokens": 448,
+    "cache_creation_tokens": 68679,
+    "cache_read_tokens": 6908133,
+    "output_tokens": 6489,
+    "api_call_count": 55
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-18T20:59:43.12707Z",
+    "agent_lines": 576,
+    "human_added": 470,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1046,
+    "agent_percentage": 55.06692160611855
+  }
+}
