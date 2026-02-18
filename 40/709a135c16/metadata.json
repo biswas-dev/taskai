@@ -3,9 +3,12 @@
   "checkpoint_id": "40709a135c16",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
-    ".mcp.json"
+    ".github/workflows/deploy-production.yml",
+    ".gitignore",
+    ".mcp.json",
+    "script/server"
   ],
   "sessions": [
     {
@@ -14,13 +17,20 @@
       "context": "/40/709a135c16/0/context.md",
       "content_hash": "/40/709a135c16/0/content_hash.txt",
       "prompt": "/40/709a135c16/0/prompt.txt"
+    },
+    {
+      "metadata": "/40/709a135c16/1/metadata.json",
+      "transcript": "/40/709a135c16/1/full.jsonl",
+      "context": "/40/709a135c16/1/context.md",
+      "content_hash": "/40/709a135c16/1/content_hash.txt",
+      "prompt": "/40/709a135c16/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 56,
-    "cache_creation_tokens": 23197,
-    "cache_read_tokens": 456371,
-    "output_tokens": 546,
-    "api_call_count": 13
+    "input_tokens": 183,
+    "cache_creation_tokens": 156528,
+    "cache_read_tokens": 11161772,
+    "output_tokens": 18081,
+    "api_call_count": 125
   }
 }
