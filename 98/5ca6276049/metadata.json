@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "985ca6276049",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "api/cmd/api/main.go",
+    "api/ent/schema/pageversion.go",
+    "api/ent/schema/project.go",
+    "api/ent/schema/user.go",
+    "api/ent/schema/wikiblock.go",
+    "api/ent/schema/wikipage.go",
+    "api/ent/schema/yjsupdate.go",
+    "api/internal/api/wiki_handlers.go",
+    "api/internal/db/migrations/026_add_wiki_tables.sql",
+    "api/internal/db/migrations/postgres/024_add_task_tags_id.sql",
+    "api/internal/db/migrations/postgres/025_fix_due_date_format.sql",
+    "api/internal/db/migrations/postgres/026_add_wiki_tables.sql",
+    "docker-compose.yml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/98/5ca6276049/0/metadata.json",
+      "transcript": "/98/5ca6276049/0/full.jsonl",
+      "context": "/98/5ca6276049/0/context.md",
+      "content_hash": "/98/5ca6276049/0/content_hash.txt",
+      "prompt": "/98/5ca6276049/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 482,
+    "cache_creation_tokens": 38594,
+    "cache_read_tokens": 6618978,
+    "output_tokens": 4597,
+    "api_call_count": 60
+  }
+}
