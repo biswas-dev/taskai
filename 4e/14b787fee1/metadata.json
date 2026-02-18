@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "4e14b787fee1",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "api/Dockerfile",
+    "api/cmd/api/main.go",
+    "api/internal/api/version_handler.go",
+    "api/internal/db/db.go",
+    "api/internal/version/version.go",
+    "mcp/src/api.ts",
+    "mcp/src/index.ts",
+    "script/server",
+    "web/src/lib/api.ts",
+    "web/src/routes/Admin.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4e/14b787fee1/0/metadata.json",
+      "transcript": "/4e/14b787fee1/0/full.jsonl",
+      "context": "/4e/14b787fee1/0/context.md",
+      "content_hash": "/4e/14b787fee1/0/content_hash.txt",
+      "prompt": "/4e/14b787fee1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 428,
+    "cache_creation_tokens": 60003,
+    "cache_read_tokens": 5442942,
+    "output_tokens": 3396,
+    "api_call_count": 54
+  }
+}

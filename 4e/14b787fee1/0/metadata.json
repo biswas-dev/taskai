@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "4e14b787fee1",
+  "session_id": "cea2bb46-757a-470c-8561-c787f4a0fad9",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-18T21:48:07.3825Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "api/Dockerfile",
+    "api/cmd/api/main.go",
+    "api/internal/api/version_handler.go",
+    "api/internal/db/db.go",
+    "api/internal/version/version.go",
+    "mcp/src/api.ts",
+    "mcp/src/index.ts",
+    "script/server",
+    "web/src/lib/api.ts",
+    "web/src/routes/Admin.tsx"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "23460934-d5dc-4ef8-bf45-b6895a109700",
+  "checkpoint_transcript_start": 4623,
+  "transcript_lines_at_start": 4623,
+  "token_usage": {
+    "input_tokens": 428,
+    "cache_creation_tokens": 60003,
+    "cache_read_tokens": 5442942,
+    "output_tokens": 3396,
+    "api_call_count": 54
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-18T21:48:06.373542Z",
+    "agent_lines": 327,
+    "human_added": 79,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 406,
+    "agent_percentage": 80.54187192118226
+  }
+}
