@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "177db7b1944b",
+  "session_id": "cea2bb46-757a-470c-8561-c787f4a0fad9",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-18T19:35:45.838172Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "api/internal/db/migrations/025_fix_due_date_format.sql"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "1bdc8c51-739a-46fc-bd50-bdf1531232a3",
+  "checkpoint_transcript_start": 2801,
+  "transcript_lines_at_start": 2801,
+  "token_usage": {
+    "input_tokens": 138,
+    "cache_creation_tokens": 10657,
+    "cache_read_tokens": 1424387,
+    "output_tokens": 382,
+    "api_call_count": 17
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-18T19:35:45.437245Z",
+    "agent_lines": 7,
+    "human_added": 79,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 86,
+    "agent_percentage": 8.13953488372093
+  }
+}
