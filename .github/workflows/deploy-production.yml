@@ -126,6 +126,23 @@ jobs:
             docker compose ps
           ENDSSH
 
+      - name: Capture container logs on failure
+        if: failure()
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@31.97.102.48 bash -s << 'ENDSSH'
+            cd /home/ubuntu/taskai
+            echo "=== Container status ==="
+            docker compose ps -a
+            echo ""
+            echo "=== API container logs ==="
+            docker compose logs --tail=100 api
+            echo ""
+            echo "=== All container logs ==="
+            docker compose logs --tail=50
+          ENDSSH
+
       - name: Verify deployment
         run: |
           sleep 10
