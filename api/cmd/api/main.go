@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	godraw "github.com/anchoo2kewl/go-draw"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -120,6 +121,13 @@ func main() {
 		fmt.Fprintf(w, `{"status":"ok","database":"connected"}`)
 	})
 
+	// go-draw canvas editor
+	drawHandler, err := godraw.New(godraw.WithBasePath("/draw"))
+	if err != nil {
+		logger.Fatal("could not initialize go-draw", zap.Error(err))
+	}
+	r.Handle("/draw/*", drawHandler.Handler())
+
 	// API routes
 	r.Route("/api", func(r chi.Router) {
 		// Legacy health endpoint
@@ -188,9 +196,15 @@ func main() {
 			r.Get("/wiki/pages/{pageId}", server.HandleGetWikiPage)
 			r.Patch("/wiki/pages/{pageId}", server.HandleUpdateWikiPage)
 			r.Delete("/wiki/pages/{pageId}", server.HandleDeleteWikiPage)
+			r.Post("/wiki/preview", server.HandleWikiPreview)
 
 			// Wiki WebSocket route for real-time collaboration
 			r.Get("/wiki/collab", server.HandleWikiWebSocket)
+
+			// Wiki page attachment routes
+			r.Get("/wiki/pages/{pageId}/attachments", server.HandleListWikiPageAttachments)
+			r.Post("/wiki/pages/{pageId}/attachments", server.HandleCreateWikiPageAttachment)
+			r.Delete("/wiki/attachments/{attachmentId}", server.HandleDeleteWikiPageAttachment)
 
 			// Wiki search routes
 			r.Post("/wiki/search", server.HandleSearchWiki)

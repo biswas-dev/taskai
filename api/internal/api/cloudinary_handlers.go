@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,20 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
+
+var nonAlphanumericRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// slugifyProjectName converts a project name into a URL-safe slug for Cloudinary folders.
+// Falls back to "project-{id}" if the result is empty.
+func slugifyProjectName(name string, projectID int64) string {
+	slug := strings.ToLower(name)
+	slug = nonAlphanumericRe.ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		return fmt.Sprintf("project-%d", projectID)
+	}
+	return slug
+}
 
 // convertToPostgresQuery converts SQLite-style ? placeholders to Postgres $1, $2, etc.
 func convertToPostgresQuery(query string) string {
@@ -60,11 +75,29 @@ type UploadSignatureResponse struct {
 	Timestamp int64  `json:"timestamp"`
 	CloudName string `json:"cloud_name"`
 	APIKey    string `json:"api_key"`
+	Folder    string `json:"folder"`
+	PublicID  string `json:"public_id"`
 }
 
 type TaskAttachment struct {
 	ID                 int64     `json:"id"`
 	TaskID             int64     `json:"task_id"`
+	ProjectID          int64     `json:"project_id"`
+	UserID             int64     `json:"user_id"`
+	Filename           string    `json:"filename"`
+	AltName            string    `json:"alt_name"`
+	FileType           string    `json:"file_type"`
+	ContentType        string    `json:"content_type"`
+	FileSize           int64     `json:"file_size"`
+	CloudinaryURL      string    `json:"cloudinary_url"`
+	CloudinaryPublicID string    `json:"cloudinary_public_id"`
+	CreatedAt          time.Time `json:"created_at"`
+	UserName           *string   `json:"user_name,omitempty"`
+}
+
+type WikiPageAttachment struct {
+	ID                 int64     `json:"id"`
+	WikiPageID         int64     `json:"wiki_page_id"`
 	ProjectID          int64     `json:"project_id"`
 	UserID             int64     `json:"user_id"`
 	Filename           string    `json:"filename"`
@@ -321,13 +354,130 @@ func (s *Server) HandleTestCloudinaryConnection(w http.ResponseWriter, r *http.R
 	respondJSON(w, http.StatusOK, cred)
 }
 
-// HandleGetUploadSignature generates a Cloudinary upload signature for the current user
+// HandleGetUploadSignature generates a Cloudinary upload signature for the current user.
+// Requires exactly one of ?task_id= or ?page_id= query parameter.
 func (s *Server) HandleGetUploadSignature(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	userID := r.Context().Value(UserIDKey).(int64)
 
+	taskIDStr := r.URL.Query().Get("task_id")
+	pageIDStr := r.URL.Query().Get("page_id")
+
+	// Require exactly one of task_id or page_id
+	if taskIDStr == "" && pageIDStr == "" {
+		respondError(w, http.StatusBadRequest, "task_id or page_id query parameter is required", "bad_request")
+		return
+	}
+	if taskIDStr != "" && pageIDStr != "" {
+		respondError(w, http.StatusBadRequest, "provide either task_id or page_id, not both", "bad_request")
+		return
+	}
+
+	var projectID int64
+	var projectName string
+	var publicID string
+
+	if taskIDStr != "" {
+		taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid task_id", "bad_request")
+			return
+		}
+
+		// Look up task to get project_id
+		err = s.db.QueryRowContext(ctx,
+			`SELECT project_id FROM tasks WHERE id = $1`, taskID,
+		).Scan(&projectID)
+		if err == sql.ErrNoRows {
+			respondError(w, http.StatusNotFound, "task not found", "not_found")
+			return
+		}
+		if err != nil {
+			s.logger.Error("Failed to look up task for signature", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to look up task", "internal_error")
+			return
+		}
+
+		// Look up project name
+		err = s.db.QueryRowContext(ctx,
+			`SELECT name FROM projects WHERE id = $1`, projectID,
+		).Scan(&projectName)
+		if err != nil {
+			s.logger.Error("Failed to look up project for signature", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to look up project", "internal_error")
+			return
+		}
+
+		// Count existing attachments for this task
+		var attachmentCount int
+		err = s.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM task_attachments WHERE task_id = $1`, taskID,
+		).Scan(&attachmentCount)
+		if err != nil {
+			s.logger.Error("Failed to count attachments", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to count attachments", "internal_error")
+			return
+		}
+
+		if attachmentCount >= 99 {
+			respondError(w, http.StatusBadRequest, "maximum 99 attachments per task", "attachment_limit_exceeded")
+			return
+		}
+
+		publicID = fmt.Sprintf("%d_%02d", taskID, attachmentCount+1)
+	} else {
+		pageID, err := strconv.ParseInt(pageIDStr, 10, 64)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid page_id", "bad_request")
+			return
+		}
+
+		// Look up wiki page to get project_id
+		err = s.db.QueryRowContext(ctx,
+			`SELECT project_id FROM wiki_pages WHERE id = $1`, pageID,
+		).Scan(&projectID)
+		if err == sql.ErrNoRows {
+			respondError(w, http.StatusNotFound, "wiki page not found", "not_found")
+			return
+		}
+		if err != nil {
+			s.logger.Error("Failed to look up wiki page for signature", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to look up wiki page", "internal_error")
+			return
+		}
+
+		// Look up project name
+		err = s.db.QueryRowContext(ctx,
+			`SELECT name FROM projects WHERE id = $1`, projectID,
+		).Scan(&projectName)
+		if err != nil {
+			s.logger.Error("Failed to look up project for signature", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to look up project", "internal_error")
+			return
+		}
+
+		// Count existing wiki page attachments
+		var attachmentCount int
+		err = s.db.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM wiki_page_attachments WHERE wiki_page_id = $1`, pageID,
+		).Scan(&attachmentCount)
+		if err != nil {
+			s.logger.Error("Failed to count wiki page attachments", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to count attachments", "internal_error")
+			return
+		}
+
+		if attachmentCount >= 100 {
+			respondError(w, http.StatusBadRequest, "maximum 100 attachments per wiki page", "attachment_limit_exceeded")
+			return
+		}
+
+		publicID = fmt.Sprintf("w%d_%03d", pageID, attachmentCount+1)
+	}
+
+	// Fetch Cloudinary credentials
 	var cloudName, apiKey, apiSecret string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT cloud_name, api_key, api_secret FROM cloudinary_credentials WHERE user_id = $1`, userID,
@@ -343,8 +493,12 @@ func (s *Server) HandleGetUploadSignature(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Build folder and public_id
+	folder := "taskai/" + slugifyProjectName(projectName, projectID)
+
+	// Sign with all params alphabetically: folder, public_id, timestamp
 	timestamp := time.Now().Unix()
-	signStr := fmt.Sprintf("timestamp=%d%s", timestamp, apiSecret)
+	signStr := fmt.Sprintf("folder=%s&public_id=%s&timestamp=%d%s", folder, publicID, timestamp, apiSecret)
 	h := sha1.New()
 	h.Write([]byte(signStr))
 	signature := hex.EncodeToString(h.Sum(nil))
@@ -354,6 +508,8 @@ func (s *Server) HandleGetUploadSignature(w http.ResponseWriter, r *http.Request
 		Timestamp: timestamp,
 		CloudName: cloudName,
 		APIKey:    apiKey,
+		Folder:    folder,
+		PublicID:  publicID,
 	})
 }
 
@@ -438,6 +594,21 @@ func (s *Server) HandleCreateTaskAttachment(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		s.logger.Error("Failed to look up task", zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to look up task", "internal_error")
+		return
+	}
+
+	// Enforce 99-attachment limit per task
+	var attachmentCount int
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM task_attachments WHERE task_id = $1`, taskID,
+	).Scan(&attachmentCount)
+	if err != nil {
+		s.logger.Error("Failed to count attachments", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to count attachments", "internal_error")
+		return
+	}
+	if attachmentCount >= 99 {
+		respondError(w, http.StatusBadRequest, "maximum 99 attachments per task", "attachment_limit_exceeded")
 		return
 	}
 
@@ -819,6 +990,185 @@ func (s *Server) HandleDeleteAttachment(w http.ResponseWriter, r *http.Request) 
 	)
 	if err != nil {
 		s.logger.Error("Failed to delete attachment", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to delete attachment", "internal_error")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Attachment deleted"})
+}
+
+// HandleListWikiPageAttachments returns all attachments for a wiki page
+func (s *Server) HandleListWikiPageAttachments(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	pageID, err := strconv.ParseInt(chi.URLParam(r, "pageId"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid page ID", "bad_request")
+		return
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT wa.id, wa.wiki_page_id, wa.project_id, wa.user_id, wa.filename, wa.alt_name,
+		        wa.file_type, wa.content_type, wa.file_size,
+		        wa.cloudinary_url, wa.cloudinary_public_id, wa.created_at,
+		        u.name as user_name
+		 FROM wiki_page_attachments wa
+		 LEFT JOIN users u ON wa.user_id = u.id
+		 WHERE wa.wiki_page_id = $1
+		 ORDER BY wa.created_at DESC`, pageID,
+	)
+	if err != nil {
+		s.logger.Error("Failed to list wiki page attachments", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to list attachments", "internal_error")
+		return
+	}
+	defer rows.Close()
+
+	attachments := []WikiPageAttachment{}
+	for rows.Next() {
+		var a WikiPageAttachment
+		if err := rows.Scan(&a.ID, &a.WikiPageID, &a.ProjectID, &a.UserID,
+			&a.Filename, &a.AltName, &a.FileType, &a.ContentType, &a.FileSize,
+			&a.CloudinaryURL, &a.CloudinaryPublicID, &a.CreatedAt,
+			&a.UserName); err != nil {
+			s.logger.Error("Failed to scan wiki page attachment", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to scan attachment", "internal_error")
+			return
+		}
+		attachments = append(attachments, a)
+	}
+
+	respondJSON(w, http.StatusOK, attachments)
+}
+
+// HandleCreateWikiPageAttachment stores a new attachment record for a wiki page
+func (s *Server) HandleCreateWikiPageAttachment(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	userID := r.Context().Value(UserIDKey).(int64)
+
+	pageID, err := strconv.ParseInt(chi.URLParam(r, "pageId"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid page ID", "bad_request")
+		return
+	}
+
+	var req CreateAttachmentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "bad_request")
+		return
+	}
+
+	if req.Filename == "" || req.CloudinaryURL == "" || req.CloudinaryPublicID == "" {
+		respondError(w, http.StatusBadRequest, "filename, cloudinary_url, and cloudinary_public_id are required", "validation_error")
+		return
+	}
+
+	// Look up wiki page to get project_id
+	var projectID int64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT project_id FROM wiki_pages WHERE id = $1`, pageID,
+	).Scan(&projectID)
+	if err == sql.ErrNoRows {
+		respondError(w, http.StatusNotFound, "wiki page not found", "not_found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("Failed to look up wiki page", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to look up wiki page", "internal_error")
+		return
+	}
+
+	// Enforce 100-attachment limit per wiki page
+	var attachmentCount int
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wiki_page_attachments WHERE wiki_page_id = $1`, pageID,
+	).Scan(&attachmentCount)
+	if err != nil {
+		s.logger.Error("Failed to count wiki page attachments", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to count attachments", "internal_error")
+		return
+	}
+	if attachmentCount >= 100 {
+		respondError(w, http.StatusBadRequest, "maximum 100 attachments per wiki page", "attachment_limit_exceeded")
+		return
+	}
+
+	result, err := s.db.ExecContext(ctx,
+		`INSERT INTO wiki_page_attachments (wiki_page_id, project_id, user_id, filename, alt_name, file_type, content_type, file_size, cloudinary_url, cloudinary_public_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		pageID, projectID, userID, req.Filename, req.AltName, req.FileType, req.ContentType, req.FileSize, req.CloudinaryURL, req.CloudinaryPublicID,
+	)
+	if err != nil {
+		s.logger.Error("Failed to create wiki page attachment", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to create attachment", "internal_error")
+		return
+	}
+
+	id, _ := result.LastInsertId()
+	s.logger.Info("Wiki page attachment created",
+		zap.Int64("id", id),
+		zap.Int64("wiki_page_id", pageID),
+		zap.Int64("user_id", userID),
+		zap.String("filename", req.Filename),
+	)
+
+	attachment := WikiPageAttachment{
+		ID:                 id,
+		WikiPageID:         pageID,
+		ProjectID:          projectID,
+		UserID:             userID,
+		Filename:           req.Filename,
+		AltName:            req.AltName,
+		FileType:           req.FileType,
+		ContentType:        req.ContentType,
+		FileSize:           req.FileSize,
+		CloudinaryURL:      req.CloudinaryURL,
+		CloudinaryPublicID: req.CloudinaryPublicID,
+		CreatedAt:          time.Now(),
+	}
+
+	respondJSON(w, http.StatusCreated, attachment)
+}
+
+// HandleDeleteWikiPageAttachment removes a wiki page attachment (only the uploader can delete)
+func (s *Server) HandleDeleteWikiPageAttachment(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	userID := r.Context().Value(UserIDKey).(int64)
+
+	attachmentID, err := strconv.ParseInt(chi.URLParam(r, "attachmentId"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid attachment ID", "bad_request")
+		return
+	}
+
+	// Verify ownership
+	var ownerID int64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT user_id FROM wiki_page_attachments WHERE id = $1`, attachmentID,
+	).Scan(&ownerID)
+	if err == sql.ErrNoRows {
+		respondError(w, http.StatusNotFound, "attachment not found", "not_found")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to verify attachment", "internal_error")
+		return
+	}
+	if ownerID != userID {
+		respondError(w, http.StatusForbidden, "you can only delete your own attachments", "forbidden")
+		return
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		`DELETE FROM wiki_page_attachments WHERE id = $1`, attachmentID,
+	)
+	if err != nil {
+		s.logger.Error("Failed to delete wiki page attachment", zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to delete attachment", "internal_error")
 		return
 	}

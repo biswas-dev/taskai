@@ -15,6 +15,8 @@ vi.mock('./routes/Tags', () => ({ default: () => <div data-testid="tags">Tags</d
 vi.mock('./routes/Admin', () => ({ default: () => <div data-testid="admin">Admin</div> }))
 vi.mock('./routes/Settings', () => ({ default: () => <div data-testid="settings">Settings</div> }))
 vi.mock('./routes/Assets', () => ({ default: () => <div data-testid="assets">Assets</div> }))
+vi.mock('./routes/AcceptTeamInvite', () => ({ default: () => <div data-testid="accept-invite">AcceptTeamInvite</div> }))
+vi.mock('./routes/Wiki', () => ({ default: () => <div data-testid="wiki">Wiki</div> }))
 
 // Mock ProtectedRoute to just render children
 vi.mock('./components/ProtectedRoute', () => ({

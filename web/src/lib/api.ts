@@ -53,6 +53,22 @@ export interface Attachment {
   created_at: string
 }
 
+export interface WikiPageAttachment {
+  id: number
+  wiki_page_id: number
+  project_id: number
+  user_id: number
+  filename: string
+  alt_name?: string
+  file_type: string
+  content_type: string
+  file_size: number
+  cloudinary_url: string
+  cloudinary_public_id: string
+  created_at: string
+  user_name?: string | null
+}
+
 export interface Invite {
   id: number
   code: string
@@ -750,8 +766,9 @@ class ApiClient {
     })
   }
 
-  async getUploadSignature(): Promise<{ signature: string; timestamp: number; cloud_name: string; api_key: string }> {
-    return this.request('/api/settings/cloudinary/signature')
+  async getUploadSignature(opts: { taskId?: number; pageId?: number }): Promise<{ signature: string; timestamp: number; cloud_name: string; api_key: string; folder: string; public_id: string }> {
+    const params = opts.taskId ? `task_id=${opts.taskId}` : `page_id=${opts.pageId}`
+    return this.request(`/api/settings/cloudinary/signature?${params}`)
   }
 
   // Task attachment endpoints
@@ -771,6 +788,27 @@ class ApiClient {
 
   async deleteTaskAttachment(taskId: number, attachmentId: number): Promise<void> {
     return this.request<void>(`/api/tasks/${taskId}/attachments/${attachmentId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // Wiki page attachment endpoints
+  async getWikiPageAttachments(pageId: number): Promise<WikiPageAttachment[]> {
+    return this.request<WikiPageAttachment[]>(`/api/wiki/pages/${pageId}/attachments`)
+  }
+
+  async createWikiPageAttachment(pageId: number, data: {
+    filename: string; alt_name?: string; file_type: string; content_type: string;
+    file_size: number; cloudinary_url: string; cloudinary_public_id: string;
+  }): Promise<WikiPageAttachment> {
+    return this.request<WikiPageAttachment>(`/api/wiki/pages/${pageId}/attachments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteWikiPageAttachment(attachmentId: number): Promise<void> {
+    return this.request<void>(`/api/wiki/attachments/${attachmentId}`, {
       method: 'DELETE',
     })
   }

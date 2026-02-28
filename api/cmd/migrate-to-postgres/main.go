@@ -85,6 +85,7 @@ func main() {
 		"invites",        // Depends on users (inviter_id)
 		"email_provider", // No dependencies
 		"wiki_pages",     // Depends on projects, users
+		"wiki_page_attachments", // Depends on wiki_pages, projects, users
 		"yjs_updates",    // Depends on wiki_pages
 		"page_versions",  // Depends on wiki_pages
 		"wiki_blocks",    // Depends on wiki_pages
@@ -147,6 +148,14 @@ func main() {
 		logger.Error("Failed to migrate schema_migrations", zap.Error(err))
 	} else {
 		logger.Info("Migrated schema_migrations", zap.Int("rows", count))
+	}
+
+	// Reset all Postgres sequences to match migrated data
+	logger.Info("Resetting Postgres sequences to match migrated data...")
+	if err := resetSequences(ctx, postgresDB, logger); err != nil {
+		logger.Error("Failed to reset sequences", zap.Error(err))
+	} else {
+		logger.Info("All sequences reset successfully")
 	}
 
 	logger.Info("Migration completed successfully")
@@ -271,6 +280,51 @@ func convertValues(table string, columns []string, values []interface{}) []inter
 	}
 
 	return result
+}
+
+// resetSequences fixes all Postgres SERIAL/BIGSERIAL sequences to match the actual
+// max ID in each table. This is required after migrating data from SQLite because
+// Postgres sequences start at 1 regardless of the inserted IDs.
+func resetSequences(ctx context.Context, db *sql.DB, logger *zap.Logger) error {
+	rows, err := db.QueryContext(ctx, `
+		SELECT s.relname AS seq_name, t.relname AS table_name, a.attname AS column_name
+		FROM pg_class s
+		JOIN pg_depend d ON d.objid = s.oid
+		JOIN pg_class t ON t.oid = d.refobjid
+		JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+		WHERE s.relkind = 'S' AND d.deptype = 'a'
+	`)
+	if err != nil {
+		return fmt.Errorf("query sequences: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var seqName, tableName, colName string
+		if err := rows.Scan(&seqName, &tableName, &colName); err != nil {
+			return fmt.Errorf("scan sequence: %w", err)
+		}
+
+		query := fmt.Sprintf(
+			`SELECT setval('%s', COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)`,
+			seqName, colName, tableName,
+		)
+		var newVal int64
+		if err := db.QueryRowContext(ctx, query).Scan(&newVal); err != nil {
+			logger.Warn("Failed to reset sequence",
+				zap.String("sequence", seqName),
+				zap.String("table", tableName),
+				zap.Error(err),
+			)
+			continue
+		}
+		logger.Info("Reset sequence",
+			zap.String("sequence", seqName),
+			zap.String("table", tableName),
+			zap.Int64("next_value", newVal),
+		)
+	}
+	return rows.Err()
 }
 
 func maskPassword(dsn string) string {
