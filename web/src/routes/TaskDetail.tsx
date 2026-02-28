@@ -198,7 +198,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
     }
   }
 
-  const insertImageMarkdown = useCallback((alt: string, url: string, _caption?: string) => {
+  const insertImageMarkdown = useCallback((alt: string, url: string) => {
     const markdown = `![${alt}](${url})`
 
     if (imagePickerTarget === 'description' && descRef.current) {
