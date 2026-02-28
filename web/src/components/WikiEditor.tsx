@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { WikiPage } from '../lib/api'
+import { WikiPage, apiClient } from '../lib/api'
 import ImagePickerModal from './ImagePickerModal'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
@@ -125,6 +125,9 @@ export default function WikiEditor({ page }: WikiEditorProps) {
   const dividerRef = useRef<HTMLDivElement>(null)
   const fsContainerRef = useRef<HTMLDivElement>(null)
   const [fsSplitPct, setFsSplitPct] = useState(50)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isDropUploading, setIsDropUploading] = useState(false)
+  const dragCounterRef = useRef(0)
 
   // ── Yjs setup ────────────────────────────────────────────────
 
@@ -353,6 +356,85 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     setShowImagePicker(false)
   }
 
+  // ── Drag & drop image upload ─────────────────────────────────
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current++
+    if (e.dataTransfer.types.includes('Files')) setIsDragOver(true)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current--
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current = 0
+    setIsDragOver(false)
+
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
+    if (files.length === 0) return
+
+    setIsDropUploading(true)
+    const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
+
+    try {
+      for (const file of files) {
+        const sig = await apiClient.getUploadSignature({ pageId: page.id })
+
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('api_key', sig.api_key)
+        formData.append('timestamp', String(sig.timestamp))
+        formData.append('signature', sig.signature)
+        formData.append('folder', sig.folder)
+        formData.append('public_id', sig.public_id)
+
+        const uploadRes = await fetch(
+          `https://api.cloudinary.com/v1_1/${sig.cloud_name}/auto/upload`,
+          { method: 'POST', body: formData }
+        )
+        if (!uploadRes.ok) throw new Error('Upload failed')
+        const uploadData = await uploadRes.json()
+
+        const altName = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+
+        await apiClient.createWikiPageAttachment(page.id, {
+          filename: file.name,
+          alt_name: altName,
+          file_type: 'image',
+          content_type: file.type,
+          file_size: file.size,
+          cloudinary_url: uploadData.secure_url,
+          cloudinary_public_id: uploadData.public_id,
+        })
+
+        // Insert into editor
+        const markup = `![${altName}](${uploadData.secure_url})`
+        const start = textarea?.selectionStart ?? content.length
+        const end = textarea?.selectionEnd ?? content.length
+        const newContent = content.substring(0, start) + markup + '\n' + content.substring(end)
+        setContent(newContent)
+        syncToYjs(newContent)
+      }
+    } catch (err) {
+      console.error('Drop upload failed:', err)
+    } finally {
+      setIsDropUploading(false)
+    }
+  }, [isFullscreen, content, syncToYjs, page.id])
+
   // ── Status helpers ───────────────────────────────────────────
 
   const getSyncStatusColor = () => {
@@ -428,7 +510,14 @@ export default function WikiEditor({ page }: WikiEditorProps) {
           {/* Split panes */}
           <div ref={fsContainerRef} className="flex flex-1 overflow-hidden">
             {/* Left: editor */}
-            <div style={{ width: `${fsSplitPct}%` }} className="flex flex-col overflow-hidden">
+            <div
+              style={{ width: `${fsSplitPct}%` }}
+              className="flex flex-col overflow-hidden relative"
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <textarea
                 ref={fsTextareaRef}
                 value={content}
@@ -438,6 +527,16 @@ export default function WikiEditor({ page }: WikiEditorProps) {
                 spellCheck={false}
                 placeholder="Start writing in Markdown..."
               />
+              {(isDragOver || isDropUploading) && (
+                <div className="absolute inset-0 bg-primary-500/10 border-2 border-dashed border-primary-500 rounded-lg flex flex-col items-center justify-center gap-2 pointer-events-none z-10">
+                  <svg className="w-12 h-12 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  <span className="text-sm font-semibold text-primary-400">
+                    {isDropUploading ? 'Uploading...' : 'Drop images here'}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Divider */}
@@ -569,12 +668,19 @@ export default function WikiEditor({ page }: WikiEditorProps) {
             )}
           </div>
         ) : (
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={handleTextareaChange}
-            onKeyDown={handleKeyDown}
-            placeholder="Start writing in Markdown...
+          <div
+            className="relative h-full"
+            onDragEnter={handleDragEnter}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={handleTextareaChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Start writing in Markdown...
 
 # Heading 1
 ## Heading 2
@@ -587,9 +693,20 @@ export default function WikiEditor({ page }: WikiEditorProps) {
 [Link text](https://example.com)
 
 ```code block```"
-            className="w-full h-full px-6 py-4 bg-dark-bg-primary text-dark-text-primary resize-none focus:outline-none font-mono text-sm placeholder-dark-text-tertiary/50"
-            spellCheck={false}
-          />
+              className="w-full h-full px-6 py-4 bg-dark-bg-primary text-dark-text-primary resize-none focus:outline-none font-mono text-sm placeholder-dark-text-tertiary/50"
+              spellCheck={false}
+            />
+            {(isDragOver || isDropUploading) && (
+              <div className="absolute inset-0 bg-primary-500/10 border-2 border-dashed border-primary-500 rounded-lg flex flex-col items-center justify-center gap-2 pointer-events-none z-10">
+                <svg className="w-12 h-12 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <span className="text-sm font-semibold text-primary-400">
+                  {isDropUploading ? 'Uploading...' : 'Drop images here'}
+                </span>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
