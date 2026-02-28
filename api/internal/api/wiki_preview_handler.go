@@ -17,6 +17,7 @@ var wiki = gowiki.New(
 		LIClass:         "",
 		BlockquoteClass: "border-l-4 border-blue-500/40 pl-4 italic text-gray-300",
 	}),
+	gowiki.WithDrawBasePath("/draw"),
 )
 
 // wikiPreviewRequest is the JSON body for the preview endpoint.

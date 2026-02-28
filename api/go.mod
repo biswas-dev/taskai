@@ -6,7 +6,7 @@ toolchain go1.24.2
 
 require (
 	entgo.io/ent v0.14.5
-	github.com/anchoo2kewl/go-wiki v0.1.0
+	github.com/anchoo2kewl/go-wiki v0.1.1-0.20260228201805-1b028aa7f1cb
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
