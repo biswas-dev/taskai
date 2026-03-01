@@ -667,7 +667,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     }
   }, [])
 
-  const handleDrawDelete = useCallback(async (id: string, _title: string) => {
+  const handleDrawDelete = useCallback(async (id: string) => {
     try {
       await fetch(`/draw/api/${id}/delete`, { method: 'POST' })
       setDrawList(prev => prev.filter(d => d.id !== id))
@@ -1185,7 +1185,7 @@ function DrawCard({ drawing, isUsed, onInsert, onRename, onDelete }: {
   isUsed: boolean
   onInsert: (id: string, size: string, zoom: string) => void
   onRename: (id: string, title: string) => void
-  onDelete: (id: string, title: string) => void
+  onDelete: (id: string) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(drawing.title || 'Untitled')
@@ -1288,7 +1288,7 @@ function DrawCard({ drawing, isUsed, onInsert, onRename, onDelete }: {
           </svg>
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); onDelete(drawing.id, drawing.title) }}
+          onClick={(e) => { e.stopPropagation(); onDelete(drawing.id) }}
           className="w-[26px] h-[26px] rounded flex items-center justify-center bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
           title="Delete drawing"
         >
@@ -1310,7 +1310,7 @@ function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename
   editorContent: string
   onInsert: (id: string, size: string, zoom: string) => void
   onRename: (id: string, title: string) => void
-  onDelete: (id: string, title: string) => void
+  onDelete: (id: string) => void
   onDeleteUnused: (ids: string[]) => void
   onNew: () => void
   onClose: () => void
@@ -1326,7 +1326,7 @@ function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename
   const handleDelete = (id: string, title: string) => {
     setConfirmAction({
       message: `Delete "${title || 'Untitled'}"?`,
-      onConfirm: () => { onDelete(id, title); setConfirmAction(null) },
+      onConfirm: () => { onDelete(id); setConfirmAction(null) },
     })
   }
 
