@@ -1,6 +1,6 @@
 #!/bin/bash
-# Ensure the /draw/ nginx route exists for a given domain.
-# Idempotent: skips if the route is already present.
+# Ensure the /draw/ nginx route exists (with ^~ to prevent regex override)
+# for a given domain. Idempotent: skips if correctly configured.
 #
 # Usage: sudo ./ensure-draw-route.sh <domain>
 # Example: sudo ./ensure-draw-route.sh staging.taskai.cc
@@ -14,8 +14,19 @@ if [ ! -f "$CONF" ]; then
     exit 0
 fi
 
-if grep -q 'location /draw/' "$CONF"; then
+# Check if /draw/ route exists with ^~ modifier
+if grep -q 'location \^~ /draw/' "$CONF"; then
     echo "/draw/ route already configured for $DOMAIN"
+    exit 0
+fi
+
+# Upgrade: if /draw/ exists without ^~, add the modifier
+if grep -q 'location /draw/' "$CONF"; then
+    echo "Upgrading /draw/ route to use ^~ for $DOMAIN..."
+    sed -i 's|location /draw/|location ^~ /draw/|' "$CONF"
+    nginx -t
+    systemctl reload nginx
+    echo "/draw/ route upgraded to ^~ and nginx reloaded for $DOMAIN"
     exit 0
 fi
 
@@ -33,7 +44,7 @@ DRAW_TMP=$(mktemp)
 cat > "$DRAW_TMP" << EOF
 
     # go-draw canvas editor (served by API backend)
-    location /draw/ {
+    location ^~ /draw/ {
         ${API_BACKEND};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
