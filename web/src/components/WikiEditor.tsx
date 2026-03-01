@@ -1323,9 +1323,10 @@ function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename
   while ((m = re.exec(editorContent)) !== null) usedIds.add(m[1])
   const unusedDrawings = drawings.filter(d => !usedIds.has(d.id))
 
-  const handleDelete = (id: string, title: string) => {
+  const handleDelete = (id: string) => {
+    const title = drawings.find(d => d.id === id)?.title || 'Untitled'
     setConfirmAction({
-      message: `Delete "${title || 'Untitled'}"?`,
+      message: `Delete "${title}"?`,
       onConfirm: () => { onDelete(id); setConfirmAction(null) },
     })
   }
