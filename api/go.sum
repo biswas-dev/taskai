@@ -8,6 +8,8 @@ github.com/agext/levenshtein v1.2.3 h1:YB2fHEn0UJagG8T1rrWknE3ZQzWM06O8AMAatNn7l
 github.com/agext/levenshtein v1.2.3/go.mod h1:JEDfjyjHDjOF/1e4FlBE/PkbqA9OfWu2ki2W0IB5558=
 github.com/anchoo2kewl/go-draw v0.0.0-20260301153459-910020870430 h1:fqBIKZjks06AESulA1AQ8jcpmZQbrd0Kol19toS7g5Y=
 github.com/anchoo2kewl/go-draw v0.0.0-20260301153459-910020870430/go.mod h1:QPqDIJDVJcbB/WTGGPoRmQpDxxTCVr6dhMV76uvVx84=
+github.com/anchoo2kewl/go-draw v0.0.0-20260301155800-540e7bc9f9b9 h1:iRCq+7NqlzmDHXyHgComyf3mDn2fgfTK5bIQLGj9Low=
+github.com/anchoo2kewl/go-draw v0.0.0-20260301155800-540e7bc9f9b9/go.mod h1:QPqDIJDVJcbB/WTGGPoRmQpDxxTCVr6dhMV76uvVx84=
 github.com/anchoo2kewl/go-wiki v0.1.1-0.20260301010040-8cef834fdc16 h1:oXdIaUNhqHgRBU+P8iW3vSW/le7VfY9qtV33L8ktCmQ=
 github.com/anchoo2kewl/go-wiki v0.1.1-0.20260301010040-8cef834fdc16/go.mod h1:Q+Mdj3RCfVlaj8CdRRkSelRWQVRJFUwrSvAxgFB1efY=
 github.com/apparentlymart/go-textseg/v15 v15.0.0 h1:uYvfpb3DyLSCGWnctWKGj857c6ew1u1fNQOlOtuGxQY=
