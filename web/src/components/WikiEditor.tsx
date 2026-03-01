@@ -294,6 +294,22 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     }
   }, [content, syncToYjs, isFullscreen])
 
+  // ── Double-click draw shortcode → open editor ─────────────
+
+  const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
+    const textarea = e.currentTarget
+    const pos = textarea.selectionStart
+    const val = textarea.value
+    const re = /\[draw:([a-zA-Z0-9_-]+)(?::edit)?\]/g
+    let match
+    while ((match = re.exec(val)) !== null) {
+      if (pos >= match.index && pos <= match.index + match[0].length) {
+        window.open(`/draw/${match[1]}/edit`, '_blank')
+        return
+      }
+    }
+  }, [])
+
   // Global F11 listener (when focus is not on textarea)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -668,6 +684,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
                 value={content}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
+                onDoubleClick={handleDoubleClick}
                 className="flex-1 w-full bg-dark-bg-primary text-dark-text-primary resize-none focus:outline-none font-mono text-sm p-4"
                 spellCheck={false}
                 placeholder="Start writing in Markdown..."
@@ -826,6 +843,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
                 value={content}
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
+                onDoubleClick={handleDoubleClick}
                 placeholder="Start writing in Markdown...
 
 # Heading 1
