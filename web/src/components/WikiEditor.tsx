@@ -101,21 +101,61 @@ function initDrawEmbeds(container: HTMLElement | null) {
     const h = div.getAttribute('data-height') || '520px'
     const zoom = div.getAttribute('data-zoom')
     if (!src) return
+
+    // Extract draw ID from src for the edit button
+    const drawIdMatch = src.match(/\/([a-zA-Z0-9_-]+?)(?:\/edit)?$/)
+    const drawId = drawIdMatch ? drawIdMatch[1] : null
+
     // Preview always shows read-only view — strip /edit suffix
     src = src.replace(/\/edit$/, '')
     // Append zoom query param if present
     if (zoom) {
       src += (src.includes('?') ? '&' : '?') + 'zoom=' + encodeURIComponent(zoom)
     }
+
+    // Wrap in a positioned container for the edit overlay
+    const wrapper = document.createElement('div')
+    wrapper.style.position = 'relative'
+    wrapper.style.display = 'inline-block'
+    wrapper.style.width = w
+
     const iframe = document.createElement('iframe')
     iframe.src = src
-    iframe.style.width = w
+    iframe.style.width = '100%'
     iframe.style.height = h
     iframe.style.border = 'none'
     iframe.style.borderRadius = '8px'
     iframe.setAttribute('loading', 'lazy')
+
+    wrapper.appendChild(iframe)
+
+    // Add "Edit" overlay button if we have a draw ID
+    if (drawId) {
+      const editBtn = document.createElement('button')
+      editBtn.type = 'button'
+      editBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> Edit'
+      // Inline styles (no CSS file in TaskAI for this)
+      Object.assign(editBtn.style, {
+        position: 'absolute', top: '8px', right: '8px',
+        display: 'inline-flex', alignItems: 'center', gap: '4px',
+        padding: '5px 10px', border: 'none', borderRadius: '6px',
+        background: 'rgba(0,0,0,0.6)', color: '#fff',
+        fontSize: '12px', fontWeight: '500', cursor: 'pointer',
+        opacity: '0', transition: 'opacity 0.2s', zIndex: '5',
+        backdropFilter: 'blur(4px)',
+      })
+      editBtn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        window.open(`/draw/${drawId}/edit`, '_blank')
+      })
+      wrapper.addEventListener('mouseenter', () => { editBtn.style.opacity = '1' })
+      wrapper.addEventListener('mouseleave', () => { editBtn.style.opacity = '0' })
+      wrapper.appendChild(editBtn)
+    }
+
     div.innerHTML = ''
-    div.appendChild(iframe)
+    div.appendChild(wrapper)
     div.classList.add('godraw-preview-init')
   })
 }
@@ -185,6 +225,10 @@ export default function WikiEditor({ page }: WikiEditorProps) {
   const [showDrawBrowser, setShowDrawBrowser] = useState(false)
   const [drawList, setDrawList] = useState<DrawItem[]>([])
   const [drawLoading, setDrawLoading] = useState(false)
+  const [editDrawList, setEditDrawList] = useState<Array<{ shortcode: string; id: string; size: string; zoom: string; index: number }> | null>(null)
+  const [selectedEditDraw, setSelectedEditDraw] = useState<{ shortcode: string; id: string; size: string; zoom: string; index: number } | null>(null)
+  const [editDrawSize, setEditDrawSize] = useState('m')
+  const [editDrawZoom, setEditDrawZoom] = useState('fit')
 
   // ── Keep contentRef in sync ──────────────────────────────────
   useEffect(() => { contentRef.current = content }, [content])
@@ -462,6 +506,49 @@ export default function WikiEditor({ page }: WikiEditorProps) {
       }
     }
   }, [])
+
+  // ── Edit existing draw shortcode ─────────────────────────────
+
+  const handleEditDraw = useCallback(() => {
+    const draws: Array<{ shortcode: string; id: string; size: string; zoom: string; index: number }> = []
+    const re = /\[draw:([a-zA-Z0-9_-]+)(?::edit)?(?::([sml]))?(?::z([^\]]+))?\]/g
+    let match
+    while ((match = re.exec(content)) !== null) {
+      draws.push({
+        shortcode: match[0],
+        id: match[1],
+        size: match[2] || 'm',
+        zoom: match[3] || 'fit',
+        index: match.index,
+      })
+    }
+    if (draws.length === 0) {
+      alert('No draw shortcodes found in content')
+      return
+    }
+    draws.sort((a, b) => a.index - b.index)
+    setEditDrawList(draws)
+    setSelectedEditDraw(null)
+  }, [content])
+
+  const selectDrawForEdit = (draw: typeof editDrawList extends Array<infer T> | null ? T : never) => {
+    setSelectedEditDraw(draw)
+    setEditDrawSize(draw.size)
+    setEditDrawZoom(draw.zoom)
+  }
+
+  const saveEditDraw = useCallback(() => {
+    if (!selectedEditDraw) return
+    const sizeTag = editDrawSize === 'm' ? '' : ':' + editDrawSize
+    const zoomTag = editDrawZoom === 'fit' ? '' : ':z' + editDrawZoom
+    const newShortcode = `[draw:${selectedEditDraw.id}:edit${sizeTag}${zoomTag}]`
+    const newContent = content.replace(selectedEditDraw.shortcode, newShortcode)
+    setContent(newContent)
+    syncToYjs(newContent)
+    isDirtyRef.current = true
+    setEditDrawList(null)
+    setSelectedEditDraw(null)
+  }, [selectedEditDraw, editDrawSize, editDrawZoom, content, syncToYjs])
 
   // Global F11 listener (when focus is not on textarea)
   useEffect(() => {
@@ -858,6 +945,17 @@ export default function WikiEditor({ page }: WikiEditorProps) {
         </svg>
         Draw
       </button>
+      <button
+        onClick={handleEditDraw}
+        className="px-2 py-1 rounded text-xs font-medium transition-colors bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80 hover:text-dark-text-primary flex items-center gap-1"
+        title="Edit existing draw shortcode"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+          <path d="M12 19l7-7 3 3-7 7-3-3z" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M15.5 6.5l2 2" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" />
+        </svg>
+      </button>
     </div>
   )
 
@@ -998,6 +1096,21 @@ export default function WikiEditor({ page }: WikiEditorProps) {
             onDeleteUnused={handleDrawDeleteUnused}
             onNew={handleDrawNew}
             onClose={() => setShowDrawBrowser(false)}
+          />
+        )}
+
+        {/* Edit Draw modal in fullscreen */}
+        {editDrawList && (
+          <EditDrawModal
+            draws={editDrawList}
+            selectedDraw={selectedEditDraw}
+            editSize={editDrawSize}
+            editZoom={editDrawZoom}
+            onSelect={selectDrawForEdit}
+            onSizeChange={setEditDrawSize}
+            onZoomChange={setEditDrawZoom}
+            onSave={saveEditDraw}
+            onClose={() => { setEditDrawList(null); setSelectedEditDraw(null) }}
           />
         )}
       </>
@@ -1366,6 +1479,21 @@ export default function WikiEditor({ page }: WikiEditorProps) {
           onClose={() => setShowDrawBrowser(false)}
         />
       )}
+
+      {/* Edit Draw Modal */}
+      {editDrawList && (
+        <EditDrawModal
+          draws={editDrawList}
+          selectedDraw={selectedEditDraw}
+          editSize={editDrawSize}
+          editZoom={editDrawZoom}
+          onSelect={selectDrawForEdit}
+          onSizeChange={setEditDrawSize}
+          onZoomChange={setEditDrawZoom}
+          onSave={saveEditDraw}
+          onClose={() => { setEditDrawList(null); setSelectedEditDraw(null) }}
+        />
+      )}
     </div>
   )
 }
@@ -1619,6 +1747,143 @@ function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors"
                 >
                   Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── EditDrawModal ────────────────────────────────────────────────
+
+function EditDrawModal({ draws, selectedDraw, editSize, editZoom, onSelect, onSizeChange, onZoomChange, onSave, onClose }: {
+  draws: Array<{ shortcode: string; id: string; size: string; zoom: string; index: number }>
+  selectedDraw: { shortcode: string; id: string; size: string; zoom: string; index: number } | null
+  editSize: string
+  editZoom: string
+  onSelect: (draw: { shortcode: string; id: string; size: string; zoom: string; index: number }) => void
+  onSizeChange: (size: string) => void
+  onZoomChange: (zoom: string) => void
+  onSave: () => void
+  onClose: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg mx-4 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-dark-border-subtle">
+          <h3 className="text-lg font-semibold text-dark-text-primary">Edit Draw Shortcode</h3>
+          <button
+            onClick={onClose}
+            className="text-dark-text-tertiary hover:text-dark-text-primary transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {!selectedDraw ? (
+          /* Draw shortcode list */
+          <div className="p-6">
+            <p className="text-sm text-dark-text-secondary mb-4">Select a draw shortcode to edit:</p>
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {draws.map((draw, i) => (
+                <button
+                  key={i}
+                  onClick={() => onSelect(draw)}
+                  className="w-full text-left px-4 py-3 rounded-lg border border-dark-border-subtle hover:border-primary-500/50 hover:bg-dark-bg-tertiary/50 transition-colors"
+                >
+                  <div className="text-sm font-mono text-dark-text-primary truncate">{draw.shortcode}</div>
+                  <div className="text-xs text-dark-text-tertiary mt-1">
+                    ID: {draw.id} &bull; Size: {draw.size.toUpperCase()} &bull; Zoom: {draw.zoom}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* Edit form */
+          <div className="p-6">
+            <div className="mb-4 px-3 py-2 rounded-lg bg-dark-bg-tertiary border border-dark-border-subtle">
+              <span className="text-xs font-mono text-dark-text-secondary">{selectedDraw.shortcode}</span>
+            </div>
+
+            <div className="space-y-4">
+              {/* Size */}
+              <div>
+                <label className="block text-xs font-medium text-dark-text-secondary mb-1.5">Size</label>
+                <div className="flex gap-1.5">
+                  {([['s', 'Small'], ['m', 'Medium'], ['l', 'Large']] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => onSizeChange(val)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        editSize === val
+                          ? 'bg-primary-500 text-white'
+                          : 'bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Zoom */}
+              <div>
+                <label className="block text-xs font-medium text-dark-text-secondary mb-1.5">Zoom</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {(['fit', '50%', '100%', '150%', '200%'] as const).map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => onZoomChange(val)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        editZoom === val
+                          ? 'bg-primary-500 text-white'
+                          : 'bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80'
+                      }`}
+                    >
+                      {val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between mt-6">
+              <a
+                href={`/draw/${selectedDraw.id}/edit`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary-400 hover:text-primary-300 hover:underline transition-colors"
+              >
+                Open Editor
+              </a>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => onSelect(null as unknown as typeof selectedDraw)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-dark-text-secondary hover:text-dark-text-primary transition-colors"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={onSave}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+                >
+                  Update
                 </button>
               </div>
             </div>
