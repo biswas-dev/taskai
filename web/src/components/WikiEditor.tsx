@@ -86,6 +86,37 @@ const toolbarActions: ToolbarAction[] = [
   { label: 'Link', icon: '\uD83D\uDD17', action: 'wrap', before: '[', after: '](url)', title: 'Link' },
 ]
 
+// ── Draw embed init — replicate embed.js behavior for innerHTML previews ──
+
+function initDrawEmbeds(container: HTMLElement | null) {
+  if (!container) return
+  const embeds = container.querySelectorAll('.godraw-embed:not(.godraw-preview-init)')
+  embeds.forEach((div) => {
+    const src = div.getAttribute('data-src')
+    const w = div.getAttribute('data-width') || '100%'
+    const h = div.getAttribute('data-height') || '400px'
+    if (!src) return
+    const iframe = document.createElement('iframe')
+    iframe.src = src
+    iframe.style.width = w
+    iframe.style.height = h
+    iframe.style.border = 'none'
+    iframe.style.borderRadius = '8px'
+    iframe.setAttribute('loading', 'lazy')
+    div.innerHTML = ''
+    div.appendChild(iframe)
+    div.classList.add('godraw-preview-init')
+  })
+}
+
+// ── Draw browser types ──────────────────────────────────────────
+
+interface DrawItem {
+  id: string
+  title: string
+  updated_at: string
+}
+
 // ── Server-side preview fetcher ──────────────────────────────────
 
 async function fetchPreview(markdown: string, signal?: AbortSignal): Promise<string> {
@@ -124,6 +155,8 @@ export default function WikiEditor({ page }: WikiEditorProps) {
   const abortRef = useRef<AbortController | null>(null)
   const dividerRef = useRef<HTMLDivElement>(null)
   const fsContainerRef = useRef<HTMLDivElement>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const fsPreviewRef = useRef<HTMLDivElement>(null)
   const [fsSplitPct, setFsSplitPct] = useState(50)
   const [isDragOver, setIsDragOver] = useState(false)
   const [isDropUploading, setIsDropUploading] = useState(false)
@@ -132,6 +165,9 @@ export default function WikiEditor({ page }: WikiEditorProps) {
   const [selectedEditImg, setSelectedEditImg] = useState<{ html: string; url: string; alt: string; caption: string; index: number } | null>(null)
   const [editAlt, setEditAlt] = useState('')
   const [editCaption, setEditCaption] = useState('')
+  const [showDrawBrowser, setShowDrawBrowser] = useState(false)
+  const [drawList, setDrawList] = useState<DrawItem[]>([])
+  const [drawLoading, setDrawLoading] = useState(false)
 
   // ── Yjs setup ────────────────────────────────────────────────
 
@@ -260,6 +296,23 @@ export default function WikiEditor({ page }: WikiEditorProps) {
   useEffect(() => {
     if (isFullscreen) scheduleFsPreview(content)
   }, [isFullscreen, content, scheduleFsPreview])
+
+  // ── Init draw embeds in previews ──────────────────────────────
+
+  useEffect(() => {
+    if (isPreview && previewHTML) {
+      // Small delay to ensure innerHTML has been committed by React
+      const t = setTimeout(() => initDrawEmbeds(previewRef.current), 50)
+      return () => clearTimeout(t)
+    }
+  }, [isPreview, previewHTML])
+
+  useEffect(() => {
+    if (isFullscreen && fsPreviewHTML) {
+      const t = setTimeout(() => initDrawEmbeds(fsPreviewRef.current), 50)
+      return () => clearTimeout(t)
+    }
+  }, [isFullscreen, fsPreviewHTML])
 
   // ── Keyboard shortcuts ───────────────────────────────────────
 
@@ -551,44 +604,83 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     setSelectedEditImg(null)
   }, [selectedEditImg, editAlt, editCaption, content, syncToYjs])
 
-  // ── Draw handler ────────────────────────────────────────────
+  // ── Draw browser handlers ────────────────────────────────────
 
-  const [isDrawCreating, setIsDrawCreating] = useState(false)
+  const loadDrawings = useCallback(async () => {
+    setDrawLoading(true)
+    try {
+      const res = await fetch('/draw/api/list')
+      const data = await res.json()
+      setDrawList(data.drawings || [])
+    } catch {
+      setDrawList([])
+    } finally {
+      setDrawLoading(false)
+    }
+  }, [])
 
-  const handleDraw = useCallback(async () => {
-    if (isDrawCreating) return
-    setIsDrawCreating(true)
+  const handleDraw = useCallback(() => {
+    setShowDrawBrowser(true)
+    loadDrawings()
+  }, [loadDrawings])
+
+  const handleDrawInsert = useCallback((id: string) => {
+    const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
+    const markup = `\n[draw:${id}:edit]\n`
+    if (textarea) {
+      const start = textarea.selectionStart
+      const end = textarea.selectionEnd
+      const newContent = content.substring(0, start) + markup + content.substring(end)
+      setContent(newContent)
+      syncToYjs(newContent)
+      setTimeout(() => {
+        textarea.focus()
+        textarea.selectionStart = textarea.selectionEnd = start + markup.length
+      }, 0)
+    } else {
+      const newContent = content + markup
+      setContent(newContent)
+      syncToYjs(newContent)
+    }
+    setShowDrawBrowser(false)
+  }, [isFullscreen, content, syncToYjs])
+
+  const handleDrawRename = useCallback(async (id: string, title: string) => {
+    try {
+      await fetch(`/draw/api/${id}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      })
+      setDrawList(prev => prev.map(d => d.id === id ? { ...d, title } : d))
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const handleDrawDelete = useCallback(async (id: string, title: string) => {
+    if (!confirm(`Delete "${title || 'Untitled'}"?`)) return
+    try {
+      await fetch(`/draw/api/${id}/delete`, { method: 'POST' })
+      setDrawList(prev => prev.filter(d => d.id !== id))
+    } catch {
+      alert('Failed to delete drawing')
+    }
+  }, [])
+
+  const handleDrawNew = useCallback(async () => {
     try {
       const res = await fetch('/draw/api/new', { method: 'POST' })
       const data = await res.json()
       if (data && data.id) {
-        const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
-        const markup = `\n[draw:${data.id}:edit]\n`
-        if (textarea) {
-          const start = textarea.selectionStart
-          const end = textarea.selectionEnd
-          const newContent = content.substring(0, start) + markup + content.substring(end)
-          setContent(newContent)
-          syncToYjs(newContent)
-          setTimeout(() => {
-            textarea.focus()
-            textarea.selectionStart = textarea.selectionEnd = start + markup.length
-          }, 0)
-        } else {
-          const newContent = content + markup
-          setContent(newContent)
-          syncToYjs(newContent)
-        }
-        // Open the drawing editor in a new tab
         const editUrl = data.edit_url || `/draw/${data.id}/edit`
         window.open(editUrl, '_blank')
+        loadDrawings()
       }
     } catch (err) {
       console.error('Failed to create drawing:', err)
-    } finally {
-      setIsDrawCreating(false)
     }
-  }, [isDrawCreating, isFullscreen, content, setContent, syncToYjs])
+  }, [loadDrawings])
 
   // ── Toolbar JSX ──────────────────────────────────────────────
 
@@ -624,9 +716,8 @@ export default function WikiEditor({ page }: WikiEditorProps) {
       </button>
       <button
         onClick={handleDraw}
-        disabled={isDrawCreating}
-        className="px-2 py-1 rounded text-xs font-medium transition-colors bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80 hover:text-dark-text-primary flex items-center gap-1 disabled:opacity-50"
-        title="Insert a drawing canvas"
+        className="px-2 py-1 rounded text-xs font-medium transition-colors bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80 hover:text-dark-text-primary flex items-center gap-1"
+        title="Browse drawings"
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 19l7-7 3 3-7 7-3-3z" />
@@ -712,6 +803,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
             <div style={{ width: `${100 - fsSplitPct}%` }} className="overflow-y-auto p-4">
               {fsPreviewHTML ? (
                 <div
+                  ref={fsPreviewRef}
                   className="prose prose-invert max-w-none"
                   dangerouslySetInnerHTML={{ __html: fsPreviewHTML }}
                 />
@@ -731,6 +823,19 @@ export default function WikiEditor({ page }: WikiEditorProps) {
             onClose={() => setShowImagePicker(false)}
             wikiPageId={page.id}
             onUploadComplete={() => {}}
+          />
+        )}
+
+        {/* Draw browser in fullscreen */}
+        {showDrawBrowser && (
+          <DrawBrowserModal
+            drawings={drawList}
+            loading={drawLoading}
+            onInsert={handleDrawInsert}
+            onRename={handleDrawRename}
+            onDelete={handleDrawDelete}
+            onNew={handleDrawNew}
+            onClose={() => setShowDrawBrowser(false)}
           />
         )}
       </>
@@ -809,6 +914,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
           <div className="h-full overflow-y-auto px-6 py-4">
             {previewHTML ? (
               <div
+                ref={previewRef}
                 className="prose prose-invert max-w-none"
                 dangerouslySetInnerHTML={{ __html: previewHTML }}
               />
@@ -1033,6 +1139,165 @@ export default function WikiEditor({ page }: WikiEditorProps) {
           </div>
         </div>
       )}
+
+      {/* Draw Browser Modal */}
+      {showDrawBrowser && (
+        <DrawBrowserModal
+          drawings={drawList}
+          loading={drawLoading}
+          onInsert={handleDrawInsert}
+          onRename={handleDrawRename}
+          onDelete={handleDrawDelete}
+          onNew={handleDrawNew}
+          onClose={() => setShowDrawBrowser(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── DrawCard sub-component ───────────────────────────────────────
+
+function DrawCard({ drawing, onInsert, onRename, onDelete }: {
+  drawing: DrawItem
+  onInsert: (id: string) => void
+  onRename: (id: string, title: string) => void
+  onDelete: (id: string, title: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [title, setTitle] = useState(drawing.title || 'Untitled')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.focus()
+  }, [editing])
+
+  const saveTitle = () => {
+    const trimmed = title.trim()
+    if (trimmed && trimmed !== drawing.title) {
+      onRename(drawing.id, trimmed)
+    } else {
+      setTitle(drawing.title || 'Untitled')
+    }
+    setEditing(false)
+  }
+
+  const formattedDate = (() => {
+    try {
+      return new Date(drawing.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    } catch { return drawing.updated_at }
+  })()
+
+  return (
+    <div className="border border-dark-border-subtle rounded-xl p-4 flex flex-col gap-1.5 hover:border-primary-500/50 transition-colors">
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          onBlur={saveTitle}
+          onKeyDown={e => {
+            if (e.key === 'Enter') saveTitle()
+            if (e.key === 'Escape') { setTitle(drawing.title || 'Untitled'); setEditing(false) }
+          }}
+          className="text-sm font-semibold text-dark-text-primary bg-dark-bg-tertiary border border-primary-500 rounded px-2 py-1 focus:outline-none"
+        />
+      ) : (
+        <button
+          onClick={() => setEditing(true)}
+          className="text-sm font-semibold text-dark-text-primary text-left truncate hover:text-primary-400 transition-colors"
+          title="Click to rename"
+        >
+          {drawing.title || 'Untitled'}
+        </button>
+      )}
+      <span className="text-xs text-dark-text-tertiary">{formattedDate}</span>
+      <div className="flex gap-1.5 mt-1">
+        <button
+          onClick={() => onInsert(drawing.id)}
+          className="px-2.5 py-1 rounded text-xs font-medium bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+        >
+          Insert
+        </button>
+        <button
+          onClick={() => window.open(`/draw/${drawing.id}/edit`, '_blank')}
+          className="px-2.5 py-1 rounded text-xs font-medium bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80 transition-colors"
+        >
+          Edit
+        </button>
+        <button
+          onClick={() => onDelete(drawing.id, drawing.title)}
+          className="px-2.5 py-1 rounded text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── DrawBrowserModal ─────────────────────────────────────────────
+
+function DrawBrowserModal({ drawings, loading, onInsert, onRename, onDelete, onNew, onClose }: {
+  drawings: DrawItem[]
+  loading: boolean
+  onInsert: (id: string) => void
+  onRename: (id: string, title: string) => void
+  onDelete: (id: string, title: string) => void
+  onNew: () => void
+  onClose: () => void
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl mx-4 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-dark-border-subtle">
+          <h3 className="text-lg font-semibold text-dark-text-primary">Drawings</h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onNew}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+            >
+              + New Drawing
+            </button>
+            <button
+              onClick={onClose}
+              className="text-dark-text-tertiary hover:text-dark-text-primary transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto p-6">
+          {loading ? (
+            <p className="text-center text-sm text-dark-text-tertiary py-8">Loading drawings...</p>
+          ) : drawings.length === 0 ? (
+            <p className="text-center text-sm text-dark-text-tertiary py-8">No drawings yet. Create one above!</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {drawings.map(d => (
+                <DrawCard
+                  key={d.id}
+                  drawing={d}
+                  onInsert={onInsert}
+                  onRename={onRename}
+                  onDelete={onDelete}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
