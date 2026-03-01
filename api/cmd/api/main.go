@@ -127,7 +127,7 @@ func main() {
 	if err != nil {
 		logger.Fatal("could not initialize go-draw store", zap.Error(err))
 	}
-	drawHandler, err := godraw.New(godraw.WithBasePath("/draw"), godraw.WithStore(drawStore))
+	drawHandler, err := godraw.New(godraw.WithBasePath("/draw"), godraw.WithStore(drawStore), godraw.WithUploadDir("/data/draw-uploads"))
 	if err != nil {
 		logger.Fatal("could not initialize go-draw", zap.Error(err))
 	}
