@@ -6,7 +6,7 @@ toolchain go1.24.2
 
 require (
 	entgo.io/ent v0.14.5
-	github.com/anchoo2kewl/go-draw v0.0.0-20260228200306-4995b30e1408
+	github.com/anchoo2kewl/go-draw v0.0.0-20260301145830-6b816e1a16e8
 	github.com/anchoo2kewl/go-wiki v0.1.1-0.20260301010040-8cef834fdc16
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
