@@ -22,6 +22,7 @@ function insertAtCursor(
   content: string,
   setContent: (c: string) => void,
   syncToYjs: (c: string) => void,
+  isDirtyRef?: React.MutableRefObject<boolean>,
 ) {
   const start = textarea.selectionStart
   const end = textarea.selectionEnd
@@ -30,6 +31,7 @@ function insertAtCursor(
   const newContent = content.substring(0, start) + insert + content.substring(end)
   setContent(newContent)
   syncToYjs(newContent)
+  if (isDirtyRef) isDirtyRef.current = true
 
   const cursorPos = selected ? start + before.length + selected.length + after.length : start + before.length
   setTimeout(() => {
@@ -45,6 +47,7 @@ function insertLine(
   content: string,
   setContent: (c: string) => void,
   syncToYjs: (c: string) => void,
+  isDirtyRef?: React.MutableRefObject<boolean>,
 ) {
   const start = textarea.selectionStart
   // Find beginning of current line
@@ -53,6 +56,7 @@ function insertLine(
   const newContent = content.substring(0, lineStart) + insert + content.substring(lineStart)
   setContent(newContent)
   syncToYjs(newContent)
+  if (isDirtyRef) isDirtyRef.current = true
 
   setTimeout(() => {
     textarea.focus()
@@ -151,9 +155,11 @@ export default function WikiEditor({ page }: WikiEditorProps) {
   const [syncState, setSyncState] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [showImagePicker, setShowImagePicker] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true)
   const isDirtyRef = useRef(false)
   const contentRef = useRef('')
   const lastSavedContentRef = useRef('')
+  const isSavingRef = useRef(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fsPreviewHTML, setFsPreviewHTML] = useState('')
 
@@ -197,22 +203,34 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     return () => { cancelled = true }
   }, [page.id])
 
+  // ── Manual save function ─────────────────────────────────────
+  const saveNow = useCallback(async () => {
+    const current = contentRef.current
+    if (isSavingRef.current || current === lastSavedContentRef.current) return
+
+    isSavingRef.current = true
+    setSaveStatus('saving')
+    try {
+      await apiClient.updateWikiPageContent(page.id, current)
+      lastSavedContentRef.current = current
+      isDirtyRef.current = false
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 3000)
+    } catch {
+      setSaveStatus('error')
+    } finally {
+      isSavingRef.current = false
+    }
+  }, [page.id])
+
   // ── Autosave interval (10 seconds) ─────────────────────────
   useEffect(() => {
+    if (!autoSaveEnabled) return
+
     const saveToServer = async () => {
       const current = contentRef.current
       if (!isDirtyRef.current || current === lastSavedContentRef.current) return
-
-      setSaveStatus('saving')
-      try {
-        await apiClient.updateWikiPageContent(page.id, current)
-        lastSavedContentRef.current = current
-        isDirtyRef.current = false
-        setSaveStatus('saved')
-        setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 3000)
-      } catch {
-        setSaveStatus('error')
-      }
+      await saveNow()
     }
 
     const interval = setInterval(saveToServer, 10_000)
@@ -225,7 +243,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
         apiClient.updateWikiPageContent(page.id, current).catch(() => {})
       }
     }
-  }, [page.id])
+  }, [page.id, autoSaveEnabled, saveNow])
 
   // ── Save on beforeunload ───────────────────────────────────
   useEffect(() => {
@@ -321,14 +339,15 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     if (!textarea) return
 
     if (action.action === 'wrap') {
-      insertAtCursor(textarea, action.before!, action.after!, content, setContent, syncToYjs)
+      insertAtCursor(textarea, action.before!, action.after!, content, setContent, syncToYjs, isDirtyRef)
     } else if (action.action === 'line') {
-      insertLine(textarea, action.prefix!, content, setContent, syncToYjs)
+      insertLine(textarea, action.prefix!, content, setContent, syncToYjs, isDirtyRef)
     } else if (action.action === 'insert') {
       const start = textarea.selectionStart
       const newContent = content.substring(0, start) + action.text! + content.substring(start)
       setContent(newContent)
       syncToYjs(newContent)
+      isDirtyRef.current = true
       setTimeout(() => {
         textarea.focus()
         textarea.selectionStart = textarea.selectionEnd = start + action.text!.length
@@ -405,6 +424,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
       const newContent = content.substring(0, start) + '  ' + content.substring(end)
       setContent(newContent)
       syncToYjs(newContent)
+      isDirtyRef.current = true
       setTimeout(() => {
         textarea.selectionStart = textarea.selectionEnd = start + 2
       }, 0)
@@ -496,6 +516,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
       const newContent = content.substring(0, start) + markup + content.substring(end)
       setContent(newContent)
       syncToYjs(newContent)
+      isDirtyRef.current = true
       setTimeout(() => {
         textarea.selectionStart = textarea.selectionEnd = start + markup.length
         textarea.focus()
@@ -504,6 +525,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
       const newContent = content + (content.endsWith('\n') ? '' : '\n') + markup + '\n'
       setContent(newContent)
       syncToYjs(newContent)
+      isDirtyRef.current = true
     }
     setShowImagePicker(false)
   }
@@ -579,6 +601,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
         const newContent = content.substring(0, start) + markup + '\n' + content.substring(end)
         setContent(newContent)
         syncToYjs(newContent)
+        isDirtyRef.current = true
       }
     } catch (err) {
       console.error('Drop upload failed:', err)
@@ -672,6 +695,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     const newContent = content.replace(selectedEditImg.html, newMarkup)
     setContent(newContent)
     syncToYjs(newContent)
+    isDirtyRef.current = true
     setEditImgList(null)
     setSelectedEditImg(null)
   }, [selectedEditImg, editAlt, editCaption, content, syncToYjs])
@@ -707,6 +731,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
       const newContent = content.substring(0, start) + markup + content.substring(end)
       setContent(newContent)
       syncToYjs(newContent)
+      isDirtyRef.current = true
       setTimeout(() => {
         textarea.focus()
         textarea.selectionStart = textarea.selectionEnd = start + markup.length
@@ -715,6 +740,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
       const newContent = content + markup
       setContent(newContent)
       syncToYjs(newContent)
+      isDirtyRef.current = true
     }
     setShowDrawBrowser(false)
   }, [isFullscreen, content, syncToYjs])
@@ -839,9 +865,28 @@ export default function WikiEditor({ page }: WikiEditorProps) {
                   {saveStatus === 'saving' ? 'Saving...' :
                    saveStatus === 'saved' ? 'Saved' :
                    saveStatus === 'error' ? 'Save failed' :
-                   'Autosave enabled'}
+                   autoSaveEnabled ? 'Autosave on' : 'Autosave off'}
                 </span>
               </div>
+              <button
+                onClick={() => setAutoSaveEnabled(prev => !prev)}
+                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                  autoSaveEnabled
+                    ? 'bg-green-500/15 text-green-400 hover:bg-green-500/25'
+                    : 'bg-dark-bg-tertiary text-dark-text-tertiary hover:bg-dark-bg-tertiary/80'
+                }`}
+                title={autoSaveEnabled ? 'Disable autosave' : 'Enable autosave'}
+              >
+                {autoSaveEnabled ? 'Auto' : 'Manual'}
+              </button>
+              <button
+                onClick={saveNow}
+                disabled={saveStatus === 'saving'}
+                className="px-2.5 py-1 rounded text-xs font-medium transition-colors bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-50"
+                title="Save now"
+              >
+                Save
+              </button>
               <button
                 onClick={() => setIsFullscreen(false)}
                 className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-dark-bg-tertiary text-dark-text-secondary hover:bg-red-500/20 hover:text-red-400"
@@ -958,9 +1003,28 @@ export default function WikiEditor({ page }: WikiEditorProps) {
                   {saveStatus === 'saving' ? 'Saving...' :
                    saveStatus === 'saved' ? 'Saved' :
                    saveStatus === 'error' ? 'Save failed' :
-                   'Autosave enabled'}
+                   autoSaveEnabled ? 'Autosave on' : 'Autosave off'}
                 </span>
               </div>
+              <button
+                onClick={() => setAutoSaveEnabled(prev => !prev)}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                  autoSaveEnabled
+                    ? 'bg-green-500/15 text-green-400 hover:bg-green-500/25'
+                    : 'bg-dark-bg-tertiary text-dark-text-tertiary hover:bg-dark-bg-tertiary/80'
+                }`}
+                title={autoSaveEnabled ? 'Disable autosave' : 'Enable autosave'}
+              >
+                {autoSaveEnabled ? 'Auto' : 'Manual'}
+              </button>
+              <button
+                onClick={saveNow}
+                disabled={saveStatus === 'saving'}
+                className="px-2.5 py-0.5 rounded text-xs font-medium transition-colors bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-50"
+                title="Save now"
+              >
+                Save
+              </button>
             </div>
           </div>
 
@@ -1121,7 +1185,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
               {saveStatus === 'saving' ? 'Saving...' :
                saveStatus === 'saved' ? 'Saved' :
                saveStatus === 'error' ? 'Save failed' :
-               'Autosave enabled'}
+               autoSaveEnabled ? 'Autosave on' : 'Autosave off'}
             </span>
             <span>&bull;</span>
             <span>Tab to indent</span>
