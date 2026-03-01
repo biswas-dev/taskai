@@ -682,6 +682,17 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     }
   }, [loadDrawings])
 
+  const handleDrawDeleteUnused = useCallback(async (unusedIds: string[]) => {
+    if (!confirm(`Delete ${unusedIds.length} unused drawing(s)? This cannot be undone.`)) return
+    try {
+      await Promise.all(unusedIds.map(id => fetch(`/draw/api/${id}/delete`, { method: 'POST' })))
+      loadDrawings()
+    } catch {
+      alert('Some deletions failed')
+      loadDrawings()
+    }
+  }, [loadDrawings])
+
   // ── Toolbar JSX ──────────────────────────────────────────────
 
   const Toolbar = ({ compact }: { compact?: boolean }) => (
@@ -831,9 +842,11 @@ export default function WikiEditor({ page }: WikiEditorProps) {
           <DrawBrowserModal
             drawings={drawList}
             loading={drawLoading}
+            editorContent={content}
             onInsert={handleDrawInsert}
             onRename={handleDrawRename}
             onDelete={handleDrawDelete}
+            onDeleteUnused={handleDrawDeleteUnused}
             onNew={handleDrawNew}
             onClose={() => setShowDrawBrowser(false)}
           />
@@ -1145,9 +1158,11 @@ export default function WikiEditor({ page }: WikiEditorProps) {
         <DrawBrowserModal
           drawings={drawList}
           loading={drawLoading}
+          editorContent={content}
           onInsert={handleDrawInsert}
           onRename={handleDrawRename}
           onDelete={handleDrawDelete}
+          onDeleteUnused={handleDrawDeleteUnused}
           onNew={handleDrawNew}
           onClose={() => setShowDrawBrowser(false)}
         />
@@ -1158,8 +1173,9 @@ export default function WikiEditor({ page }: WikiEditorProps) {
 
 // ── DrawCard sub-component ───────────────────────────────────────
 
-function DrawCard({ drawing, onInsert, onRename, onDelete }: {
+function DrawCard({ drawing, isUsed, onInsert, onRename, onDelete }: {
   drawing: DrawItem
+  isUsed: boolean
   onInsert: (id: string) => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string, title: string) => void
@@ -1189,28 +1205,33 @@ function DrawCard({ drawing, onInsert, onRename, onDelete }: {
   })()
 
   return (
-    <div className="border border-dark-border-subtle rounded-xl p-4 flex flex-col gap-1.5 hover:border-primary-500/50 transition-colors">
-      {editing ? (
-        <input
-          ref={inputRef}
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          onBlur={saveTitle}
-          onKeyDown={e => {
-            if (e.key === 'Enter') saveTitle()
-            if (e.key === 'Escape') { setTitle(drawing.title || 'Untitled'); setEditing(false) }
-          }}
-          className="text-sm font-semibold text-dark-text-primary bg-dark-bg-tertiary border border-primary-500 rounded px-2 py-1 focus:outline-none"
-        />
-      ) : (
-        <button
-          onClick={() => setEditing(true)}
-          className="text-sm font-semibold text-dark-text-primary text-left truncate hover:text-primary-400 transition-colors"
-          title="Click to rename"
-        >
-          {drawing.title || 'Untitled'}
-        </button>
-      )}
+    <div className={`border rounded-xl p-4 flex flex-col gap-1.5 hover:border-primary-500/50 transition-colors ${isUsed ? 'border-green-500/30' : 'border-dark-border-subtle'}`}>
+      <div className="flex items-center gap-1.5">
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onBlur={saveTitle}
+            onKeyDown={e => {
+              if (e.key === 'Enter') saveTitle()
+              if (e.key === 'Escape') { setTitle(drawing.title || 'Untitled'); setEditing(false) }
+            }}
+            className="text-sm font-semibold text-dark-text-primary bg-dark-bg-tertiary border border-primary-500 rounded px-2 py-1 focus:outline-none flex-1 min-w-0"
+          />
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            className="text-sm font-semibold text-dark-text-primary text-left truncate hover:text-primary-400 transition-colors flex-1 min-w-0"
+            title="Click to rename"
+          >
+            {drawing.title || 'Untitled'}
+          </button>
+        )}
+        {isUsed && (
+          <span className="text-[10px] font-semibold text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded flex-shrink-0">in use</span>
+        )}
+      </div>
       <span className="text-xs text-dark-text-tertiary">{formattedDate}</span>
       <div className="flex gap-1.5 mt-1">
         <button
@@ -1238,15 +1259,23 @@ function DrawCard({ drawing, onInsert, onRename, onDelete }: {
 
 // ── DrawBrowserModal ─────────────────────────────────────────────
 
-function DrawBrowserModal({ drawings, loading, onInsert, onRename, onDelete, onNew, onClose }: {
+function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename, onDelete, onDeleteUnused, onNew, onClose }: {
   drawings: DrawItem[]
   loading: boolean
+  editorContent: string
   onInsert: (id: string) => void
   onRename: (id: string, title: string) => void
   onDelete: (id: string, title: string) => void
+  onDeleteUnused: (ids: string[]) => void
   onNew: () => void
   onClose: () => void
 }) {
+  const usedIds = new Set<string>()
+  const re = /\[draw:([a-zA-Z0-9_-]+)/g
+  let m
+  while ((m = re.exec(editorContent)) !== null) usedIds.add(m[1])
+  const unusedDrawings = drawings.filter(d => !usedIds.has(d.id))
+
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
@@ -1284,17 +1313,31 @@ function DrawBrowserModal({ drawings, loading, onInsert, onRename, onDelete, onN
           ) : drawings.length === 0 ? (
             <p className="text-center text-sm text-dark-text-tertiary py-8">No drawings yet. Create one above!</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {drawings.map(d => (
-                <DrawCard
-                  key={d.id}
-                  drawing={d}
-                  onInsert={onInsert}
-                  onRename={onRename}
-                  onDelete={onDelete}
-                />
-              ))}
-            </div>
+            <>
+              {unusedDrawings.length > 0 && (
+                <div className="flex items-center justify-between gap-2 mb-3 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <span className="text-xs text-red-300">{unusedDrawings.length} unused drawing{unusedDrawings.length > 1 ? 's' : ''}</span>
+                  <button
+                    onClick={() => onDeleteUnused(unusedDrawings.map(d => d.id))}
+                    className="px-2.5 py-1 rounded text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+                  >
+                    Delete all unused
+                  </button>
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {drawings.map(d => (
+                  <DrawCard
+                    key={d.id}
+                    drawing={d}
+                    isUsed={usedIds.has(d.id)}
+                    onInsert={onInsert}
+                    onRename={onRename}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
