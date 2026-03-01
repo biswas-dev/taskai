@@ -75,6 +75,20 @@ func (_u *WikiPageUpdate) SetNillableSlug(v *string) *WikiPageUpdate {
 	return _u
 }
 
+// SetContent sets the "content" field.
+func (_u *WikiPageUpdate) SetContent(v string) *WikiPageUpdate {
+	_u.mutation.SetContent(v)
+	return _u
+}
+
+// SetNillableContent sets the "content" field if the given value is not nil.
+func (_u *WikiPageUpdate) SetNillableContent(v *string) *WikiPageUpdate {
+	if v != nil {
+		_u.SetContent(*v)
+	}
+	return _u
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_u *WikiPageUpdate) SetCreatedBy(v int64) *WikiPageUpdate {
 	_u.mutation.SetCreatedBy(v)
@@ -310,6 +324,9 @@ func (_u *WikiPageUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Slug(); ok {
 		_spec.SetField(wikipage.FieldSlug, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Content(); ok {
+		_spec.SetField(wikipage.FieldContent, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(wikipage.FieldUpdatedAt, field.TypeTime, value)
@@ -565,6 +582,20 @@ func (_u *WikiPageUpdateOne) SetSlug(v string) *WikiPageUpdateOne {
 func (_u *WikiPageUpdateOne) SetNillableSlug(v *string) *WikiPageUpdateOne {
 	if v != nil {
 		_u.SetSlug(*v)
+	}
+	return _u
+}
+
+// SetContent sets the "content" field.
+func (_u *WikiPageUpdateOne) SetContent(v string) *WikiPageUpdateOne {
+	_u.mutation.SetContent(v)
+	return _u
+}
+
+// SetNillableContent sets the "content" field if the given value is not nil.
+func (_u *WikiPageUpdateOne) SetNillableContent(v *string) *WikiPageUpdateOne {
+	if v != nil {
+		_u.SetContent(*v)
 	}
 	return _u
 }
@@ -834,6 +865,9 @@ func (_u *WikiPageUpdateOne) sqlSave(ctx context.Context) (_node *WikiPage, err 
 	}
 	if value, ok := _u.mutation.Slug(); ok {
 		_spec.SetField(wikipage.FieldSlug, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Content(); ok {
+		_spec.SetField(wikipage.FieldContent, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(wikipage.FieldUpdatedAt, field.TypeTime, value)

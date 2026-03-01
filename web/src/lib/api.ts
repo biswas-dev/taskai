@@ -953,6 +953,17 @@ class ApiClient {
     })
   }
 
+  async getWikiPageContent(pageId: number): Promise<{ page_id: number; content: string; updated_at: string }> {
+    return this.request<{ page_id: number; content: string; updated_at: string }>(`/api/wiki/pages/${pageId}/content`)
+  }
+
+  async updateWikiPageContent(pageId: number, content: string): Promise<{ page_id: number; content: string; updated_at: string }> {
+    return this.request<{ page_id: number; content: string; updated_at: string }>(`/api/wiki/pages/${pageId}/content`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    })
+  }
+
   async searchWiki(query: string, projectId?: number, limit?: number): Promise<{ results: WikiSearchResult[]; total: number }> {
     return this.request('/api/wiki/search', {
       method: 'POST',

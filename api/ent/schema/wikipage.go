@@ -22,6 +22,7 @@ func (WikiPage) Fields() []ent.Field {
 		field.String("title").NotEmpty().MaxLen(500),
 		field.String("slug").NotEmpty().MaxLen(500),
 		field.Int64("created_by"),
+		field.Text("content").Optional().Default(""),
 		field.Time("created_at").Default(time.Now).Immutable(),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}

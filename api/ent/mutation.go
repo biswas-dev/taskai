@@ -19781,6 +19781,7 @@ type WikiPageMutation struct {
 	id                 *int64
 	title              *string
 	slug               *string
+	content            *string
 	created_at         *time.Time
 	updated_at         *time.Time
 	clearedFields      map[string]struct{}
@@ -20012,6 +20013,42 @@ func (m *WikiPageMutation) OldSlug(ctx context.Context) (v string, err error) {
 // ResetSlug resets all changes to the "slug" field.
 func (m *WikiPageMutation) ResetSlug() {
 	m.slug = nil
+}
+
+// SetContent sets the "content" field.
+func (m *WikiPageMutation) SetContent(s string) {
+	m.content = &s
+}
+
+// Content returns the value of the "content" field in the mutation.
+func (m *WikiPageMutation) Content() (r string, exists bool) {
+	v := m.content
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldContent returns the old "content" field's value of the WikiPage entity.
+// If the WikiPage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WikiPageMutation) OldContent(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldContent is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldContent requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldContent: %w", err)
+	}
+	return oldValue.Content, nil
+}
+
+// ResetContent resets all changes to the "content" field.
+func (m *WikiPageMutation) ResetContent() {
+	m.content = nil
 }
 
 // SetCreatedBy sets the "created_by" field.
@@ -20385,7 +20422,7 @@ func (m *WikiPageMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WikiPageMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 7)
 	if m.project != nil {
 		fields = append(fields, wikipage.FieldProjectID)
 	}
@@ -20397,6 +20434,9 @@ func (m *WikiPageMutation) Fields() []string {
 	}
 	if m.creator != nil {
 		fields = append(fields, wikipage.FieldCreatedBy)
+	}
+	if m.content != nil {
+		fields = append(fields, wikipage.FieldContent)
 	}
 	if m.created_at != nil {
 		fields = append(fields, wikipage.FieldCreatedAt)
@@ -20420,6 +20460,8 @@ func (m *WikiPageMutation) Field(name string) (ent.Value, bool) {
 		return m.Slug()
 	case wikipage.FieldCreatedBy:
 		return m.CreatedBy()
+	case wikipage.FieldContent:
+		return m.Content()
 	case wikipage.FieldCreatedAt:
 		return m.CreatedAt()
 	case wikipage.FieldUpdatedAt:
@@ -20441,6 +20483,8 @@ func (m *WikiPageMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldSlug(ctx)
 	case wikipage.FieldCreatedBy:
 		return m.OldCreatedBy(ctx)
+	case wikipage.FieldContent:
+		return m.OldContent(ctx)
 	case wikipage.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case wikipage.FieldUpdatedAt:
@@ -20481,6 +20525,13 @@ func (m *WikiPageMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCreatedBy(v)
+		return nil
+	case wikipage.FieldContent:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetContent(v)
 		return nil
 	case wikipage.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -20559,6 +20610,9 @@ func (m *WikiPageMutation) ResetField(name string) error {
 		return nil
 	case wikipage.FieldCreatedBy:
 		m.ResetCreatedBy()
+		return nil
+	case wikipage.FieldContent:
+		m.ResetContent()
 		return nil
 	case wikipage.FieldCreatedAt:
 		m.ResetCreatedAt()

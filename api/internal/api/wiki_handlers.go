@@ -348,6 +348,126 @@ func (s *Server) HandleUpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
+// UpdateWikiPageContentRequest represents a request to update wiki page content
+type UpdateWikiPageContentRequest struct {
+	Content string `json:"content"`
+}
+
+// WikiPageContentResponse represents wiki page content in API responses
+type WikiPageContentResponse struct {
+	PageID    int64     `json:"page_id"`
+	Content   string    `json:"content"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// HandleGetWikiPageContent returns the content of a wiki page
+func (s *Server) HandleGetWikiPageContent(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	userID := r.Context().Value(UserIDKey).(int64)
+	pageID, err := strconv.ParseInt(chi.URLParam(r, "pageId"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid page ID", "invalid_input")
+		return
+	}
+
+	// Fetch the wiki page
+	page, err := s.db.Client.WikiPage.Query().
+		Where(wikipage.ID(pageID)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			respondError(w, http.StatusNotFound, "wiki page not found", "not_found")
+			return
+		}
+		s.logger.Error("Failed to fetch wiki page content",
+			zap.Int64("page_id", pageID),
+			zap.Error(err),
+		)
+		respondError(w, http.StatusInternalServerError, "failed to fetch wiki page", "internal_error")
+		return
+	}
+
+	// Verify user has access to the project
+	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
+		return
+	}
+	if !hasAccess {
+		respondError(w, http.StatusForbidden, "access denied", "forbidden")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, WikiPageContentResponse{
+		PageID:    page.ID,
+		Content:   page.Content,
+		UpdatedAt: page.UpdatedAt,
+	})
+}
+
+// HandleUpdateWikiPageContent updates the content of a wiki page
+func (s *Server) HandleUpdateWikiPageContent(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	userID := r.Context().Value(UserIDKey).(int64)
+	pageID, err := strconv.ParseInt(chi.URLParam(r, "pageId"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid page ID", "invalid_input")
+		return
+	}
+
+	// Fetch the wiki page
+	page, err := s.db.Client.WikiPage.Query().
+		Where(wikipage.ID(pageID)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			respondError(w, http.StatusNotFound, "wiki page not found", "not_found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "failed to fetch wiki page", "internal_error")
+		return
+	}
+
+	// Verify user has access to the project
+	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
+		return
+	}
+	if !hasAccess {
+		respondError(w, http.StatusForbidden, "access denied", "forbidden")
+		return
+	}
+
+	var req UpdateWikiPageContentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_input")
+		return
+	}
+
+	updatedPage, err := s.db.Client.WikiPage.UpdateOneID(pageID).
+		SetContent(req.Content).
+		Save(ctx)
+	if err != nil {
+		s.logger.Error("Failed to update wiki page content",
+			zap.Int64("page_id", pageID),
+			zap.Error(err),
+		)
+		respondError(w, http.StatusInternalServerError, "failed to update wiki page content", "internal_error")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, WikiPageContentResponse{
+		PageID:    updatedPage.ID,
+		Content:   updatedPage.Content,
+		UpdatedAt: updatedPage.UpdatedAt,
+	})
+}
+
 // HandleDeleteWikiPage deletes a wiki page
 func (s *Server) HandleDeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

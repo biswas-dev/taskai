@@ -24,6 +24,8 @@ const (
 	FieldCreatedBy = "created_by"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
+	// FieldContent holds the string denoting the content field in the database.
+	FieldContent = "content"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
 	// EdgeProject holds the string denoting the project edge name in mutations.
@@ -82,6 +84,7 @@ var Columns = []string{
 	FieldTitle,
 	FieldSlug,
 	FieldCreatedBy,
+	FieldContent,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -101,6 +104,8 @@ var (
 	TitleValidator func(string) error
 	// SlugValidator is a validator for the "slug" field. It is called by the builders before save.
 	SlugValidator func(string) error
+	// DefaultContent holds the default value on creation for the "content" field.
+	DefaultContent string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.

@@ -146,11 +146,14 @@ async function fetchPreview(markdown: string, signal?: AbortSignal): Promise<str
 
 export default function WikiEditor({ page }: WikiEditorProps) {
   const [content, setContent] = useState('')
-  const [isPreview, setIsPreview] = useState(false)
+  const [isPreview, setIsPreview] = useState(true)
   const [previewHTML, setPreviewHTML] = useState('')
   const [syncState, setSyncState] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
-  const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [showImagePicker, setShowImagePicker] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const isDirtyRef = useRef(false)
+  const contentRef = useRef('')
+  const lastSavedContentRef = useRef('')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fsPreviewHTML, setFsPreviewHTML] = useState('')
 
@@ -175,6 +178,75 @@ export default function WikiEditor({ page }: WikiEditorProps) {
   const [showDrawBrowser, setShowDrawBrowser] = useState(false)
   const [drawList, setDrawList] = useState<DrawItem[]>([])
   const [drawLoading, setDrawLoading] = useState(false)
+
+  // ── Keep contentRef in sync ──────────────────────────────────
+  useEffect(() => { contentRef.current = content }, [content])
+
+  // ── Load content from REST on mount ────────────────────────
+  useEffect(() => {
+    let cancelled = false
+    apiClient.getWikiPageContent(page.id).then(res => {
+      if (cancelled) return
+      if (res.content) {
+        setContent(res.content)
+        lastSavedContentRef.current = res.content
+      }
+    }).catch(() => {
+      // ignore — will fall back to Yjs or empty
+    })
+    return () => { cancelled = true }
+  }, [page.id])
+
+  // ── Autosave interval (10 seconds) ─────────────────────────
+  useEffect(() => {
+    const saveToServer = async () => {
+      const current = contentRef.current
+      if (!isDirtyRef.current || current === lastSavedContentRef.current) return
+
+      setSaveStatus('saving')
+      try {
+        await apiClient.updateWikiPageContent(page.id, current)
+        lastSavedContentRef.current = current
+        isDirtyRef.current = false
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 3000)
+      } catch {
+        setSaveStatus('error')
+      }
+    }
+
+    const interval = setInterval(saveToServer, 10_000)
+
+    // Save on unmount
+    return () => {
+      clearInterval(interval)
+      const current = contentRef.current
+      if (isDirtyRef.current && current !== lastSavedContentRef.current) {
+        apiClient.updateWikiPageContent(page.id, current).catch(() => {})
+      }
+    }
+  }, [page.id])
+
+  // ── Save on beforeunload ───────────────────────────────────
+  useEffect(() => {
+    const handler = () => {
+      const current = contentRef.current
+      if (isDirtyRef.current && current !== lastSavedContentRef.current) {
+        const blob = new Blob([JSON.stringify({ content: current })], { type: 'application/json' })
+        const token = localStorage.getItem('auth_token')
+        const API_BASE_FOR_SAVE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8080')
+        navigator.sendBeacon(
+          `${API_BASE_FOR_SAVE}/api/wiki/pages/${page.id}/content`,
+          blob
+        )
+        // Note: sendBeacon doesn't support custom headers (no auth), so this is best-effort.
+        // The interval save is the primary mechanism.
+        void token // suppress unused warning
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [page.id])
 
   // ── Yjs setup ────────────────────────────────────────────────
 
@@ -203,7 +275,6 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     provider.on('status', ({ status }: { status: string }) => {
       if (status === 'connected') {
         setSyncState('connected')
-        setLastSaved(new Date())
       } else if (status === 'disconnected') {
         setSyncState('disconnected')
       } else {
@@ -240,6 +311,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
     const newContent = e.target.value
     setContent(newContent)
     syncToYjs(newContent)
+    isDirtyRef.current = true
   }
 
   // ── Toolbar action dispatcher ────────────────────────────────
@@ -524,13 +596,6 @@ export default function WikiEditor({ page }: WikiEditorProps) {
       case 'disconnected': return 'bg-red-500'
     }
   }
-  const getSyncStatusText = () => {
-    switch (syncState) {
-      case 'connected': return 'Connected'
-      case 'connecting': return 'Connecting...'
-      case 'disconnected': return 'Disconnected'
-    }
-  }
 
   // ── Edit existing image ─────────────────────────────────────
 
@@ -764,8 +829,18 @@ export default function WikiEditor({ page }: WikiEditorProps) {
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${getSyncStatusColor()}`} />
-                <span className="text-xs text-dark-text-tertiary">{getSyncStatusText()}</span>
+                <div className={`w-2 h-2 rounded-full ${
+                  saveStatus === 'saving' ? 'bg-yellow-500' :
+                  saveStatus === 'saved' ? 'bg-green-500' :
+                  saveStatus === 'error' ? 'bg-red-500' :
+                  getSyncStatusColor()
+                }`} />
+                <span className="text-xs text-dark-text-tertiary">
+                  {saveStatus === 'saving' ? 'Saving...' :
+                   saveStatus === 'saved' ? 'Saved' :
+                   saveStatus === 'error' ? 'Save failed' :
+                   'Autosave enabled'}
+                </span>
               </div>
               <button
                 onClick={() => setIsFullscreen(false)}
@@ -873,17 +948,19 @@ export default function WikiEditor({ page }: WikiEditorProps) {
             <h1 className="text-2xl font-semibold text-dark-text-primary">{page.title}</h1>
             <div className="flex items-center gap-3 mt-2">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${getSyncStatusColor()}`} />
-                <span className="text-sm text-dark-text-tertiary">{getSyncStatusText()}</span>
+                <div className={`w-2 h-2 rounded-full ${
+                  saveStatus === 'saving' ? 'bg-yellow-500' :
+                  saveStatus === 'saved' ? 'bg-green-500' :
+                  saveStatus === 'error' ? 'bg-red-500' :
+                  getSyncStatusColor()
+                }`} />
+                <span className="text-sm text-dark-text-tertiary">
+                  {saveStatus === 'saving' ? 'Saving...' :
+                   saveStatus === 'saved' ? 'Saved' :
+                   saveStatus === 'error' ? 'Save failed' :
+                   'Autosave enabled'}
+                </span>
               </div>
-              {lastSaved && (
-                <>
-                  <span className="text-dark-text-tertiary">&bull;</span>
-                  <span className="text-sm text-dark-text-tertiary">
-                    Last saved {lastSaved.toLocaleTimeString()}
-                  </span>
-                </>
-              )}
             </div>
           </div>
 
@@ -1035,7 +1112,17 @@ export default function WikiEditor({ page }: WikiEditorProps) {
           <div className="flex items-center gap-4 text-xs text-dark-text-tertiary">
             <span>Markdown supported</span>
             <span>&bull;</span>
-            <span>Changes sync automatically</span>
+            <span className={
+              saveStatus === 'saving' ? 'text-yellow-400' :
+              saveStatus === 'saved' ? 'text-green-400' :
+              saveStatus === 'error' ? 'text-red-400' :
+              ''
+            }>
+              {saveStatus === 'saving' ? 'Saving...' :
+               saveStatus === 'saved' ? 'Saved' :
+               saveStatus === 'error' ? 'Save failed' :
+               'Autosave enabled'}
+            </span>
             <span>&bull;</span>
             <span>Tab to indent</span>
             <span>&bull;</span>

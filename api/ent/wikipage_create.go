@@ -43,6 +43,20 @@ func (_c *WikiPageCreate) SetSlug(v string) *WikiPageCreate {
 	return _c
 }
 
+// SetContent sets the "content" field.
+func (_c *WikiPageCreate) SetContent(v string) *WikiPageCreate {
+	_c.mutation.SetContent(v)
+	return _c
+}
+
+// SetNillableContent sets the "content" field if the given value is not nil.
+func (_c *WikiPageCreate) SetNillableContent(v *string) *WikiPageCreate {
+	if v != nil {
+		_c.SetContent(*v)
+	}
+	return _c
+}
+
 // SetCreatedBy sets the "created_by" field.
 func (_c *WikiPageCreate) SetCreatedBy(v int64) *WikiPageCreate {
 	_c.mutation.SetCreatedBy(v)
@@ -179,6 +193,10 @@ func (_c *WikiPageCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *WikiPageCreate) defaults() {
+	if _, ok := _c.mutation.Content(); !ok {
+		v := wikipage.DefaultContent
+		_c.mutation.SetContent(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := wikipage.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -264,6 +282,10 @@ func (_c *WikiPageCreate) createSpec() (*WikiPage, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Slug(); ok {
 		_spec.SetField(wikipage.FieldSlug, field.TypeString, value)
 		_node.Slug = value
+	}
+	if value, ok := _c.mutation.Content(); ok {
+		_spec.SetField(wikipage.FieldContent, field.TypeString, value)
+		_node.Content = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(wikipage.FieldCreatedAt, field.TypeTime, value)

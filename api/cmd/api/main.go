@@ -201,6 +201,8 @@ func main() {
 			r.Get("/wiki/pages/{pageId}", server.HandleGetWikiPage)
 			r.Patch("/wiki/pages/{pageId}", server.HandleUpdateWikiPage)
 			r.Delete("/wiki/pages/{pageId}", server.HandleDeleteWikiPage)
+			r.Get("/wiki/pages/{pageId}/content", server.HandleGetWikiPageContent)
+			r.Put("/wiki/pages/{pageId}/content", server.HandleUpdateWikiPageContent)
 			r.Post("/wiki/preview", server.HandleWikiPreview)
 
 			// Wiki WebSocket route for real-time collaboration

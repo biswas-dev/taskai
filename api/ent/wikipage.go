@@ -27,6 +27,8 @@ type WikiPage struct {
 	Slug string `json:"slug,omitempty"`
 	// CreatedBy holds the value of the "created_by" field.
 	CreatedBy int64 `json:"created_by,omitempty"`
+	// Content holds the value of the "content" field.
+	Content string `json:"content,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -110,7 +112,7 @@ func (*WikiPage) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case wikipage.FieldID, wikipage.FieldProjectID, wikipage.FieldCreatedBy:
 			values[i] = new(sql.NullInt64)
-		case wikipage.FieldTitle, wikipage.FieldSlug:
+		case wikipage.FieldTitle, wikipage.FieldSlug, wikipage.FieldContent:
 			values[i] = new(sql.NullString)
 		case wikipage.FieldCreatedAt, wikipage.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -158,6 +160,12 @@ func (_m *WikiPage) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field created_by", values[i])
 			} else if value.Valid {
 				_m.CreatedBy = value.Int64
+			}
+		case wikipage.FieldContent:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field content", values[i])
+			} else if value.Valid {
+				_m.Content = value.String
 			}
 		case wikipage.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -243,6 +251,9 @@ func (_m *WikiPage) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("created_by=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CreatedBy))
+	builder.WriteString(", ")
+	builder.WriteString("content=")
+	builder.WriteString(_m.Content)
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))
