@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"taskai/ent"
+	"taskai/ent/projectmember"
 	"taskai/ent/wikiblock"
 	"taskai/ent/wikipage"
 )
@@ -288,23 +289,19 @@ func (s *Server) HandleAutocompletePages(w http.ResponseWriter, r *http.Request)
 }
 
 // getUserAccessibleProjects returns the list of project IDs the user has access to
+// via a single query on the project_members table (avoids N+1 queries).
 func (s *Server) getUserAccessibleProjects(ctx context.Context, userID int64) ([]int64, error) {
-	// Get all projects
-	projects, err := s.db.Client.Project.Query().All(ctx)
+	members, err := s.db.Client.ProjectMember.Query().
+		Where(projectmember.UserID(userID)).
+		Select(projectmember.FieldProjectID).
+		All(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	projectIDs := make([]int64, 0, len(projects))
-	for _, project := range projects {
-		// Check if user has access to this project
-		hasAccess, err := s.checkProjectAccess(ctx, userID, project.ID)
-		if err != nil {
-			continue
-		}
-		if hasAccess {
-			projectIDs = append(projectIDs, project.ID)
-		}
+	projectIDs := make([]int64, 0, len(members))
+	for _, m := range members {
+		projectIDs = append(projectIDs, m.ProjectID)
 	}
 
 	return projectIDs, nil

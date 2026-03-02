@@ -1,4 +1,4 @@
-.PHONY: run test lint fmt migrate db-reset clean help openapi-check
+.PHONY: run test lint fmt migrate db-reset clean help openapi-check bench bench-cpu bench-mem bench-save bench-compare
 
 # Variables
 DB_PATH ?= ./data/taskai.db
@@ -83,6 +83,37 @@ install-tools: ## Install development tools
 	go install github.com/air-verse/air@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 	@echo "Done! Tools installed to $(shell go env GOPATH)/bin"
+
+bench: ## Run all benchmarks with memory stats
+	@echo "Running benchmarks..."
+	go test -bench=. -benchmem -count=1 -run=^$$ ./...
+
+bench-cpu: ## Run benchmarks with CPU profile
+	@echo "Running benchmarks with CPU profile..."
+	go test -bench=. -benchmem -count=3 -run=^$$ -cpuprofile=cpu.prof ./internal/api/
+	go tool pprof -http=:6060 cpu.prof
+
+bench-mem: ## Run benchmarks with memory profile
+	@echo "Running benchmarks with memory profile..."
+	go test -bench=. -benchmem -count=3 -run=^$$ -memprofile=mem.prof ./internal/api/
+	go tool pprof -http=:6060 mem.prof
+
+bench-save: ## Save benchmark baseline to bench-baseline.txt
+	@echo "Saving benchmark baseline..."
+	go test -bench=. -benchmem -count=5 -run=^$$ ./... | tee bench-baseline.txt
+	@echo "Baseline saved to bench-baseline.txt"
+
+bench-compare: ## Compare current benchmarks vs saved baseline (requires benchstat)
+	@if ! command -v benchstat > /dev/null; then \
+		echo "benchstat not installed. Install with: go install golang.org/x/perf/cmd/benchstat@latest"; \
+		exit 1; \
+	fi
+	@if [ ! -f bench-baseline.txt ]; then \
+		echo "No baseline found. Run 'make bench-save' first."; \
+		exit 1; \
+	fi
+	go test -bench=. -benchmem -count=5 -run=^$$ ./... > bench-current.txt
+	benchstat bench-baseline.txt bench-current.txt
 
 openapi-check: ## Verify OpenAPI spec covers all routes
 	go test -run TestOpenAPIRoutesCoverage ./internal/api/

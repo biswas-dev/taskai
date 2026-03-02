@@ -26,8 +26,9 @@ type TestServer struct {
 	DB *db.DB
 }
 
-// NewTestServer creates a new test server with in-memory SQLite database
-func NewTestServer(t *testing.T) *TestServer {
+// NewTestServer creates a new test server with in-memory SQLite database.
+// Accepts testing.TB so it can be used from both tests and benchmarks.
+func NewTestServer(t testing.TB) *TestServer {
 	t.Helper()
 
 	// Use fast bcrypt for tests (MinCost=4 vs production Cost=12)
@@ -69,7 +70,7 @@ func (ts *TestServer) Close() {
 }
 
 // CreateTestUser creates a user for testing and returns the user ID
-func (ts *TestServer) CreateTestUser(t *testing.T, email, password string) int64 {
+func (ts *TestServer) CreateTestUser(t testing.TB, email, password string) int64 {
 	t.Helper()
 
 	hashedPassword, err := auth.HashPassword(password)
@@ -91,7 +92,7 @@ func (ts *TestServer) CreateTestUser(t *testing.T, email, password string) int64
 }
 
 // CreateTestInvite creates a valid invite code for testing and returns the code
-func (ts *TestServer) CreateTestInvite(t *testing.T, inviterID int64) string {
+func (ts *TestServer) CreateTestInvite(t testing.TB, inviterID int64) string {
 	t.Helper()
 
 	code := "test-invite-" + fmt.Sprintf("%d", time.Now().UnixNano())
@@ -111,7 +112,7 @@ func (ts *TestServer) CreateTestInvite(t *testing.T, inviterID int64) string {
 }
 
 // GenerateTestToken generates a JWT token for testing
-func (ts *TestServer) GenerateTestToken(t *testing.T, userID int64, email string) string {
+func (ts *TestServer) GenerateTestToken(t testing.TB, userID int64, email string) string {
 	t.Helper()
 
 	token, err := auth.GenerateToken(userID, email, ts.config.JWTSecret, ts.config.JWTExpiry())
@@ -124,7 +125,7 @@ func (ts *TestServer) GenerateTestToken(t *testing.T, userID int64, email string
 
 // MakeRequest is a helper to make HTTP requests in tests
 // Returns both the ResponseRecorder and the Request for testing
-func MakeRequest(t *testing.T, method, path string, body interface{}, headers map[string]string) (*httptest.ResponseRecorder, *http.Request) {
+func MakeRequest(t testing.TB, method, path string, body interface{}, headers map[string]string) (*httptest.ResponseRecorder, *http.Request) {
 	t.Helper()
 
 	var reqBody []byte
@@ -147,7 +148,7 @@ func MakeRequest(t *testing.T, method, path string, body interface{}, headers ma
 }
 
 // DecodeJSON decodes a JSON response into the provided interface
-func DecodeJSON(t *testing.T, rec *httptest.ResponseRecorder, v interface{}) {
+func DecodeJSON(t testing.TB, rec *httptest.ResponseRecorder, v interface{}) {
 	t.Helper()
 
 	if err := json.NewDecoder(rec.Body).Decode(v); err != nil {
@@ -156,7 +157,7 @@ func DecodeJSON(t *testing.T, rec *httptest.ResponseRecorder, v interface{}) {
 }
 
 // AssertStatusCode checks if the response status code matches expected
-func AssertStatusCode(t *testing.T, got, want int) {
+func AssertStatusCode(t testing.TB, got, want int) {
 	t.Helper()
 
 	if got != want {
@@ -165,7 +166,7 @@ func AssertStatusCode(t *testing.T, got, want int) {
 }
 
 // AssertJSONField checks if a JSON field has the expected value
-func AssertJSONField(t *testing.T, data map[string]interface{}, field string, want interface{}) {
+func AssertJSONField(t testing.TB, data map[string]interface{}, field string, want interface{}) {
 	t.Helper()
 
 	got, ok := data[field]
@@ -180,7 +181,7 @@ func AssertJSONField(t *testing.T, data map[string]interface{}, field string, wa
 }
 
 // CreateTestProject creates a project and adds the owner as a project member with 'owner' role
-func (ts *TestServer) CreateTestProject(t *testing.T, ownerID int64, name string) int64 {
+func (ts *TestServer) CreateTestProject(t testing.TB, ownerID int64, name string) int64 {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -212,7 +213,7 @@ func (ts *TestServer) CreateTestProject(t *testing.T, ownerID int64, name string
 }
 
 // CreateTestTask creates a task in the given project and returns the task ID
-func (ts *TestServer) CreateTestTask(t *testing.T, projectID int64, title string) int64 {
+func (ts *TestServer) CreateTestTask(t testing.TB, projectID int64, title string) int64 {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -242,7 +243,7 @@ func (ts *TestServer) CreateTestTask(t *testing.T, projectID int64, title string
 }
 
 // AddProjectMember adds a user as a project member with the specified role
-func (ts *TestServer) AddProjectMember(t *testing.T, projectID, userID, grantedBy int64, role string) {
+func (ts *TestServer) AddProjectMember(t testing.TB, projectID, userID, grantedBy int64, role string) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -258,7 +259,7 @@ func (ts *TestServer) AddProjectMember(t *testing.T, projectID, userID, grantedB
 }
 
 // MakeAuthRequest creates an HTTP request with auth context (UserIDKey) and optional chi URL params
-func (ts *TestServer) MakeAuthRequest(t *testing.T, method, path string, body interface{}, userID int64, urlParams map[string]string) (*httptest.ResponseRecorder, *http.Request) {
+func (ts *TestServer) MakeAuthRequest(t testing.TB, method, path string, body interface{}, userID int64, urlParams map[string]string) (*httptest.ResponseRecorder, *http.Request) {
 	t.Helper()
 
 	rec, req := MakeRequest(t, method, path, body, nil)
@@ -278,7 +279,7 @@ func (ts *TestServer) MakeAuthRequest(t *testing.T, method, path string, body in
 }
 
 // AssertError checks if the error response matches expected error and code
-func AssertError(t *testing.T, rec *httptest.ResponseRecorder, wantCode int, wantErrorContains, wantCodeContains string) {
+func AssertError(t testing.TB, rec *httptest.ResponseRecorder, wantCode int, wantErrorContains, wantCodeContains string) {
 	t.Helper()
 
 	AssertStatusCode(t, rec.Code, wantCode)

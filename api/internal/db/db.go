@@ -32,6 +32,7 @@ type Config struct {
 	DBPath         string // For SQLite
 	DSN            string // For Postgres
 	MigrationsPath string
+	EnableSQLLog   bool   // Enable Ent ORM query logging (expensive in production)
 }
 
 // New creates a new database connection and runs migrations
@@ -70,6 +71,9 @@ func New(cfg Config, logger *zap.Logger) (*DB, error) {
 			"PRAGMA journal_mode = WAL",
 			"PRAGMA synchronous = NORMAL",
 			"PRAGMA busy_timeout = 5000",
+			"PRAGMA cache_size = -64000",       // 64MB page cache (default ~2MB)
+			"PRAGMA mmap_size = 268435456",     // 256MB memory-mapped I/O
+			"PRAGMA temp_store = MEMORY",       // Keep temp tables in RAM
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -119,9 +123,9 @@ func New(cfg Config, logger *zap.Logger) (*DB, error) {
 	entDriver := entsql.OpenDB(entDialect, sqlDB)
 	entClient := ent.NewClient(ent.Driver(entDriver))
 
-	// Set Ent client logger
-	if logger != nil {
-		entClient = entClient.Debug() // Enable Ent query logging in dev
+	// Enable Ent query logging only when explicitly requested (expensive in production)
+	if cfg.EnableSQLLog {
+		entClient = entClient.Debug()
 	}
 
 	db := &DB{

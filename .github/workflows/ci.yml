@@ -41,13 +41,20 @@ jobs:
           go tool cover -func=coverage.out | tail -1
         timeout-minutes: 3
 
+      - name: Run benchmarks (smoke test)
+        working-directory: ./api
+        run: go test -bench=. -benchmem -count=1 -run=^$ ./... | tee bench-results.txt
+        timeout-minutes: 5
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: api-test-results
-          path: api/coverage.out
-          retention-days: 30
+          path: |
+            api/coverage.out
+            api/bench-results.txt
+          retention-days: 90
 
   # Web Testing Job
   web-test:

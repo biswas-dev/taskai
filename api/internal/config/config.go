@@ -34,6 +34,9 @@ type Config struct {
 	LogLevel       string
 	EnableSQLLog   bool
 
+	// Profiling
+	EnablePprof    bool
+
 	// Database
 	DBQueryTimeout time.Duration
 
@@ -59,6 +62,7 @@ func Load() *Config {
 		RateLimitWindowMinutes:  getEnvAsInt("RATE_LIMIT_WINDOW_MINUTES", 15),
 		LogLevel:                getEnv("LOG_LEVEL", "info"),
 		EnableSQLLog:            getEnv("ENV", "development") == "development" || getEnv("ENABLE_SQL_LOG", "false") == "true",
+		EnablePprof:             getEnv("ENABLE_PPROF", "false") == "true",
 		DBQueryTimeout:          time.Duration(getEnvAsInt("DB_QUERY_TIMEOUT_SECONDS", 5)) * time.Second,
 		YJSProcessorURL:         getEnv("YJS_PROCESSOR_URL", "http://localhost:3001"),
 	}
