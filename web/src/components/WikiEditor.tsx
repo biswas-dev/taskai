@@ -477,6 +477,64 @@ function getSaveStatusTextColor(saveStatus: SaveStatus): string {
   }
 }
 
+// ── Draw API helpers ─────────────────────────────────────────
+
+async function fetchDrawings(): Promise<DrawItem[]> {
+  try {
+    const res = await fetch('/draw/api/list')
+    const data = await res.json()
+    return data.drawings || []
+  } catch {
+    return []
+  }
+}
+
+async function createDrawing(): Promise<string | null> {
+  try {
+    const res = await fetch('/draw/api/new', { method: 'POST' })
+    const data = await res.json()
+    if (data?.id) {
+      const editUrl = data.edit_url || `/draw/${data.id}/edit`
+      window.open(editUrl, '_blank')
+      return data.id
+    }
+  } catch (err) {
+    console.error('Failed to create drawing:', err)
+  }
+  return null
+}
+
+async function renameDrawing(id: string, title: string): Promise<boolean> {
+  try {
+    await fetch(`/draw/api/${id}/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function deleteDrawing(id: string): Promise<boolean> {
+  try {
+    await fetch(`/draw/api/${id}/delete`, { method: 'POST' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function deleteDrawings(ids: string[]): Promise<boolean> {
+  try {
+    await Promise.all(ids.map(id => fetch(`/draw/api/${id}/delete`, { method: 'POST' })))
+    return true
+  } catch {
+    return false
+  }
+}
+
 function buildDrawShortcode(id: string, size: string, zoom: string): string {
   const sizeTag = size === 'm' ? '' : ':' + size
   const zoomTag = zoom === 'fit' ? '' : ':z' + zoom
@@ -546,6 +604,155 @@ async function fetchPreview(markdown: string, signal?: AbortSignal): Promise<str
   return data.html
 }
 
+function clearSavedStatus(prev: SaveStatus): SaveStatus {
+  return prev === 'saved' ? 'idle' : prev
+}
+
+async function abortAndFetchPreview(
+  abortRef: React.MutableRefObject<AbortController | null>,
+  markdown: string,
+): Promise<string | null> {
+  if (abortRef.current) abortRef.current.abort()
+  const controller = new AbortController()
+  abortRef.current = controller
+  try {
+    return await fetchPreview(markdown, controller.signal)
+  } catch {
+    return null
+  }
+}
+
+// ── Custom hooks (extract complexity from component) ──────────────
+
+function useGlobalKeyboard(isFullscreen: boolean, setIsFullscreen: React.Dispatch<React.SetStateAction<boolean>>) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'F11') {
+        e.preventDefault()
+        setIsFullscreen(prev => !prev)
+      }
+      if (e.key === 'Escape' && isFullscreen) {
+        e.preventDefault()
+        setIsFullscreen(false)
+      }
+    }
+    globalThis.addEventListener('keydown', handler)
+    return () => globalThis.removeEventListener('keydown', handler)
+  }, [isFullscreen, setIsFullscreen])
+}
+
+function useAutoSave(
+  pageId: number,
+  autoSaveEnabled: boolean,
+  saveNow: () => Promise<void>,
+  isDirtyRef: React.MutableRefObject<boolean>,
+  contentRef: React.MutableRefObject<string>,
+  lastSavedContentRef: React.MutableRefObject<string>,
+) {
+  // Autosave interval (10 seconds)
+  useEffect(() => {
+    if (!autoSaveEnabled) return
+
+    const saveToServer = async () => {
+      if (!shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) return
+      await saveNow()
+    }
+
+    const interval = setInterval(saveToServer, 10_000)
+
+    // Save on unmount — refs are stable objects, safe to read .current in cleanup
+    return () => {
+      clearInterval(interval)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      if (shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) {
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        apiClient.updateWikiPageContent(pageId, contentRef.current).catch(() => {})
+      }
+    }
+  }, [pageId, autoSaveEnabled, saveNow, isDirtyRef, contentRef, lastSavedContentRef])
+
+  // Save on beforeunload
+  useEffect(() => {
+    const handler = () => {
+      if (!shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) return
+      const blob = new Blob([JSON.stringify({ content: contentRef.current })], { type: 'application/json' })
+      const API_BASE_FOR_SAVE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8080')
+      navigator.sendBeacon(
+        `${API_BASE_FOR_SAVE}/api/wiki/pages/${pageId}/content`,
+        blob
+      )
+    }
+    globalThis.addEventListener('beforeunload', handler)
+    return () => globalThis.removeEventListener('beforeunload', handler)
+  }, [pageId, isDirtyRef, contentRef, lastSavedContentRef])
+}
+
+function useImageDrop(
+  pageId: number,
+  isFullscreen: boolean,
+  content: string,
+  setContent: (c: string) => void,
+  syncToYjs: (c: string) => void,
+  isDirtyRef: React.MutableRefObject<boolean>,
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>,
+  fsTextareaRef: React.RefObject<HTMLTextAreaElement | null>,
+) {
+  const dragCounterRef = useRef(0)
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [isDropUploading, setIsDropUploading] = useState(false)
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current++
+    if (e.dataTransfer.types.includes('Files')) setIsDragOver(true)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current--
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounterRef.current = 0
+    setIsDragOver(false)
+
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
+    if (files.length === 0) return
+
+    setIsDropUploading(true)
+    const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
+
+    try {
+      for (const file of files) {
+        const { url, altName } = await uploadSingleFile(file, pageId)
+        const markup = `![${altName}](${url})`
+        const start = textarea?.selectionStart ?? content.length
+        const end = textarea?.selectionEnd ?? content.length
+        const newContent = content.substring(0, start) + markup + '\n' + content.substring(end)
+        setContent(newContent)
+        syncToYjs(newContent)
+        isDirtyRef.current = true
+      }
+    } catch (err) {
+      console.error('Drop upload failed:', err)
+    } finally {
+      setIsDropUploading(false)
+    }
+  }, [isFullscreen, content, setContent, syncToYjs, pageId, isDirtyRef, textareaRef, fsTextareaRef])
+
+  return { isDragOver, isDropUploading, handleDragEnter, handleDragOver, handleDragLeave, handleDrop }
+}
+
 // ── Component ────────────────────────────────────────────────────
 
 export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
@@ -574,9 +781,6 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   const previewRef = useRef<HTMLDivElement>(null)
   const fsPreviewRef = useRef<HTMLDivElement>(null)
   const [fsSplitPct, setFsSplitPct] = useState(50)
-  const [isDragOver, setIsDragOver] = useState(false)
-  const [isDropUploading, setIsDropUploading] = useState(false)
-  const dragCounterRef = useRef(0)
   const [editImgList, setEditImgList] = useState<ImageInfo[] | null>(null)
   const [selectedEditImg, setSelectedEditImg] = useState<ImageInfo | null>(null)
   const [editAlt, setEditAlt] = useState('')
@@ -620,7 +824,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
       lastSavedContentRef.current = current
       isDirtyRef.current = false
       setSaveStatus('saved')
-      setTimeout(() => setSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 3000)
+      setTimeout(() => setSaveStatus(clearSavedStatus), 3000)
     } catch {
       setSaveStatus('error')
     } finally {
@@ -628,42 +832,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     }
   }, [page.id])
 
-  // ── Autosave interval (10 seconds) ─────────────────────────
-  useEffect(() => {
-    if (!autoSaveEnabled) return
-
-    const saveToServer = async () => {
-      if (!shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) return
-      await saveNow()
-    }
-
-    const interval = setInterval(saveToServer, 10_000)
-
-    // Save on unmount
-    return () => {
-      clearInterval(interval)
-      if (shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) {
-        apiClient.updateWikiPageContent(page.id, contentRef.current).catch(() => {})
-      }
-    }
-  }, [page.id, autoSaveEnabled, saveNow])
-
-  // ── Save on beforeunload ───────────────────────────────────
-  useEffect(() => {
-    const handler = () => {
-      if (!shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) return
-      const blob = new Blob([JSON.stringify({ content: contentRef.current })], { type: 'application/json' })
-      const API_BASE_FOR_SAVE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8080')
-      // sendBeacon doesn't support custom headers (no auth), so this is best-effort.
-      // The interval save is the primary mechanism.
-      navigator.sendBeacon(
-        `${API_BASE_FOR_SAVE}/api/wiki/pages/${page.id}/content`,
-        blob
-      )
-    }
-    globalThis.addEventListener('beforeunload', handler)
-    return () => globalThis.removeEventListener('beforeunload', handler)
-  }, [page.id])
+  useAutoSave(page.id, autoSaveEnabled, saveNow, isDirtyRef, contentRef, lastSavedContentRef)
 
   // ── Yjs setup ────────────────────────────────────────────────
 
@@ -756,15 +925,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   // ── Server-side preview (inline mode) ────────────────────────
 
   const loadPreview = useCallback(async (markdown: string) => {
-    if (abortRef.current) abortRef.current.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
-    try {
-      const html = await fetchPreview(markdown, controller.signal)
-      setPreviewHTML(html)
-    } catch {
-      // aborted or network error — ignore
-    }
+    const html = await abortAndFetchPreview(abortRef, markdown)
+    if (html !== null) setPreviewHTML(html)
   }, [])
 
   useEffect(() => {
@@ -776,15 +938,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   const scheduleFsPreview = useCallback((markdown: string) => {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
     previewTimerRef.current = setTimeout(async () => {
-      if (abortRef.current) abortRef.current.abort()
-      const controller = new AbortController()
-      abortRef.current = controller
-      try {
-        const html = await fetchPreview(markdown, controller.signal)
-        setFsPreviewHTML(html)
-      } catch {
-        // ignore
-      }
+      const html = await abortAndFetchPreview(abortRef, markdown)
+      if (html !== null) setFsPreviewHTML(html)
     }, PREVIEW_DEBOUNCE_MS)
   }, [])
 
@@ -824,33 +979,26 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   // ── Keyboard shortcuts ───────────────────────────────────────
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Tab → 2-space indent
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const textarea = e.currentTarget
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const newContent = content.substring(0, start) + '  ' + content.substring(end)
-      setContent(newContent)
-      syncToYjs(newContent)
-      isDirtyRef.current = true
-      setTimeout(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + 2
-      }, 0)
-      return
-    }
-
-    // F11 → toggle fullscreen
-    if (e.key === 'F11') {
-      e.preventDefault()
-      setIsFullscreen(prev => !prev)
-      return
-    }
-
-    // Escape → exit fullscreen
-    if (e.key === 'Escape' && isFullscreen) {
-      e.preventDefault()
-      setIsFullscreen(false)
+    switch (e.key) {
+      case 'Tab': {
+        e.preventDefault()
+        const textarea = e.currentTarget
+        const start = textarea.selectionStart
+        const end = textarea.selectionEnd
+        const newContent = content.substring(0, start) + '  ' + content.substring(end)
+        setContent(newContent)
+        syncToYjs(newContent)
+        isDirtyRef.current = true
+        setTimeout(() => { textarea.selectionStart = textarea.selectionEnd = start + 2 }, 0)
+        break
+      }
+      case 'F11':
+        e.preventDefault()
+        setIsFullscreen(prev => !prev)
+        break
+      case 'Escape':
+        if (isFullscreen) { e.preventDefault(); setIsFullscreen(false) }
+        break
     }
   }, [content, syncToYjs, isFullscreen])
 
@@ -890,21 +1038,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     setSelectedEditDraw(null)
   }, [selectedEditDraw, editDrawSize, editDrawZoom, content, syncToYjs])
 
-  // Global F11 listener (when focus is not on textarea)
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'F11') {
-        e.preventDefault()
-        setIsFullscreen(prev => !prev)
-      }
-      if (e.key === 'Escape' && isFullscreen) {
-        e.preventDefault()
-        setIsFullscreen(false)
-      }
-    }
-    globalThis.addEventListener('keydown', handler)
-    return () => globalThis.removeEventListener('keydown', handler)
-  }, [isFullscreen])
+  useGlobalKeyboard(isFullscreen, setIsFullscreen)
 
   // ── Fullscreen divider resize ────────────────────────────────
 
@@ -941,56 +1075,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     setShowImagePicker(false)
   }
 
-  // ── Drag & drop image upload ─────────────────────────────────
-
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    dragCounterRef.current++
-    if (e.dataTransfer.types.includes('Files')) setIsDragOver(true)
-  }, [])
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    dragCounterRef.current--
-    if (dragCounterRef.current <= 0) {
-      dragCounterRef.current = 0
-      setIsDragOver(false)
-    }
-  }, [])
-
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault()
-    dragCounterRef.current = 0
-    setIsDragOver(false)
-
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
-    if (files.length === 0) return
-
-    setIsDropUploading(true)
-    const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
-
-    try {
-      for (const file of files) {
-        const { url, altName } = await uploadSingleFile(file, page.id)
-        const markup = `![${altName}](${url})`
-        const start = textarea?.selectionStart ?? content.length
-        const end = textarea?.selectionEnd ?? content.length
-        const newContent = content.substring(0, start) + markup + '\n' + content.substring(end)
-        setContent(newContent)
-        syncToYjs(newContent)
-        isDirtyRef.current = true
-      }
-    } catch (err) {
-      console.error('Drop upload failed:', err)
-    } finally {
-      setIsDropUploading(false)
-    }
-  }, [isFullscreen, content, syncToYjs, page.id])
+  const { isDragOver, isDropUploading, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } =
+    useImageDrop(page.id, isFullscreen, content, setContent, syncToYjs, isDirtyRef, textareaRef, fsTextareaRef)
 
   // ── Edit existing image ─────────────────────────────────────
 
@@ -1028,15 +1114,9 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
 
   const loadDrawings = useCallback(async () => {
     setDrawLoading(true)
-    try {
-      const res = await fetch('/draw/api/list')
-      const data = await res.json()
-      setDrawList(data.drawings || [])
-    } catch {
-      setDrawList([])
-    } finally {
-      setDrawLoading(false)
-    }
+    const drawings = await fetchDrawings()
+    setDrawList(drawings)
+    setDrawLoading(false)
   }, [])
 
   const handleDraw = useCallback(() => {
@@ -1058,49 +1138,24 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   }, [isFullscreen, content, syncToYjs])
 
   const handleDrawRename = useCallback(async (id: string, title: string) => {
-    try {
-      await fetch(`/draw/api/${id}/rename`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
-      })
-      setDrawList(prev => prev.map(d => d.id === id ? { ...d, title } : d))
-    } catch {
-      // ignore
-    }
+    const ok = await renameDrawing(id, title)
+    if (ok) setDrawList(prev => prev.map(d => d.id === id ? { ...d, title } : d))
   }, [])
 
   const handleDrawDelete = useCallback(async (id: string) => {
-    try {
-      await fetch(`/draw/api/${id}/delete`, { method: 'POST' })
-      setDrawList(prev => prev.filter(d => d.id !== id))
-    } catch {
-      alert('Failed to delete drawing')
-    }
+    const ok = await deleteDrawing(id)
+    if (!ok) { alert('Failed to delete drawing'); return }
+    setDrawList(prev => prev.filter(d => d.id !== id))
   }, [])
 
   const handleDrawNew = useCallback(async () => {
-    try {
-      const res = await fetch('/draw/api/new', { method: 'POST' })
-      const data = await res.json()
-      if (data?.id) {
-        const editUrl = data.edit_url || `/draw/${data.id}/edit`
-        window.open(editUrl, '_blank')
-        loadDrawings()
-      }
-    } catch (err) {
-      console.error('Failed to create drawing:', err)
-    }
+    const created = await createDrawing()
+    if (created) loadDrawings()
   }, [loadDrawings])
 
   const handleDrawDeleteUnused = useCallback(async (unusedIds: string[]) => {
-    try {
-      await Promise.all(unusedIds.map(id => fetch(`/draw/api/${id}/delete`, { method: 'POST' })))
-      loadDrawings()
-    } catch {
-      alert('Some deletions failed')
-      loadDrawings()
-    }
+    await deleteDrawings(unusedIds)
+    loadDrawings()
   }, [loadDrawings])
 
   // ── Toolbar JSX ──────────────────────────────────────────────
