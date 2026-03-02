@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Button from '../components/ui/Button'
 import ImagePickerModal from '../components/ImagePickerModal'
-import { apiClient, Task, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment } from '../lib/api'
+import { apiClient, Task, type UpdateTaskRequest, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment } from '../lib/api'
 
 interface TaskDetailProps {
   isModal?: boolean
@@ -229,13 +229,11 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
     setImagePickerTarget(null)
   }, [imagePickerTarget, editValue, newComment])
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const saveField = async (field: string, value: any) => {
+  const saveField = async (field: string, value: string) => {
     if (!task) return
     try {
       setSaving(true)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const update: Record<string, any> = {}
+      const update: Partial<UpdateTaskRequest> = {}
 
       switch (field) {
         case 'title':
@@ -251,7 +249,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
           break
         }
         case 'priority':
-          update.priority = value
+          update.priority = value as UpdateTaskRequest['priority']
           break
         case 'sprint_id':
           update.sprint_id = value ? parseInt(value) : null
