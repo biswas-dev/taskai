@@ -106,6 +106,11 @@ jobs:
             echo "🔐 Login to Docker Hub..."
             echo '$DOCKERHUB_TOKEN' | docker login -u '$DOCKERHUB_USERNAME' --password-stdin
 
+            # Ensure nginx has the /draw/ route BEFORE starting containers
+            echo "🔧 Ensuring nginx /draw/ route..."
+            chmod +x source/deployment/scripts/ensure-draw-route.sh
+            sudo source/deployment/scripts/ensure-draw-route.sh taskai.cc
+
             echo "🛑 Stopping containers..."
             docker compose down || true
 
@@ -113,22 +118,17 @@ jobs:
             docker builder prune -af || true
             docker image prune -af || true
 
-            echo "🔨 Building containers..."
-            docker compose build --build-arg VERSION="\$VERSION" --build-arg GIT_COMMIT="\$GIT_COMMIT" --build-arg BUILD_TIME="\$BUILD_TIME"
+            echo "🔨 Building containers (no cache)..."
+            docker compose build --no-cache --build-arg VERSION="\$VERSION" --build-arg GIT_COMMIT="\$GIT_COMMIT" --build-arg BUILD_TIME="\$BUILD_TIME"
 
             echo "🚀 Starting containers..."
-            docker compose up -d
+            docker compose up -d --force-recreate --remove-orphans
 
             echo "⏳ Waiting for containers to be healthy..."
             sleep 15
 
             echo "📊 Container status:"
             docker compose ps
-
-            # Ensure nginx has the /draw/ route (proxied to API backend)
-            echo "🔧 Updating nginx config..."
-            chmod +x source/deployment/scripts/ensure-draw-route.sh
-            sudo source/deployment/scripts/ensure-draw-route.sh taskai.cc
           ENDSSH
 
       - name: Capture container logs on failure
@@ -151,7 +151,17 @@ jobs:
       - name: Verify deployment
         run: |
           sleep 10
+          echo "Checking API health..."
           curl -f https://taskai.cc/api/health || exit 1
+
+          echo "Checking go-draw canvas.js has eraser tool..."
+          CANVAS_JS=$(curl -sL https://taskai.cc/draw/static/canvas.js)
+          if echo "$CANVAS_JS" | grep -q 'eraser'; then
+            echo "✅ canvas.js contains eraser tool"
+          else
+            echo "❌ canvas.js does NOT contain eraser tool — stale content!"
+            exit 1
+          fi
           echo "✅ Production deployed successfully"
 
       - name: Deployment summary

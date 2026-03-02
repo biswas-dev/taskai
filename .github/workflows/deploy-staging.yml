@@ -83,25 +83,35 @@ jobs:
             # Login to Docker Hub to avoid rate limiting
             echo '$DOCKERHUB_TOKEN' | docker login -u '$DOCKERHUB_USERNAME' --password-stdin
 
+            # Ensure nginx has the /draw/ route BEFORE starting containers
+            echo "Ensuring nginx /draw/ route..."
+            chmod +x source/deployment/scripts/ensure-draw-route.sh
+            sudo source/deployment/scripts/ensure-draw-route.sh staging.taskai.cc
+
             docker compose down || true
             echo "🧹 Cleaning up Docker build cache and unused images to free disk space..."
             docker builder prune -af || true
             docker image prune -af || true
-            docker compose build --build-arg VERSION="\$VERSION" --build-arg GIT_COMMIT="\$GIT_COMMIT" --build-arg BUILD_TIME="\$BUILD_TIME"
-            docker compose up -d
+            docker compose build --no-cache --build-arg VERSION="\$VERSION" --build-arg GIT_COMMIT="\$GIT_COMMIT" --build-arg BUILD_TIME="\$BUILD_TIME"
+            docker compose up -d --force-recreate --remove-orphans
             sleep 15
             docker compose ps
-
-            # Ensure nginx has the /draw/ route (proxied to API backend)
-            echo "Updating nginx config..."
-            chmod +x source/deployment/scripts/ensure-draw-route.sh
-            sudo source/deployment/scripts/ensure-draw-route.sh staging.taskai.cc
           ENDSSH
 
       - name: Verify deployment
         run: |
           sleep 10
+          echo "Checking API health..."
           curl -f https://staging.taskai.cc/api/health || exit 1
+
+          echo "Checking go-draw canvas.js has eraser tool..."
+          CANVAS_JS=$(curl -sL https://staging.taskai.cc/draw/static/canvas.js)
+          if echo "$CANVAS_JS" | grep -q 'eraser'; then
+            echo "✅ canvas.js contains eraser tool"
+          else
+            echo "❌ canvas.js does NOT contain eraser tool — stale content!"
+            exit 1
+          fi
           echo "✅ Staging deployed successfully"
 
       - name: Deployment summary
