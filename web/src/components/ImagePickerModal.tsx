@@ -123,18 +123,16 @@ export default function ImagePickerModal({ onSelect, onClose, taskId, wikiPageId
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-      onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter') onClose() }}
-    >
-      <div
-        role="dialog"
-        className="w-full max-w-2xl mx-4 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm border-0"
+        onClick={onClose}
+        aria-label="Close dialog"
+      />
+      <dialog
+        open
+        className="relative z-[1] w-full max-w-2xl mx-4 m-0 p-0 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-dark-border-subtle">
@@ -378,7 +376,7 @@ export default function ImagePickerModal({ onSelect, onClose, taskId, wikiPageId
             </>
           )}
         </div>
-      </div>
+      </dialog>
     </div>
   )
 }

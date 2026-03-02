@@ -243,6 +243,16 @@ function initDrawEmbeds(
   })
 }
 
+// ── HTML entity helpers ──────────────────────────────────────────
+
+function escapeHtml(s: string): string {
+  return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+}
+
+function unescapeHtml(s: string): string {
+  return s.replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"')
+}
+
 // ── Image edit overlays — add S/M/L size controls to images in preview ──
 
 function buildImageMarkup(url: string, alt: string, caption: string, size: string): string {
@@ -252,13 +262,12 @@ function buildImageMarkup(url: string, alt: string, caption: string, size: strin
     l: 'width:100%;height:auto;max-width:100%;',
   }
   const imgStyle = sizeStyles[size] || sizeStyles.m
-  const escHtml = (s: string) => s.replaceAll(/&/g, '&amp;').replaceAll(/</g, '&lt;').replaceAll(/>/g, '&gt;').replaceAll(/"/g, '&quot;')
 
   if (size === 'l' && !caption) {
     return `![${alt}](${url})`
   }
-  const captionHtml = caption ? '<figcaption>' + escHtml(caption) + '</figcaption>' : ''
-  return `<figure style="text-align:center;margin:1.5rem 0"><a href="${url}" data-lightbox="article-images" data-title="${escHtml(alt)}"><img src="${url}" alt="${escHtml(alt)}" style="${imgStyle}"/></a>${captionHtml}</figure>`
+  const captionHtml = caption ? '<figcaption>' + escapeHtml(caption) + '</figcaption>' : ''
+  return `<figure style="text-align:center;margin:1.5rem 0"><a href="${url}" data-lightbox="article-images" data-title="${escapeHtml(alt)}"><img src="${url}" alt="${escapeHtml(alt)}" style="${imgStyle}"/></a>${captionHtml}</figure>`
 }
 
 function addImageEditOverlays(
@@ -304,8 +313,8 @@ function addImageEditOverlays(
         if (figMatch) {
           const altM = /alt="([^"]*)"/.exec(figMatch[0])
           const capM = /<figcaption>([\s\S]*?)<\/figcaption>/.exec(figMatch[0])
-          const alt = (altM?.[1] || '').replaceAll(/&amp;/g, '&').replaceAll(/&lt;/g, '<').replaceAll(/&gt;/g, '>').replaceAll(/&quot;/g, '"')
-          const cap = (capM?.[1] || '').replaceAll(/&amp;/g, '&').replaceAll(/&lt;/g, '<').replaceAll(/&gt;/g, '>').replaceAll(/&quot;/g, '"')
+          const alt = unescapeHtml(altM?.[1] || '')
+          const cap = unescapeHtml(capM?.[1] || '')
           updateContent(content.replace(figMatch[0], buildImageMarkup(imgUrl, alt, cap, sz)))
         } else {
           // Try markdown ![alt](url)
@@ -341,6 +350,76 @@ interface DrawItem {
   id: string
   title: string
   updated_at: string
+}
+
+// ── Extracted complexity helpers (reduce WikiEditor cognitive complexity) ──
+
+type ImageInfo = { html: string; url: string; alt: string; caption: string; index: number }
+type DrawInfo = { shortcode: string; id: string; size: string; zoom: string; index: number }
+
+function findImagesInContent(content: string): ImageInfo[] {
+  const images: ImageInfo[] = []
+
+  const figureRegex = /<figure[^>]*>[\s\S]*?<\/figure>/g
+  const imgSrcRegex = /src="([^"]+)"/
+  const imgAltRegex = /alt="([^"]*)"/
+  const captionRegex = /<figcaption>([\s\S]*?)<\/figcaption>/
+  let match
+  while ((match = figureRegex.exec(content)) !== null) {
+    const figHtml = match[0]
+    const srcMatch = imgSrcRegex.exec(figHtml)
+    if (!srcMatch) continue
+    const altMatch = imgAltRegex.exec(figHtml)
+    const capMatch = captionRegex.exec(figHtml)
+    images.push({
+      html: figHtml,
+      url: srcMatch[1],
+      alt: unescapeHtml(altMatch?.[1] || ''),
+      caption: unescapeHtml(capMatch?.[1] || ''),
+      index: match.index,
+    })
+  }
+
+  const mdRegex = /!\[([^\]]*)\]\(([^)]+)\)/g
+  while ((match = mdRegex.exec(content)) !== null) {
+    const pos = match.index
+    const insideFigure = images.some(img => pos >= img.index && pos < img.index + img.html.length)
+    if (insideFigure) continue
+    images.push({ html: match[0], url: match[2], alt: match[1], caption: '', index: match.index })
+  }
+
+  images.sort((a, b) => a.index - b.index)
+  return images
+}
+
+function detectImageSize(html: string): string {
+  if (!html.startsWith('<figure')) return 'l'
+  if (/max-width:\s*50%/.test(html)) return 's'
+  if (/max-width:\s*75%/.test(html)) return 'm'
+  return 'l'
+}
+
+function findDrawsInContent(content: string): DrawInfo[] {
+  const draws: DrawInfo[] = []
+  const re = /\[draw:([a-zA-Z0-9_-]+)(?::edit)?(?::([sml]))?(?::z([^\]]+))?\]/g
+  let match
+  while ((match = re.exec(content)) !== null) {
+    draws.push({
+      shortcode: match[0],
+      id: match[1],
+      size: match[2] || 'm',
+      zoom: match[3] || 'fit',
+      index: match.index,
+    })
+  }
+  draws.sort((a, b) => a.index - b.index)
+  return draws
+}
+
+function mapYjsStatus(status: string): 'connecting' | 'connected' | 'disconnected' {
+  if (status === 'connected') return 'connected'
+  if (status === 'disconnected') return 'disconnected'
+  return 'connecting'
 }
 
 // ── Server-side preview fetcher ──────────────────────────────────
@@ -392,16 +471,16 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [isDropUploading, setIsDropUploading] = useState(false)
   const dragCounterRef = useRef(0)
-  const [editImgList, setEditImgList] = useState<Array<{ html: string; url: string; alt: string; caption: string; index: number }> | null>(null)
-  const [selectedEditImg, setSelectedEditImg] = useState<{ html: string; url: string; alt: string; caption: string; index: number } | null>(null)
+  const [editImgList, setEditImgList] = useState<ImageInfo[] | null>(null)
+  const [selectedEditImg, setSelectedEditImg] = useState<ImageInfo | null>(null)
   const [editAlt, setEditAlt] = useState('')
   const [editCaption, setEditCaption] = useState('')
   const [editSize, setEditSize] = useState('m')
   const [showDrawBrowser, setShowDrawBrowser] = useState(false)
   const [drawList, setDrawList] = useState<DrawItem[]>([])
   const [drawLoading, setDrawLoading] = useState(false)
-  const [editDrawList, setEditDrawList] = useState<Array<{ shortcode: string; id: string; size: string; zoom: string; index: number }> | null>(null)
-  const [selectedEditDraw, setSelectedEditDraw] = useState<{ shortcode: string; id: string; size: string; zoom: string; index: number } | null>(null)
+  const [editDrawList, setEditDrawList] = useState<DrawInfo[] | null>(null)
+  const [selectedEditDraw, setSelectedEditDraw] = useState<DrawInfo | null>(null)
   const [editDrawSize, setEditDrawSize] = useState('m')
   const [editDrawZoom, setEditDrawZoom] = useState('fit')
 
@@ -509,13 +588,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     providerRef.current = provider
 
     provider.on('status', ({ status }: { status: string }) => {
-      if (status === 'connected') {
-        setSyncState('connected')
-      } else if (status === 'disconnected') {
-        setSyncState('disconnected')
-      } else {
-        setSyncState('connecting')
-      }
+      setSyncState(mapYjsStatus(status))
     })
 
     const updateContent = () => setContent(ytext.toString())
@@ -693,28 +766,16 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   // ── Edit existing draw shortcode ─────────────────────────────
 
   const handleEditDraw = useCallback(() => {
-    const draws: Array<{ shortcode: string; id: string; size: string; zoom: string; index: number }> = []
-    const re = /\[draw:([a-zA-Z0-9_-]+)(?::edit)?(?::([sml]))?(?::z([^\]]+))?\]/g
-    let match
-    while ((match = re.exec(content)) !== null) {
-      draws.push({
-        shortcode: match[0],
-        id: match[1],
-        size: match[2] || 'm',
-        zoom: match[3] || 'fit',
-        index: match.index,
-      })
-    }
+    const draws = findDrawsInContent(content)
     if (draws.length === 0) {
       alert('No draw shortcodes found in content')
       return
     }
-    draws.sort((a, b) => a.index - b.index)
     setEditDrawList(draws)
     setSelectedEditDraw(null)
   }, [content])
 
-  const selectDrawForEdit = (draw: typeof editDrawList extends Array<infer T> | null ? T : never) => {
+  const selectDrawForEdit = (draw: DrawInfo) => {
     setSelectedEditDraw(draw)
     setEditDrawSize(draw.size)
     setEditDrawZoom(draw.zoom)
@@ -772,22 +833,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   // ── Image picker ─────────────────────────────────────────────
 
   const insertImageMarkdown = (alt: string, url: string, caption?: string, size?: string) => {
+    const markup = buildImageMarkup(url, alt, caption || '', size || 'm')
     const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
-    const escHtml = (s: string) => s.replaceAll(/&/g, '&amp;').replaceAll(/</g, '&lt;').replaceAll(/>/g, '&gt;').replaceAll(/"/g, '&quot;')
-    const sz = size || 'm'
-    const sizeStyles: Record<string, string> = {
-      s: 'max-width:50%;height:auto;',
-      m: 'max-width:75%;height:auto;',
-      l: 'width:100%;height:auto;max-width:100%;',
-    }
-    const imgStyle = sizeStyles[sz] || sizeStyles.m
-    let markup: string
-    if (sz === 'l' && !caption) {
-      markup = `![${alt}](${url})`
-    } else {
-      const capHtml = caption ? '<figcaption>' + escHtml(caption) + '</figcaption>' : ''
-      markup = `<figure style="text-align:center;margin:1.5rem 0"><a href="${url}" data-lightbox="article-images" data-title="${escHtml(alt)}"><img src="${url}" alt="${escHtml(alt)}" style="${imgStyle}"/></a>${capHtml}</figure>\n`
-    }
 
     if (textarea) {
       const start = textarea.selectionStart
@@ -801,7 +848,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
         textarea.focus()
       }, 0)
     } else {
-      const newContent = content + (content.endsWith('\n') ? '' : '\n') + markup + '\n'
+      const sep = content.endsWith('\n') ? '' : '\n'
+      const newContent = content + sep + markup + '\n'
       setContent(newContent)
       syncToYjs(newContent)
       isDirtyRef.current = true
@@ -902,92 +950,26 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   // ── Edit existing image ─────────────────────────────────────
 
   const handleEditImg = useCallback(() => {
-    const images: Array<{ html: string; url: string; alt: string; caption: string; index: number }> = []
-
-    // Match <figure> blocks with <img> (split into simpler regexes to reduce complexity)
-    const figureRegex = /<figure[^>]*>[\s\S]*?<\/figure>/g
-    const imgSrcRegex = /src="([^"]+)"/
-    const imgAltRegex = /alt="([^"]*)"/
-    const captionRegex = /<figcaption>([\s\S]*?)<\/figcaption>/
-    let match
-    while ((match = figureRegex.exec(content)) !== null) {
-      const figHtml = match[0]
-      const srcMatch = imgSrcRegex.exec(figHtml)
-      if (!srcMatch) continue
-      const altMatch = imgAltRegex.exec(figHtml)
-      const capMatch = captionRegex.exec(figHtml)
-      const unesc = (s: string) => s.replaceAll(/&amp;/g, '&').replaceAll(/&lt;/g, '<').replaceAll(/&gt;/g, '>').replaceAll(/&quot;/g, '"')
-      images.push({
-        html: figHtml,
-        url: srcMatch[1],
-        alt: unesc(altMatch?.[1] || ''),
-        caption: unesc(capMatch?.[1] || ''),
-        index: match.index,
-      })
-    }
-
-    // Match markdown images ![alt](url)
-    const mdRegex = /!\[([^\]]*)\]\(([^)]+)\)/g
-    while ((match = mdRegex.exec(content)) !== null) {
-      // Skip if this position is already inside a <figure> we found
-      const pos = match.index
-      const insideFigure = images.some(img => pos >= img.index && pos < img.index + img.html.length)
-      if (insideFigure) continue
-
-      images.push({
-        html: match[0],
-        url: match[2],
-        alt: match[1],
-        caption: '',
-        index: match.index,
-      })
-    }
-
+    const images = findImagesInContent(content)
     if (images.length === 0) {
       alert('No images found in content')
       return
     }
-
-    // Sort by position in content
-    images.sort((a, b) => a.index - b.index)
     setEditImgList(images)
     setSelectedEditImg(null)
   }, [content])
 
-  const selectImgForEdit = (img: typeof editImgList extends Array<infer T> | null ? T : never) => {
+  const selectImgForEdit = (img: ImageInfo) => {
     setSelectedEditImg(img)
     setEditAlt(img.alt)
     setEditCaption(img.caption)
-    // Detect size from existing HTML
-    if (img.html.startsWith('<figure')) {
-      if (/max-width:\s*50%/.test(img.html)) setEditSize('s')
-      else if (/max-width:\s*75%/.test(img.html)) setEditSize('m')
-      else setEditSize('l')
-    } else {
-      setEditSize('l') // plain markdown = large
-    }
+    setEditSize(detectImageSize(img.html))
   }
 
   const saveEditImg = useCallback(() => {
     if (!selectedEditImg) return
 
-    const escHtml = (s: string) => s.replaceAll(/&/g, '&amp;').replaceAll(/</g, '&lt;').replaceAll(/>/g, '&gt;').replaceAll(/"/g, '&quot;')
-    const sizeStyles: Record<string, string> = {
-      s: 'max-width:50%;height:auto;',
-      m: 'max-width:75%;height:auto;',
-      l: 'width:100%;height:auto;max-width:100%;',
-    }
-    const imgStyle = sizeStyles[editSize] || sizeStyles.m
-    let newMarkup: string
-
-    if (editSize === 'l' && !editCaption) {
-      // Large + no caption → plain markdown
-      newMarkup = `![${editAlt}](${selectedEditImg.url})`
-    } else {
-      // Use <figure>
-      const capHtml = editCaption ? '<figcaption>' + escHtml(editCaption) + '</figcaption>' : ''
-      newMarkup = `<figure style="text-align:center;margin:1.5rem 0"><a href="${selectedEditImg.url}" data-lightbox="article-images" data-title="${escHtml(editAlt)}"><img src="${selectedEditImg.url}" alt="${escHtml(editAlt)}" style="${imgStyle}"/></a>${capHtml}</figure>`
-    }
+    const newMarkup = buildImageMarkup(selectedEditImg.url, editAlt, editCaption, editSize)
 
     const newContent = content.replace(selectedEditImg.html, newMarkup)
     setContent(newContent)
@@ -1229,6 +1211,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
           <div ref={fsContainerRef} className="flex flex-1 overflow-hidden">
             {/* Left: editor */}
             <div
+              role="region"
+              aria-label="Editor with drop support"
               style={{ width: `${fsSplitPct}%` }}
               className="flex flex-col overflow-hidden relative"
               onDragEnter={handleDragEnter}
@@ -1260,6 +1244,9 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
 
             {/* Divider */}
             <div
+              role="separator"
+              aria-orientation="vertical"
+              tabIndex={0}
               ref={dividerRef}
               onMouseDown={handleDividerMouseDown}
               className="w-1.5 bg-dark-border-subtle hover:bg-dark-accent-primary/50 cursor-col-resize transition-colors flex-shrink-0"
@@ -1408,17 +1395,19 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
       <div className="flex-1 overflow-hidden flex flex-col">
         {isPreview ? (
           <div className="h-full overflow-y-auto px-6 py-4">
-            {previewHTML ? (
+            {previewHTML && (
               <div
                 ref={previewRef}
                 className="prose prose-invert max-w-none"
                 dangerouslySetInnerHTML={{ __html: previewHTML }}
               />
-            ) : content.trim() ? (
+            )}
+            {!previewHTML && content.trim() && (
               <div className="flex items-center justify-center h-full text-dark-text-tertiary">
                 <p className="text-sm">Loading preview...</p>
               </div>
-            ) : (
+            )}
+            {!previewHTML && !content.trim() && (
               <div className="flex items-center justify-center h-full text-dark-text-tertiary">
                 <div className="text-center">
                   <svg className="w-16 h-16 mx-auto mb-4 text-dark-text-tertiary/50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1434,6 +1423,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
         ) : (
           <>
             <div
+              role="region"
+              aria-label="Editor with drop support"
               className="relative flex-1 min-h-0"
               onDragEnter={handleDragEnter}
               onDragOver={handleDragOver}
@@ -1475,6 +1466,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
             </div>
             {/* Visible drop zone */}
             <div
+              role="region"
+              aria-label="Drop zone for images"
               className={`mx-6 mb-4 mt-2 border-2 border-dashed rounded-lg p-4 flex items-center justify-center gap-3 transition-colors ${
                 isDragOver
                   ? 'border-primary-500 bg-primary-500/5'
@@ -1534,18 +1527,16 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
 
       {/* Edit Image Modal */}
       {editImgList && (
-        <div
-          role="button"
-          tabIndex={0}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-          onClick={() => { setEditImgList(null); setSelectedEditImg(null) }}
-          onKeyDown={e => { if (e.key === 'Escape' || e.key === 'Enter') { setEditImgList(null); setSelectedEditImg(null) } }}
-        >
-          <div
-            role="dialog"
-            className="w-full max-w-2xl mx-4 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden"
-            onClick={e => e.stopPropagation()}
-            onKeyDown={e => e.stopPropagation()}
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm border-0"
+            onClick={() => { setEditImgList(null); setSelectedEditImg(null) }}
+            aria-label="Close dialog"
+          />
+          <dialog
+            open
+            className="relative z-[1] w-full max-w-2xl mx-4 m-0 p-0 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-dark-border-subtle">
@@ -1623,8 +1614,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
                         placeholder="Optional caption..."
                       />
                     </div>
-                    <div>
-                      <label id="edit-img-size-label" className="block text-xs font-medium text-dark-text-secondary mb-1">Size</label>
+                    <fieldset className="border-0 p-0 m-0 min-w-0">
+                      <legend className="block text-xs font-medium text-dark-text-secondary mb-1">Size</legend>
                       <div className="flex gap-1.5">
                         {([['s', 'Small'], ['m', 'Medium'], ['l', 'Large']] as const).map(([val, label]) => (
                           <button
@@ -1641,7 +1632,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
                           </button>
                         ))}
                       </div>
-                    </div>
+                    </fieldset>
                   </div>
                 </div>
                 {/* Actions */}
@@ -1661,7 +1652,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
                 </div>
               </div>
             )}
-          </div>
+          </dialog>
         </div>
       )}
 
@@ -1743,7 +1734,10 @@ function DrawCard({ drawing, isUsed, onInsert, onRename, onDelete }: Readonly<{
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={handleCardClick}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert(drawing.id, size, zoom) } }}
       className={`border rounded-xl p-4 flex flex-col gap-1.5 cursor-pointer transition-colors hover:bg-dark-bg-tertiary/50 ${isUsed ? 'border-green-500/30 hover:border-green-500/50' : 'border-dark-border-subtle hover:border-primary-500/50'}`}
     >
       <div className="flex items-center gap-1.5">
@@ -1858,18 +1852,16 @@ function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-      onKeyDown={e => { if (e.key === 'Escape' || e.key === 'Enter') onClose() }}
-    >
-      <div
-        role="dialog"
-        className="relative w-full max-w-2xl mx-4 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
-        onClick={e => e.stopPropagation()}
-        onKeyDown={e => e.stopPropagation()}
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm border-0"
+        onClick={onClose}
+        aria-label="Close dialog"
+      />
+      <dialog
+        open
+        className="relative z-[1] w-full max-w-2xl mx-4 m-0 p-0 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-dark-border-subtle">
@@ -1894,11 +1886,13 @@ function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename
 
         {/* Body */}
         <div className="overflow-y-auto p-6">
-          {loading ? (
+          {loading && (
             <p className="text-center text-sm text-dark-text-tertiary py-8">Loading drawings...</p>
-          ) : drawings.length === 0 ? (
+          )}
+          {!loading && drawings.length === 0 && (
             <p className="text-center text-sm text-dark-text-tertiary py-8">No drawings yet. Create one above!</p>
-          ) : (
+          )}
+          {!loading && drawings.length > 0 && (
             <>
               {unusedDrawings.length > 0 && (
                 <div className="flex items-center justify-between gap-2 mb-3 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
@@ -1929,18 +1923,16 @@ function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename
 
         {/* Confirmation dialog overlay */}
         {confirmAction && (
-          <div
-            role="button"
-            tabIndex={0}
-            className="absolute inset-0 z-10 flex items-center justify-center bg-black/45 backdrop-blur-sm rounded-xl"
-            onClick={() => setConfirmAction(null)}
-            onKeyDown={e => { if (e.key === 'Escape' || e.key === 'Enter') setConfirmAction(null) }}
-          >
-            <div
-              role="dialog"
-              className="bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl p-6 max-w-[340px] text-center"
-              onClick={e => e.stopPropagation()}
-              onKeyDown={e => e.stopPropagation()}
+          <div className="absolute inset-0 z-10 flex items-center justify-center">
+            <button
+              type="button"
+              className="absolute inset-0 bg-black/45 backdrop-blur-sm rounded-xl border-0"
+              onClick={() => setConfirmAction(null)}
+              aria-label="Close confirmation"
+            />
+            <dialog
+              open
+              className="relative z-[1] m-0 p-6 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl max-w-[340px] text-center"
             >
               <p className="text-sm font-medium text-dark-text-primary mb-4">{confirmAction.message}</p>
               <div className="flex gap-2 justify-center">
@@ -1957,40 +1949,38 @@ function DrawBrowserModal({ drawings, loading, editorContent, onInsert, onRename
                   Delete
                 </button>
               </div>
-            </div>
+            </dialog>
           </div>
         )}
-      </div>
+      </dialog>
     </div>
   )
 }
 
 // ── EditDrawModal ────────────────────────────────────────────────
 
-function EditDrawModal({ draws, selectedDraw, editSize, editZoom, onSelect, onSizeChange, onZoomChange, onSave, onClose }: {
-  draws: Array<{ shortcode: string; id: string; size: string; zoom: string; index: number }>
-  selectedDraw: { shortcode: string; id: string; size: string; zoom: string; index: number } | null
+function EditDrawModal({ draws, selectedDraw, editSize, editZoom, onSelect, onSizeChange, onZoomChange, onSave, onClose }: Readonly<{
+  draws: DrawInfo[]
+  selectedDraw: DrawInfo | null
   editSize: string
   editZoom: string
-  onSelect: (draw: { shortcode: string; id: string; size: string; zoom: string; index: number }) => void
+  onSelect: (draw: DrawInfo) => void
   onSizeChange: (size: string) => void
   onZoomChange: (zoom: string) => void
   onSave: () => void
   onClose: () => void
-}) {
+}>) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm"
-      onClick={onClose}
-      onKeyDown={e => { if (e.key === 'Escape' || e.key === 'Enter') onClose() }}
-    >
-      <div
-        role="dialog"
-        className="w-full max-w-lg mx-4 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden"
-        onClick={e => e.stopPropagation()}
-        onKeyDown={e => e.stopPropagation()}
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm border-0"
+        onClick={onClose}
+        aria-label="Close dialog"
+      />
+      <dialog
+        open
+        className="relative z-[1] w-full max-w-lg mx-4 m-0 p-0 bg-dark-bg-secondary rounded-xl border border-dark-border-subtle shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-dark-border-subtle">
@@ -2034,9 +2024,9 @@ function EditDrawModal({ draws, selectedDraw, editSize, editZoom, onSelect, onSi
 
             <div className="space-y-4">
               {/* Size */}
-              <div>
-                <span id="draw-size-label" className="block text-xs font-medium text-dark-text-secondary mb-1.5">Size</span>
-                <div className="flex gap-1.5" role="group" aria-labelledby="draw-size-label">
+              <fieldset className="border-0 p-0 m-0 min-w-0">
+                <legend className="block text-xs font-medium text-dark-text-secondary mb-1.5">Size</legend>
+                <div className="flex gap-1.5">
                   {([['s', 'Small'], ['m', 'Medium'], ['l', 'Large']] as const).map(([val, label]) => (
                     <button
                       key={val}
@@ -2052,12 +2042,12 @@ function EditDrawModal({ draws, selectedDraw, editSize, editZoom, onSelect, onSi
                     </button>
                   ))}
                 </div>
-              </div>
+              </fieldset>
 
               {/* Zoom */}
-              <div>
-                <span id="draw-zoom-label" className="block text-xs font-medium text-dark-text-secondary mb-1.5">Zoom</span>
-                <div className="flex gap-1.5 flex-wrap" role="group" aria-labelledby="draw-zoom-label">
+              <fieldset className="border-0 p-0 m-0 min-w-0">
+                <legend className="block text-xs font-medium text-dark-text-secondary mb-1.5">Zoom</legend>
+                <div className="flex gap-1.5 flex-wrap">
                   {(['fit', '50%', '100%', '150%', '200%'] as const).map((val) => (
                     <button
                       key={val}
@@ -2073,7 +2063,7 @@ function EditDrawModal({ draws, selectedDraw, editSize, editZoom, onSelect, onSi
                     </button>
                   ))}
                 </div>
-              </div>
+              </fieldset>
             </div>
 
             {/* Actions */}
@@ -2103,7 +2093,7 @@ function EditDrawModal({ draws, selectedDraw, editSize, editZoom, onSelect, onSi
             </div>
           </div>
         )}
-      </div>
+      </dialog>
     </div>
   )
 }

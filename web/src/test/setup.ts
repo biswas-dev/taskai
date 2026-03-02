@@ -1,13 +1,11 @@
 import '@testing-library/jest-dom'
 
 // Polyfill ResizeObserver for Headless UI in jsdom
-if (globalThis.ResizeObserver === undefined) {
-  globalThis.ResizeObserver = class ResizeObserver {
-    // No-op stubs required for jsdom environment
-    observe() { /* no-op */ }
-    unobserve() { /* no-op */ }
-    disconnect() { /* no-op */ }
-  }
+globalThis.ResizeObserver ??= class ResizeObserver {
+  // No-op stubs required for jsdom environment
+  observe() { /* no-op */ }
+  unobserve() { /* no-op */ }
+  disconnect() { /* no-op */ }
 }
 
 // Mock import.meta.env for tests

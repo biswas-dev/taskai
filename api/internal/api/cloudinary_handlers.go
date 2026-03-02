@@ -361,6 +361,149 @@ func (s *Server) HandleTestCloudinaryConnection(w http.ResponseWriter, r *http.R
 	respondJSON(w, http.StatusOK, cred)
 }
 
+// uploadTargetInfo holds the resolved project and public ID for an upload signature request.
+type uploadTargetInfo struct {
+	projectID   int64
+	projectName string
+	publicID    string
+}
+
+// httpError represents an error that should be returned as an HTTP response.
+type httpError struct {
+	status int
+	msg    string
+	code   string
+}
+
+func (e *httpError) Error() string { return e.msg }
+
+// resolveTaskUploadTarget looks up the task, its project, and validates attachment limits.
+// Returns the upload target info or an httpError for the caller to handle.
+func (s *Server) resolveTaskUploadTarget(ctx context.Context, taskIDStr string) (*uploadTargetInfo, *httpError) {
+	taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
+	if err != nil {
+		return nil, &httpError{http.StatusBadRequest, "invalid task_id", "bad_request"}
+	}
+
+	var projectID int64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT project_id FROM tasks WHERE id = $1`, taskID,
+	).Scan(&projectID)
+	if err == sql.ErrNoRows {
+		return nil, &httpError{http.StatusNotFound, "task not found", "not_found"}
+	}
+	if err != nil {
+		s.logger.Error("Failed to look up task for signature", zap.Error(err))
+		return nil, &httpError{http.StatusInternalServerError, "failed to look up task", "internal_error"}
+	}
+
+	projectName, herr := s.lookupProjectName(ctx, projectID)
+	if herr != nil {
+		return nil, herr
+	}
+
+	var attachmentCount int
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM task_attachments WHERE task_id = $1`, taskID,
+	).Scan(&attachmentCount)
+	if err != nil {
+		s.logger.Error("Failed to count attachments", zap.Error(err))
+		return nil, &httpError{http.StatusInternalServerError, errFailedCountAttachments, "internal_error"}
+	}
+
+	if attachmentCount >= 99 {
+		return nil, &httpError{http.StatusBadRequest, "maximum 99 attachments per task", "attachment_limit_exceeded"}
+	}
+
+	return &uploadTargetInfo{
+		projectID:   projectID,
+		projectName: projectName,
+		publicID:    fmt.Sprintf("%d_%02d", taskID, attachmentCount+1),
+	}, nil
+}
+
+// resolveWikiPageUploadTarget looks up the wiki page, its project, and validates attachment limits.
+// Returns the upload target info or an httpError for the caller to handle.
+func (s *Server) resolveWikiPageUploadTarget(ctx context.Context, pageIDStr string) (*uploadTargetInfo, *httpError) {
+	pageID, err := strconv.ParseInt(pageIDStr, 10, 64)
+	if err != nil {
+		return nil, &httpError{http.StatusBadRequest, "invalid page_id", "bad_request"}
+	}
+
+	var projectID int64
+	err = s.db.QueryRowContext(ctx,
+		`SELECT project_id FROM wiki_pages WHERE id = $1`, pageID,
+	).Scan(&projectID)
+	if err == sql.ErrNoRows {
+		return nil, &httpError{http.StatusNotFound, "wiki page not found", "not_found"}
+	}
+	if err != nil {
+		s.logger.Error("Failed to look up wiki page for signature", zap.Error(err))
+		return nil, &httpError{http.StatusInternalServerError, "failed to look up wiki page", "internal_error"}
+	}
+
+	projectName, herr := s.lookupProjectName(ctx, projectID)
+	if herr != nil {
+		return nil, herr
+	}
+
+	var attachmentCount int
+	err = s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wiki_page_attachments WHERE wiki_page_id = $1`, pageID,
+	).Scan(&attachmentCount)
+	if err != nil {
+		s.logger.Error("Failed to count wiki page attachments", zap.Error(err))
+		return nil, &httpError{http.StatusInternalServerError, errFailedCountAttachments, "internal_error"}
+	}
+
+	if attachmentCount >= 100 {
+		return nil, &httpError{http.StatusBadRequest, "maximum 100 attachments per wiki page", "attachment_limit_exceeded"}
+	}
+
+	return &uploadTargetInfo{
+		projectID:   projectID,
+		projectName: projectName,
+		publicID:    fmt.Sprintf("w%d_%03d", pageID, attachmentCount+1),
+	}, nil
+}
+
+// lookupProjectName fetches the project name by ID.
+func (s *Server) lookupProjectName(ctx context.Context, projectID int64) (string, *httpError) {
+	var projectName string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT name FROM projects WHERE id = $1`, projectID,
+	).Scan(&projectName)
+	if err != nil {
+		s.logger.Error("Failed to look up project for signature", zap.Error(err))
+		return "", &httpError{http.StatusInternalServerError, "failed to look up project", "internal_error"}
+	}
+	return projectName, nil
+}
+
+// fetchCloudinarySecret fetches the Cloudinary credentials for signing.
+func (s *Server) fetchCloudinarySecret(ctx context.Context, userID int64) (cloudName, apiKey, apiSecret string, herr *httpError) {
+	err := s.db.QueryRowContext(ctx,
+		`SELECT cloud_name, api_key, api_secret FROM cloudinary_credentials WHERE user_id = $1`, userID,
+	).Scan(&cloudName, &apiKey, &apiSecret)
+	if err == sql.ErrNoRows {
+		return "", "", "", &httpError{http.StatusBadRequest, "no Cloudinary credentials configured", "no_credentials"}
+	}
+	if err != nil {
+		s.logger.Error("Failed to fetch cloudinary credentials for signature", zap.Error(err))
+		return "", "", "", &httpError{http.StatusInternalServerError, "failed to generate signature", "internal_error"}
+	}
+	return cloudName, apiKey, apiSecret, nil
+}
+
+// generateCloudinarySignature creates the SHA-1 signature for a Cloudinary upload.
+func generateCloudinarySignature(folder, publicID, apiSecret string) (signature string, timestamp int64) {
+	timestamp = time.Now().Unix()
+	signStr := fmt.Sprintf("folder=%s&public_id=%s&timestamp=%d%s", folder, publicID, timestamp, apiSecret)
+	h := sha1.New()
+	h.Write([]byte(signStr))
+	return hex.EncodeToString(h.Sum(nil)), timestamp
+}
+
 // HandleGetUploadSignature generates a Cloudinary upload signature for the current user.
 // Requires exactly one of ?task_id= or ?page_id= query parameter.
 func (s *Server) HandleGetUploadSignature(w http.ResponseWriter, r *http.Request) {
@@ -382,133 +525,29 @@ func (s *Server) HandleGetUploadSignature(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var projectID int64
-	var projectName string
-	var publicID string
-
+	// Resolve upload target (task or wiki page)
+	var target *uploadTargetInfo
+	var herr *httpError
 	if taskIDStr != "" {
-		taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid task_id", "bad_request")
-			return
-		}
-
-		// Look up task to get project_id
-		err = s.db.QueryRowContext(ctx,
-			`SELECT project_id FROM tasks WHERE id = $1`, taskID,
-		).Scan(&projectID)
-		if err == sql.ErrNoRows {
-			respondError(w, http.StatusNotFound, "task not found", "not_found")
-			return
-		}
-		if err != nil {
-			s.logger.Error("Failed to look up task for signature", zap.Error(err))
-			respondError(w, http.StatusInternalServerError, "failed to look up task", "internal_error")
-			return
-		}
-
-		// Look up project name
-		err = s.db.QueryRowContext(ctx,
-			`SELECT name FROM projects WHERE id = $1`, projectID,
-		).Scan(&projectName)
-		if err != nil {
-			s.logger.Error("Failed to look up project for signature", zap.Error(err))
-			respondError(w, http.StatusInternalServerError, "failed to look up project", "internal_error")
-			return
-		}
-
-		// Count existing attachments for this task
-		var attachmentCount int
-		err = s.db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM task_attachments WHERE task_id = $1`, taskID,
-		).Scan(&attachmentCount)
-		if err != nil {
-			s.logger.Error("Failed to count attachments", zap.Error(err))
-			respondError(w, http.StatusInternalServerError, errFailedCountAttachments, "internal_error")
-			return
-		}
-
-		if attachmentCount >= 99 {
-			respondError(w, http.StatusBadRequest, "maximum 99 attachments per task", "attachment_limit_exceeded")
-			return
-		}
-
-		publicID = fmt.Sprintf("%d_%02d", taskID, attachmentCount+1)
+		target, herr = s.resolveTaskUploadTarget(ctx, taskIDStr)
 	} else {
-		pageID, err := strconv.ParseInt(pageIDStr, 10, 64)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid page_id", "bad_request")
-			return
-		}
-
-		// Look up wiki page to get project_id
-		err = s.db.QueryRowContext(ctx,
-			`SELECT project_id FROM wiki_pages WHERE id = $1`, pageID,
-		).Scan(&projectID)
-		if err == sql.ErrNoRows {
-			respondError(w, http.StatusNotFound, "wiki page not found", "not_found")
-			return
-		}
-		if err != nil {
-			s.logger.Error("Failed to look up wiki page for signature", zap.Error(err))
-			respondError(w, http.StatusInternalServerError, "failed to look up wiki page", "internal_error")
-			return
-		}
-
-		// Look up project name
-		err = s.db.QueryRowContext(ctx,
-			`SELECT name FROM projects WHERE id = $1`, projectID,
-		).Scan(&projectName)
-		if err != nil {
-			s.logger.Error("Failed to look up project for signature", zap.Error(err))
-			respondError(w, http.StatusInternalServerError, "failed to look up project", "internal_error")
-			return
-		}
-
-		// Count existing wiki page attachments
-		var attachmentCount int
-		err = s.db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM wiki_page_attachments WHERE wiki_page_id = $1`, pageID,
-		).Scan(&attachmentCount)
-		if err != nil {
-			s.logger.Error("Failed to count wiki page attachments", zap.Error(err))
-			respondError(w, http.StatusInternalServerError, errFailedCountAttachments, "internal_error")
-			return
-		}
-
-		if attachmentCount >= 100 {
-			respondError(w, http.StatusBadRequest, "maximum 100 attachments per wiki page", "attachment_limit_exceeded")
-			return
-		}
-
-		publicID = fmt.Sprintf("w%d_%03d", pageID, attachmentCount+1)
+		target, herr = s.resolveWikiPageUploadTarget(ctx, pageIDStr)
+	}
+	if herr != nil {
+		respondError(w, herr.status, herr.msg, herr.code)
+		return
 	}
 
 	// Fetch Cloudinary credentials
-	var cloudName, apiKey, apiSecret string
-	err := s.db.QueryRowContext(ctx,
-		`SELECT cloud_name, api_key, api_secret FROM cloudinary_credentials WHERE user_id = $1`, userID,
-	).Scan(&cloudName, &apiKey, &apiSecret)
-
-	if err == sql.ErrNoRows {
-		respondError(w, http.StatusBadRequest, "no Cloudinary credentials configured", "no_credentials")
-		return
-	}
-	if err != nil {
-		s.logger.Error("Failed to fetch cloudinary credentials for signature", zap.Error(err))
-		respondError(w, http.StatusInternalServerError, "failed to generate signature", "internal_error")
+	cloudName, apiKey, apiSecret, herr := s.fetchCloudinarySecret(ctx, userID)
+	if herr != nil {
+		respondError(w, herr.status, herr.msg, herr.code)
 		return
 	}
 
-	// Build folder and public_id
-	folder := "taskai/" + slugifyProjectName(projectName, projectID)
-
-	// Sign with all params alphabetically: folder, public_id, timestamp
-	timestamp := time.Now().Unix()
-	signStr := fmt.Sprintf("folder=%s&public_id=%s&timestamp=%d%s", folder, publicID, timestamp, apiSecret)
-	h := sha1.New()
-	h.Write([]byte(signStr))
-	signature := hex.EncodeToString(h.Sum(nil))
+	// Build folder and generate signature
+	folder := "taskai/" + slugifyProjectName(target.projectName, target.projectID)
+	signature, timestamp := generateCloudinarySignature(folder, target.publicID, apiSecret)
 
 	respondJSON(w, http.StatusOK, UploadSignatureResponse{
 		Signature: signature,
@@ -516,7 +555,7 @@ func (s *Server) HandleGetUploadSignature(w http.ResponseWriter, r *http.Request
 		CloudName: cloudName,
 		APIKey:    apiKey,
 		Folder:    folder,
-		PublicID:  publicID,
+		PublicID:  target.publicID,
 	})
 }
 
