@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	entgo.io/ent v0.14.5
-	github.com/anchoo2kewl/go-draw v0.3.0
+	github.com/anchoo2kewl/go-draw v0.4.0
 	github.com/anchoo2kewl/go-wiki v0.1.1-0.20260301204914-2289a94adc98
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
