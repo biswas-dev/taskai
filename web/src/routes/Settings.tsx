@@ -5,7 +5,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
-import { apiClient, type CloudinaryCredentialResponse, type APIKey, type Team, type TeamMember, type TeamInvitation, type Invite } from '../lib/api'
+import { apiClient, type CloudinaryCredentialResponse, type APIKey, type Team, type TeamMember, type TeamInvitation, type SentInvitation, type UserSearchResult, type Invite } from '../lib/api'
 
 export default function Settings() {
   const navigate = useNavigate()
@@ -76,6 +76,14 @@ export default function Settings() {
   const [isInviting, setIsInviting] = useState(false)
   const [isRemovingMember, setIsRemovingMember] = useState<number | null>(null)
   const [isRespondingToInvitation, setIsRespondingToInvitation] = useState<number | null>(null)
+  const [isEditingTeamName, setIsEditingTeamName] = useState(false)
+  const [editTeamName, setEditTeamName] = useState('')
+  const [isSavingTeamName, setIsSavingTeamName] = useState(false)
+  const [sentInvitations, setSentInvitations] = useState<SentInvitation[]>([])
+  const [searchResults, setSearchResults] = useState<UserSearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null)
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false)
 
   // Invite system state
   const [myInvites, setMyInvites] = useState<Invite[]>([])
@@ -473,40 +481,18 @@ export default function Settings() {
 
   const loadTeamData = async () => {
     try {
-      const [teamData, membersData, invitationsData] = await Promise.all([
+      const [teamData, membersData, invitationsData, sentInvData] = await Promise.all([
         apiClient.getMyTeam(),
         apiClient.getTeamMembers(),
         apiClient.getMyInvitations(),
+        apiClient.getTeamSentInvitations(),
       ])
       setTeam(teamData)
       setTeamMembers(membersData)
       setInvitations(invitationsData)
+      setSentInvitations(sentInvData)
     } catch (error) {
       console.error('Failed to load data:', error)
-    }
-  }
-
-  const handleInviteMember = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setTeamError('')
-    setTeamSuccess('')
-
-    if (!inviteEmail.trim()) {
-      setTeamError('Email is required')
-      return
-    }
-
-    setIsInviting(true)
-
-    try {
-      await apiClient.inviteTeamMember(inviteEmail)
-      setTeamSuccess(`Invitation sent to ${inviteEmail}`)
-      setInviteEmail('')
-      await loadTeamData()
-    } catch (error: unknown) {
-      setTeamError(error instanceof Error ? error.message : 'Failed to send invitation')
-    } finally {
-      setIsInviting(false)
     }
   }
 
@@ -561,6 +547,114 @@ export default function Settings() {
       setIsRespondingToInvitation(null)
     }
   }
+
+  const handleSaveTeamName = async () => {
+    const trimmed = editTeamName.trim()
+    if (!trimmed) {
+      setTeamError('Team name is required')
+      return
+    }
+    setIsSavingTeamName(true)
+    setTeamError('')
+    setTeamSuccess('')
+
+    try {
+      const updated = await apiClient.updateTeam(trimmed)
+      setTeam(updated)
+      setIsEditingTeamName(false)
+      setTeamSuccess('Team name updated')
+    } catch (error: unknown) {
+      setTeamError(error instanceof Error ? error.message : 'Failed to update team name')
+    } finally {
+      setIsSavingTeamName(false)
+    }
+  }
+
+  const handleSearchUsers = async (query: string) => {
+    setInviteEmail(query)
+    setSelectedUser(null)
+
+    if (query.trim().length < 2) {
+      setSearchResults([])
+      setShowSearchDropdown(false)
+      return
+    }
+
+    setIsSearching(true)
+    try {
+      const results = await apiClient.searchTeamUsers(query.trim())
+      setSearchResults(results)
+      setShowSearchDropdown(results.length > 0)
+    } catch {
+      setSearchResults([])
+      setShowSearchDropdown(false)
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  const handleSelectUser = (u: UserSearchResult) => {
+    setSelectedUser(u)
+    setInviteEmail(u.name ? `${u.name} (${u.email})` : u.email)
+    setShowSearchDropdown(false)
+    setSearchResults([])
+  }
+
+  const handleInviteOrAdd = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setTeamError('')
+    setTeamSuccess('')
+
+    if (selectedUser) {
+      // Direct add existing user
+      setIsInviting(true)
+      try {
+        await apiClient.addTeamMember(selectedUser.id)
+        setTeamSuccess(`${selectedUser.name || selectedUser.email} added to the team`)
+        setInviteEmail('')
+        setSelectedUser(null)
+        await loadTeamData()
+      } catch (error: unknown) {
+        setTeamError(error instanceof Error ? error.message : 'Failed to add member')
+      } finally {
+        setIsInviting(false)
+      }
+    } else {
+      // Fall back to email invite
+      const email = inviteEmail.trim()
+      if (!email) {
+        setTeamError('Email is required')
+        return
+      }
+      setIsInviting(true)
+      try {
+        await apiClient.inviteTeamMember(email)
+        setTeamSuccess(`Invitation sent to ${email}`)
+        setInviteEmail('')
+        await loadTeamData()
+      } catch (error: unknown) {
+        setTeamError(error instanceof Error ? error.message : 'Failed to send invitation')
+      } finally {
+        setIsInviting(false)
+      }
+    }
+  }
+
+  // Debounce user search
+  useEffect(() => {
+    if (selectedUser) return
+    const query = inviteEmail.trim()
+    if (query.length < 2) {
+      setSearchResults([])
+      setShowSearchDropdown(false)
+      return
+    }
+    const timer = setTimeout(() => {
+      handleSearchUsers(inviteEmail)
+    }, 300)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inviteEmail, selectedUser])
 
   return (
     <div className="min-h-screen bg-dark-bg-primary py-8">
@@ -1659,9 +1753,43 @@ print(response.json())`}
                 {team && (
                   <div className="mb-6 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
                     <div className="flex items-center justify-between">
-                      <div>
+                      <div className="flex-1">
                         <p className="text-sm text-dark-text-secondary">Your Team</p>
-                        <p className="text-lg font-semibold text-dark-text-primary">{team.name}</p>
+                        {isEditingTeamName ? (
+                          <div className="flex items-center gap-2 mt-1">
+                            <input
+                              type="text"
+                              value={editTeamName}
+                              onChange={(e) => setEditTeamName(e.target.value)}
+                              maxLength={100}
+                              className="px-3 py-1.5 bg-dark-bg-primary border border-dark-border-subtle rounded-lg text-dark-text-primary text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleSaveTeamName()
+                                if (e.key === 'Escape') setIsEditingTeamName(false)
+                              }}
+                            />
+                            <Button size="sm" onClick={handleSaveTeamName} disabled={isSavingTeamName}>
+                              {isSavingTeamName ? 'Saving...' : 'Save'}
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => setIsEditingTeamName(false)} disabled={isSavingTeamName}>
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <p className="text-lg font-semibold text-dark-text-primary">{team.name}</p>
+                            <button
+                              onClick={() => { setEditTeamName(team.name); setIsEditingTeamName(true) }}
+                              className="p-1 text-dark-text-tertiary hover:text-dark-text-primary transition-colors rounded"
+                              title="Edit team name"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <div className="text-right">
                         <p className="text-sm text-dark-text-secondary">Members</p>
@@ -1713,22 +1841,53 @@ print(response.json())`}
                   </div>
                 )}
 
-                {/* Invite Member Form */}
-                <form onSubmit={handleInviteMember} className="mb-6">
-                  <div className="flex gap-3 items-end">
-                    <div className="flex-1">
-                      <TextInput
-                        label="Invite Team Member"
-                        type="email"
-                        value={inviteEmail}
-                        onChange={(e) => setInviteEmail(e.target.value)}
-                        placeholder="email@example.com"
-                        required
-                      />
+                {/* Invite / Add Member Form */}
+                <form onSubmit={handleInviteOrAdd} className="mb-6">
+                  <label className="block text-sm font-medium text-dark-text-secondary mb-1.5">Add or Invite Team Member</label>
+                  <div className="relative">
+                    <div className="flex gap-3 items-start">
+                      <div className="flex-1 relative">
+                        <input
+                          type="text"
+                          value={inviteEmail}
+                          onChange={(e) => { setInviteEmail(e.target.value); setSelectedUser(null) }}
+                          placeholder="Search by name or email..."
+                          className="w-full px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg text-dark-text-primary placeholder-dark-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        />
+                        {isSearching && (
+                          <div className="absolute right-3 top-2.5">
+                            <svg className="w-4 h-4 animate-spin text-dark-text-tertiary" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          </div>
+                        )}
+                        {showSearchDropdown && searchResults.length > 0 && (
+                          <div className="absolute z-10 mt-1 w-full bg-dark-bg-secondary border border-dark-border-subtle rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            {searchResults.map((u) => (
+                              <button
+                                key={u.id}
+                                type="button"
+                                onClick={() => handleSelectUser(u)}
+                                className="w-full px-3 py-2 text-left hover:bg-dark-bg-tertiary transition-colors first:rounded-t-lg last:rounded-b-lg"
+                              >
+                                <p className="text-sm font-medium text-dark-text-primary">{u.name || u.email}</p>
+                                {u.name && <p className="text-xs text-dark-text-tertiary">{u.email}</p>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Button type="submit" disabled={isInviting || !inviteEmail.trim()}>
+                        {isInviting ? 'Adding...' : selectedUser ? 'Add to Team' : 'Send Invite'}
+                      </Button>
                     </div>
-                    <Button type="submit" disabled={isInviting}>
-                      {isInviting ? 'Inviting...' : 'Send Invite'}
-                    </Button>
+                    {selectedUser && (
+                      <p className="mt-1 text-xs text-primary-400">Will add {selectedUser.name || selectedUser.email} directly to the team</p>
+                    )}
+                    {!selectedUser && inviteEmail.trim() && !isSearching && searchResults.length === 0 && inviteEmail.trim().length >= 2 && (
+                      <p className="mt-1 text-xs text-dark-text-tertiary">No matching users found — will send an email invitation</p>
+                    )}
                   </div>
                 </form>
 
@@ -1785,6 +1944,30 @@ print(response.json())`}
                     </div>
                   )}
                 </div>
+
+                {/* Sent Invitations (Pending) */}
+                {sentInvitations.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold text-dark-text-primary mb-3">Pending Sent Invitations</h3>
+                    <div className="space-y-2">
+                      {sentInvitations.map((inv) => (
+                        <div key={inv.id} className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-dark-text-primary">{inv.invitee_email}</span>
+                              <span className="px-2 py-0.5 text-xs font-medium bg-amber-500/10 text-amber-400 rounded">
+                                Invited
+                              </span>
+                            </div>
+                            <span className="text-xs text-dark-text-tertiary">
+                              {new Date(inv.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-6 bg-green-500/10 border border-green-500/30 rounded-lg p-4">
                   <div className="flex gap-3">

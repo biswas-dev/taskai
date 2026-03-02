@@ -285,12 +285,16 @@ func main() {
 
 			// Team routes
 			r.Get("/team", server.HandleGetMyTeam)
+			r.Patch("/team", server.HandleUpdateTeam)
 			r.Get("/team/members", server.HandleGetTeamMembers)
+			r.Post("/team/members", server.HandleAddTeamMember)
 			r.Post("/team/invite", server.HandleInviteTeamMember)
 			r.Delete("/team/members/{memberId}", server.HandleRemoveTeamMember)
+			r.Get("/team/users/search", server.HandleSearchUsers)
 
 			// Team invitations
 			r.Get("/team/invitations", server.HandleGetMyInvitations)
+			r.Get("/team/invitations/sent", server.HandleGetTeamSentInvitations)
 			r.Post("/team/invitations/{id}/accept", server.HandleAcceptInvitation)
 			r.Post("/team/invitations/{id}/reject", server.HandleRejectInvitation)
 			r.Post("/team/invitations/accept-by-token", server.HandleAcceptInvitationByToken)

@@ -205,6 +205,19 @@ export interface TeamInvitation {
   inviter_name?: string
 }
 
+export interface SentInvitation {
+  id: number
+  invitee_email: string
+  status: string
+  created_at: string
+}
+
+export interface UserSearchResult {
+  id: number
+  email: string
+  name?: string
+}
+
 export interface TokenInvitationInfo {
   invitation_id: number
   team_name: string
@@ -742,6 +755,28 @@ class ApiClient {
     return this.request<{ message: string }>('/api/team/invitations/accept-by-token', {
       method: 'POST',
       body: JSON.stringify({ token }),
+    })
+  }
+
+  async updateTeam(name: string): Promise<Team> {
+    return this.request<Team>('/api/team', {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  async getTeamSentInvitations(): Promise<SentInvitation[]> {
+    return this.request<SentInvitation[]>('/api/team/invitations/sent')
+  }
+
+  async searchTeamUsers(query: string): Promise<UserSearchResult[]> {
+    return this.request<UserSearchResult[]>(`/api/team/users/search?q=${encodeURIComponent(query)}`)
+  }
+
+  async addTeamMember(userId: number): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/team/members', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId }),
     })
   }
 

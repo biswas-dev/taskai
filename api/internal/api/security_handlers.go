@@ -206,7 +206,7 @@ func (s *Server) Handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enable 2FA
-	_, err = s.db.Exec("UPDATE users SET totp_enabled = 1, backup_codes = $1 WHERE id = $2",
+	_, err = s.db.Exec("UPDATE users SET totp_enabled = true, backup_codes = $1 WHERE id = $2",
 		string(backupCodesJSON), userID)
 	if err != nil {
 		http.Error(w, "Failed to enable 2FA", http.StatusInternalServerError)
@@ -251,7 +251,7 @@ func (s *Server) Handle2FADisable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Disable 2FA
-	_, err = s.db.Exec("UPDATE users SET totp_enabled = 0, totp_secret = NULL, backup_codes = NULL WHERE id = $1", userID)
+	_, err = s.db.Exec("UPDATE users SET totp_enabled = false, totp_secret = NULL, backup_codes = NULL WHERE id = $1", userID)
 	if err != nil {
 		http.Error(w, "Failed to disable 2FA", http.StatusInternalServerError)
 		return
@@ -269,7 +269,7 @@ func (s *Server) Handle2FAStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var totpEnabled int
+	var totpEnabled bool
 	err := s.db.QueryRow("SELECT totp_enabled FROM users WHERE id = $1", userID).Scan(&totpEnabled)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -282,7 +282,7 @@ func (s *Server) Handle2FAStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{
-		"enabled": totpEnabled == 1,
+		"enabled": totpEnabled,
 	})
 }
 
