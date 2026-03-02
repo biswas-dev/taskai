@@ -9,14 +9,6 @@ vi.mock('./AuthContext', () => ({
   useAuth: () => ({ user: mockUser }),
 }))
 
-vi.mock('../lib/db', () => ({
-  destroyDatabase: vi.fn(),
-}))
-
-vi.mock('../lib/sync/syncService', () => ({
-  SyncService: vi.fn(),
-}))
-
 // Test consumer component that exposes sync context values
 function TestConsumer() {
   const { syncState, isInitialized, triggerSync } = useSync()

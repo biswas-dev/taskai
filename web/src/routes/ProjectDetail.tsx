@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
-import { api, Project, type SwimLane } from '../lib/api'
+import { api, Project, Task, type SwimLane } from '../lib/api'
 import { useLocalTasks } from '../hooks/useLocalTasks'
-import type { TaskDocument } from '../lib/db/schema'
 
 export default function ProjectDetail() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -31,7 +30,7 @@ export default function ProjectDetail() {
   const [creating, setCreating] = useState(false)
 
   // Drag and drop state
-  const [activeTask, setActiveTask] = useState<TaskDocument | null>(null)
+  const [activeTask, setActiveTask] = useState<Task | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -68,7 +67,7 @@ export default function ProjectDetail() {
       const lanes = await api.getSwimLanes(Number(projectId))
       setSwimLanes(lanes.sort((a, b) => a.position - b.position))
     } catch (err) {
-      console.error('Failed to load swim lanes:', err)
+      // non-critical load failure — use defaults below
       // Fallback to default swim lanes if fetch fails
       setSwimLanes([
         { id: 0, project_id: Number(projectId), name: 'To Do', color: '#6B7280', position: 0, status_category: 'todo', created_at: '', updated_at: '' },
@@ -165,7 +164,7 @@ export default function ProjectDetail() {
   const tasksBySwimLane = swimLanes.reduce((acc, lane) => {
     acc[lane.id] = tasks.filter((t) => t.swim_lane_id === lane.id)
     return acc
-  }, {} as Record<number, TaskDocument[]>)
+  }, {} as Record<number, Task[]>)
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
@@ -378,7 +377,7 @@ function TaskColumn({ id, title, count, tasks, color, projectId }: {
   id: string
   title: string
   count: number
-  tasks: TaskDocument[]
+  tasks: Task[]
   color: string
   projectId: string
 }) {
@@ -407,7 +406,7 @@ function TaskColumn({ id, title, count, tasks, color, projectId }: {
 }
 
 function DraggableTask({ task, projectId }: {
-  task: TaskDocument
+  task: Task
   projectId: string
 }) {
   const navigate = useNavigate()
@@ -446,7 +445,7 @@ function DraggableTask({ task, projectId }: {
 }
 
 function TaskCard({ task, isDragging }: {
-  task: TaskDocument
+  task: Task
   projectId?: string
   isDragging?: boolean
 }) {
