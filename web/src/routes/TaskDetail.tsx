@@ -728,7 +728,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                               {new Date(comment.created_at).toLocaleString()}
                             </span>
                           </div>
-                          <div className="text-sm text-dark-text-secondary prose prose-sm max-w-none prose-img:rounded-lg prose-img:max-h-64 prose-img:border prose-img:border-dark-border-subtle prose-a:text-primary-400">
+                          <div className="text-sm text-dark-text-secondary prose prose-sm max-w-none prose-headings:text-dark-text-primary prose-p:text-dark-text-secondary prose-a:text-primary-400 prose-code:text-primary-400 prose-code:bg-primary-500/10 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-dark-bg-primary prose-pre:border prose-pre:border-dark-border-subtle prose-strong:text-dark-text-primary prose-li:text-dark-text-secondary prose-img:rounded-lg prose-img:max-h-64 prose-img:border prose-img:border-dark-border-subtle">
                             <ReactMarkdown remarkPlugins={[remarkGfm]}>
                               {comment.comment}
                             </ReactMarkdown>
