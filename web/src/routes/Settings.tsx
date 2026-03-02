@@ -92,7 +92,7 @@ export default function Settings() {
       const status = await apiClient.get2FAStatus()
       setTwoFAEnabled(status.enabled)
     } catch (error) {
-      console.error('Failed to load 2FA status:', error)
+      // non-critical load failure
     }
   }
 
@@ -242,7 +242,7 @@ export default function Settings() {
         }
       }
     } catch (error) {
-      console.error('Failed to load Cloudinary credentials:', error)
+      // non-critical load failure
     }
   }
 
@@ -335,7 +335,7 @@ export default function Settings() {
       setMyInviteCount(data.invite_count)
       setIsUserAdmin(data.is_admin)
     } catch (error) {
-      console.error('Failed to load invites:', error)
+      // non-critical load failure
     }
   }
 
@@ -374,7 +374,7 @@ export default function Settings() {
       const keys = await apiClient.getAPIKeys()
       setApiKeys(keys)
     } catch (error) {
-      console.error('Failed to load API keys:', error)
+      // non-critical load failure
     }
   }
 
@@ -448,7 +448,7 @@ export default function Settings() {
       setTeamMembers(membersData)
       setInvitations(invitationsData)
     } catch (error) {
-      console.error('Failed to load team data:', error)
+      // non-critical load failure
     }
   }
 

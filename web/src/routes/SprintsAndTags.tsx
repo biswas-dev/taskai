@@ -67,7 +67,7 @@ export default function SprintsAndTags() {
       const data = await apiClient.getSprints()
       setSprints(data)
     } catch (error: unknown) {
-      console.error('Failed to load sprints:', error)
+      // non-critical load failure
     }
   }
 
@@ -76,7 +76,7 @@ export default function SprintsAndTags() {
       const data = await apiClient.getTags()
       setTags(data)
     } catch (error: unknown) {
-      console.error('Failed to load tags:', error)
+      // non-critical load failure
     }
   }
 

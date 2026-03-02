@@ -493,7 +493,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
 
     const token = localStorage.getItem('token')
     if (!token) {
-      console.error('No auth token found')
+      // no auth token — cannot connect WebSocket
       setSyncState('disconnected')
       return
     }
@@ -883,7 +883,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
         isDirtyRef.current = true
       }
     } catch (err) {
-      console.error('Drop upload failed:', err)
+      // drop upload failed — error state handled by UI
     } finally {
       setIsDropUploading(false)
     }
@@ -1070,7 +1070,7 @@ export default function WikiEditor({ page }: WikiEditorProps) {
         loadDrawings()
       }
     } catch (err) {
-      console.error('Failed to create drawing:', err)
+      // drawing creation failed — silently swallowed
     }
   }, [loadDrawings])
 

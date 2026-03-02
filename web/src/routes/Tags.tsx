@@ -34,7 +34,7 @@ export default function Tags() {
       const data = await apiClient.getTags()
       setTags(data)
     } catch (error: unknown) {
-      console.error('Failed to load tags:', error)
+      // non-critical load failure
     }
   }
 

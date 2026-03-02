@@ -404,9 +404,8 @@ class ApiClient {
       const isJson = contentType?.includes('application/json')
 
       if (!isJson) {
-        // Server returned non-JSON (likely HTML error page)
-        const text = await response.text()
-        console.error('[API] Non-JSON response:', text.substring(0, 500))
+        // Server returned non-JSON (likely HTML error page) — consume body
+        await response.text()
         throw new Error(
           response.ok
             ? 'Server returned unexpected response format'

@@ -255,7 +255,7 @@ export default function Admin() {
       const data = await api.getVersion()
       setVersionInfo(data)
     } catch (err) {
-      console.error('Failed to load version info:', err)
+      // non-critical load failure
     } finally {
       setVersionLoading(false)
     }
