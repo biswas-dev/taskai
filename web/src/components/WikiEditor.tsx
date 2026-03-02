@@ -422,6 +422,112 @@ function mapYjsStatus(status: string): 'connecting' | 'connected' | 'disconnecte
   return 'connecting'
 }
 
+function findDrawShortcodeAtPosition(text: string, pos: number): string | null {
+  const re = /\[draw:([a-zA-Z0-9_-]+)(?::edit)?\]/g
+  let match
+  while ((match = re.exec(text)) !== null) {
+    if (pos >= match.index && pos <= match.index + match[0].length) {
+      return match[1]
+    }
+  }
+  return null
+}
+
+function shouldSaveContent(isDirty: boolean, current: string, lastSaved: string): boolean {
+  return isDirty && current !== lastSaved
+}
+
+// ── Status display helpers ───────────────────────────────────
+
+type SyncState = 'connecting' | 'connected' | 'disconnected'
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
+function getSyncStatusColor(syncState: SyncState): string {
+  switch (syncState) {
+    case 'connected': return 'bg-green-500'
+    case 'connecting': return 'bg-yellow-500'
+    case 'disconnected': return 'bg-red-500'
+  }
+}
+
+function getSaveStatusColor(saveStatus: SaveStatus, syncState: SyncState): string {
+  switch (saveStatus) {
+    case 'saving': return 'bg-yellow-500'
+    case 'saved': return 'bg-green-500'
+    case 'error': return 'bg-red-500'
+    default: return getSyncStatusColor(syncState)
+  }
+}
+
+function getSaveStatusText(saveStatus: SaveStatus, autoSaveEnabled: boolean): string {
+  switch (saveStatus) {
+    case 'saving': return 'Saving...'
+    case 'saved': return 'Saved'
+    case 'error': return 'Save failed'
+    default: return autoSaveEnabled ? 'Autosave on' : 'Autosave off'
+  }
+}
+
+function getSaveStatusTextColor(saveStatus: SaveStatus): string {
+  switch (saveStatus) {
+    case 'saving': return 'text-yellow-400'
+    case 'saved': return 'text-green-400'
+    case 'error': return 'text-red-400'
+    default: return 'text-dark-text-tertiary'
+  }
+}
+
+function buildDrawShortcode(id: string, size: string, zoom: string): string {
+  const sizeTag = size === 'm' ? '' : ':' + size
+  const zoomTag = zoom === 'fit' ? '' : ':z' + zoom
+  return `[draw:${id}:edit${sizeTag}${zoomTag}]`
+}
+
+async function uploadSingleFile(file: File, pageId: number): Promise<{ url: string; publicId: string; altName: string }> {
+  const sig = await apiClient.getUploadSignature({ pageId })
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('api_key', sig.api_key)
+  formData.append('timestamp', String(sig.timestamp))
+  formData.append('signature', sig.signature)
+  formData.append('folder', sig.folder)
+  formData.append('public_id', sig.public_id)
+
+  const uploadRes = await fetch(
+    `https://api.cloudinary.com/v1_1/${sig.cloud_name}/auto/upload`,
+    { method: 'POST', body: formData }
+  )
+  if (!uploadRes.ok) throw new Error('Upload failed')
+  const uploadData = await uploadRes.json()
+  const altName = file.name.replace(/\.[^.]+$/, '').replaceAll(/[-_]/g, ' ')
+
+  await apiClient.createWikiPageAttachment(pageId, {
+    filename: file.name,
+    alt_name: altName,
+    file_type: 'image',
+    content_type: file.type,
+    file_size: file.size,
+    cloudinary_url: uploadData.secure_url,
+    cloudinary_public_id: uploadData.public_id,
+  })
+
+  return { url: uploadData.secure_url, publicId: uploadData.public_id, altName }
+}
+
+function insertMarkupAtCursor(
+  textarea: HTMLTextAreaElement | null,
+  content: string,
+  markup: string,
+): { newContent: string; focusPos: number | null } {
+  if (textarea) {
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    return { newContent: content.substring(0, start) + markup + content.substring(end), focusPos: start + markup.length }
+  }
+  const sep = content.endsWith('\n') ? '' : '\n'
+  return { newContent: content + sep + markup + '\n', focusPos: null }
+}
+
 // ── Server-side preview fetcher ──────────────────────────────────
 
 async function fetchPreview(markdown: string, signal?: AbortSignal): Promise<string> {
@@ -446,9 +552,9 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   const [content, setContent] = useState('')
   const [isPreview, setIsPreview] = useState(true)
   const [previewHTML, setPreviewHTML] = useState('')
-  const [syncState, setSyncState] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  const [syncState, setSyncState] = useState<SyncState>('connecting')
   const [showImagePicker, setShowImagePicker] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true)
   const isDirtyRef = useRef(false)
   const contentRef = useRef('')
@@ -463,7 +569,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   const fsTextareaRef = useRef<HTMLTextAreaElement>(null)
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const dividerRef = useRef<HTMLDivElement>(null)
+  const dividerRef = useRef<HTMLButtonElement>(null)
   const fsContainerRef = useRef<HTMLDivElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const fsPreviewRef = useRef<HTMLDivElement>(null)
@@ -527,8 +633,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     if (!autoSaveEnabled) return
 
     const saveToServer = async () => {
-      const current = contentRef.current
-      if (!isDirtyRef.current || current === lastSavedContentRef.current) return
+      if (!shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) return
       await saveNow()
     }
 
@@ -537,9 +642,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     // Save on unmount
     return () => {
       clearInterval(interval)
-      const current = contentRef.current
-      if (isDirtyRef.current && current !== lastSavedContentRef.current) {
-        apiClient.updateWikiPageContent(page.id, current).catch(() => {})
+      if (shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) {
+        apiClient.updateWikiPageContent(page.id, contentRef.current).catch(() => {})
       }
     }
   }, [page.id, autoSaveEnabled, saveNow])
@@ -547,17 +651,15 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   // ── Save on beforeunload ───────────────────────────────────
   useEffect(() => {
     const handler = () => {
-      const current = contentRef.current
-      if (isDirtyRef.current && current !== lastSavedContentRef.current) {
-        const blob = new Blob([JSON.stringify({ content: current })], { type: 'application/json' })
-        const API_BASE_FOR_SAVE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8080')
-        // sendBeacon doesn't support custom headers (no auth), so this is best-effort.
-        // The interval save is the primary mechanism.
-        navigator.sendBeacon(
-          `${API_BASE_FOR_SAVE}/api/wiki/pages/${page.id}/content`,
-          blob
-        )
-      }
+      if (!shouldSaveContent(isDirtyRef.current, contentRef.current, lastSavedContentRef.current)) return
+      const blob = new Blob([JSON.stringify({ content: contentRef.current })], { type: 'application/json' })
+      const API_BASE_FOR_SAVE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '' : 'http://localhost:8080')
+      // sendBeacon doesn't support custom headers (no auth), so this is best-effort.
+      // The interval save is the primary mechanism.
+      navigator.sendBeacon(
+        `${API_BASE_FOR_SAVE}/api/wiki/pages/${page.id}/content`,
+        blob
+      )
     }
     globalThis.addEventListener('beforeunload', handler)
     return () => globalThis.removeEventListener('beforeunload', handler)
@@ -629,20 +731,25 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
     if (!textarea) return
 
-    if (action.action === 'wrap') {
-      insertAtCursor(textarea, action.before!, action.after!, content, setContent, syncToYjs, isDirtyRef)
-    } else if (action.action === 'line') {
-      insertLine(textarea, action.prefix!, content, setContent, syncToYjs, isDirtyRef)
-    } else if (action.action === 'insert') {
-      const start = textarea.selectionStart
-      const newContent = content.substring(0, start) + action.text! + content.substring(start)
-      setContent(newContent)
-      syncToYjs(newContent)
-      isDirtyRef.current = true
-      setTimeout(() => {
-        textarea.focus()
-        textarea.selectionStart = textarea.selectionEnd = start + action.text!.length
-      }, 0)
+    switch (action.action) {
+      case 'wrap':
+        insertAtCursor(textarea, action.before!, action.after!, content, setContent, syncToYjs, isDirtyRef)
+        break
+      case 'line':
+        insertLine(textarea, action.prefix!, content, setContent, syncToYjs, isDirtyRef)
+        break
+      case 'insert': {
+        const start = textarea.selectionStart
+        const newContent = content.substring(0, start) + action.text! + content.substring(start)
+        setContent(newContent)
+        syncToYjs(newContent)
+        isDirtyRef.current = true
+        setTimeout(() => {
+          textarea.focus()
+          textarea.selectionStart = textarea.selectionEnd = start + action.text!.length
+        }, 0)
+        break
+      }
     }
   }, [content, syncToYjs, isFullscreen])
 
@@ -750,17 +857,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   // ── Double-click draw shortcode → open editor ─────────────
 
   const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement>) => {
-    const textarea = e.currentTarget
-    const pos = textarea.selectionStart
-    const val = textarea.value
-    const re = /\[draw:([a-zA-Z0-9_-]+)(?::edit)?\]/g
-    let match
-    while ((match = re.exec(val)) !== null) {
-      if (pos >= match.index && pos <= match.index + match[0].length) {
-        window.open(`/draw/${match[1]}/edit`, '_blank')
-        return
-      }
-    }
+    const drawId = findDrawShortcodeAtPosition(e.currentTarget.value, e.currentTarget.selectionStart)
+    if (drawId) window.open(`/draw/${drawId}/edit`, '_blank')
   }, [])
 
   // ── Edit existing draw shortcode ─────────────────────────────
@@ -783,9 +881,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
 
   const saveEditDraw = useCallback(() => {
     if (!selectedEditDraw) return
-    const sizeTag = editDrawSize === 'm' ? '' : ':' + editDrawSize
-    const zoomTag = editDrawZoom === 'fit' ? '' : ':z' + editDrawZoom
-    const newShortcode = `[draw:${selectedEditDraw.id}:edit${sizeTag}${zoomTag}]`
+    const newShortcode = buildDrawShortcode(selectedEditDraw.id, editDrawSize, editDrawZoom)
     const newContent = content.replace(selectedEditDraw.shortcode, newShortcode)
     setContent(newContent)
     syncToYjs(newContent)
@@ -835,24 +931,12 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
   const insertImageMarkdown = (alt: string, url: string, caption?: string, size?: string) => {
     const markup = buildImageMarkup(url, alt, caption || '', size || 'm')
     const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
-
-    if (textarea) {
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const newContent = content.substring(0, start) + markup + content.substring(end)
-      setContent(newContent)
-      syncToYjs(newContent)
-      isDirtyRef.current = true
-      setTimeout(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + markup.length
-        textarea.focus()
-      }, 0)
-    } else {
-      const sep = content.endsWith('\n') ? '' : '\n'
-      const newContent = content + sep + markup + '\n'
-      setContent(newContent)
-      syncToYjs(newContent)
-      isDirtyRef.current = true
+    const { newContent, focusPos } = insertMarkupAtCursor(textarea, content, markup)
+    setContent(newContent)
+    syncToYjs(newContent)
+    isDirtyRef.current = true
+    if (focusPos !== null && textarea) {
+      setTimeout(() => { textarea.selectionStart = textarea.selectionEnd = focusPos; textarea.focus() }, 0)
     }
     setShowImagePicker(false)
   }
@@ -892,37 +976,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
 
     try {
       for (const file of files) {
-        const sig = await apiClient.getUploadSignature({ pageId: page.id })
-
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('api_key', sig.api_key)
-        formData.append('timestamp', String(sig.timestamp))
-        formData.append('signature', sig.signature)
-        formData.append('folder', sig.folder)
-        formData.append('public_id', sig.public_id)
-
-        const uploadRes = await fetch(
-          `https://api.cloudinary.com/v1_1/${sig.cloud_name}/auto/upload`,
-          { method: 'POST', body: formData }
-        )
-        if (!uploadRes.ok) throw new Error('Upload failed')
-        const uploadData = await uploadRes.json()
-
-        const altName = file.name.replace(/\.[^.]+$/, '').replaceAll(/[-_]/g, ' ')
-
-        await apiClient.createWikiPageAttachment(page.id, {
-          filename: file.name,
-          alt_name: altName,
-          file_type: 'image',
-          content_type: file.type,
-          file_size: file.size,
-          cloudinary_url: uploadData.secure_url,
-          cloudinary_public_id: uploadData.public_id,
-        })
-
-        // Insert into editor
-        const markup = `![${altName}](${uploadData.secure_url})`
+        const { url, altName } = await uploadSingleFile(file, page.id)
+        const markup = `![${altName}](${url})`
         const start = textarea?.selectionStart ?? content.length
         const end = textarea?.selectionEnd ?? content.length
         const newContent = content.substring(0, start) + markup + '\n' + content.substring(end)
@@ -936,16 +991,6 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
       setIsDropUploading(false)
     }
   }, [isFullscreen, content, syncToYjs, page.id])
-
-  // ── Status helpers ───────────────────────────────────────────
-
-  const getSyncStatusColor = () => {
-    switch (syncState) {
-      case 'connected': return 'bg-green-500'
-      case 'connecting': return 'bg-yellow-500'
-      case 'disconnected': return 'bg-red-500'
-    }
-  }
 
   // ── Edit existing image ─────────────────────────────────────
 
@@ -1001,25 +1046,13 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
 
   const handleDrawInsert = useCallback((id: string, size: string, zoom: string) => {
     const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
-    const sizeTag = size === 'm' ? '' : ':' + size
-    const zoomTag = zoom === 'fit' ? '' : ':z' + zoom
-    const markup = `\n[draw:${id}:edit${sizeTag}${zoomTag}]\n`
-    if (textarea) {
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const newContent = content.substring(0, start) + markup + content.substring(end)
-      setContent(newContent)
-      syncToYjs(newContent)
-      isDirtyRef.current = true
-      setTimeout(() => {
-        textarea.focus()
-        textarea.selectionStart = textarea.selectionEnd = start + markup.length
-      }, 0)
-    } else {
-      const newContent = content + markup
-      setContent(newContent)
-      syncToYjs(newContent)
-      isDirtyRef.current = true
+    const markup = '\n' + buildDrawShortcode(id, size, zoom) + '\n'
+    const { newContent, focusPos } = insertMarkupAtCursor(textarea, content, markup)
+    setContent(newContent)
+    syncToYjs(newContent)
+    isDirtyRef.current = true
+    if (focusPos !== null && textarea) {
+      setTimeout(() => { textarea.focus(); textarea.selectionStart = textarea.selectionEnd = focusPos }, 0)
     }
     setShowDrawBrowser(false)
   }, [isFullscreen, content, syncToYjs])
@@ -1129,34 +1162,6 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     </div>
   )
 
-  // ── Save status helpers ─────────────────────────────────────
-  const getSaveStatusColor = () => {
-    switch (saveStatus) {
-      case 'saving': return 'bg-yellow-500'
-      case 'saved': return 'bg-green-500'
-      case 'error': return 'bg-red-500'
-      default: return getSyncStatusColor()
-    }
-  }
-
-  const getSaveStatusText = () => {
-    switch (saveStatus) {
-      case 'saving': return 'Saving...'
-      case 'saved': return 'Saved'
-      case 'error': return 'Save failed'
-      default: return autoSaveEnabled ? 'Autosave on' : 'Autosave off'
-    }
-  }
-
-  const getSaveStatusTextColor = () => {
-    switch (saveStatus) {
-      case 'saving': return 'text-yellow-400'
-      case 'saved': return 'text-green-400'
-      case 'error': return 'text-red-400'
-      default: return 'text-dark-text-tertiary'
-    }
-  }
-
   // ── Fullscreen overlay ───────────────────────────────────────
 
   if (isFullscreen) {
@@ -1173,9 +1178,9 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
             </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${getSaveStatusColor()}`} />
+                <div className={`w-2 h-2 rounded-full ${getSaveStatusColor(saveStatus, syncState)}`} />
                 <span className="text-xs text-dark-text-tertiary">
-                  {getSaveStatusText()}
+                  {getSaveStatusText(saveStatus, autoSaveEnabled)}
                 </span>
               </div>
               <button
@@ -1210,8 +1215,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
           {/* Split panes */}
           <div ref={fsContainerRef} className="flex flex-1 overflow-hidden">
             {/* Left: editor */}
-            <div
-              role="region"
+            <section
               aria-label="Editor with drop support"
               style={{ width: `${fsSplitPct}%` }}
               className="flex flex-col overflow-hidden relative"
@@ -1240,16 +1244,15 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
                   </span>
                 </div>
               )}
-            </div>
+            </section>
 
             {/* Divider */}
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              tabIndex={0}
+            <button
+              type="button"
               ref={dividerRef}
               onMouseDown={handleDividerMouseDown}
-              className="w-1.5 bg-dark-border-subtle hover:bg-dark-accent-primary/50 cursor-col-resize transition-colors flex-shrink-0"
+              className="w-1.5 bg-dark-border-subtle hover:bg-dark-accent-primary/50 cursor-col-resize transition-colors flex-shrink-0 border-0 p-0"
+              aria-label="Resize panels"
             />
 
             {/* Right: live preview */}
@@ -1323,9 +1326,9 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
             <h1 className="text-2xl font-semibold text-dark-text-primary">{page.title}</h1>
             <div className="flex items-center gap-3 mt-2">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${getSaveStatusColor()}`} />
+                <div className={`w-2 h-2 rounded-full ${getSaveStatusColor(saveStatus, syncState)}`} />
                 <span className="text-sm text-dark-text-tertiary">
-                  {getSaveStatusText()}
+                  {getSaveStatusText(saveStatus, autoSaveEnabled)}
                 </span>
               </div>
               <button
@@ -1422,8 +1425,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
           </div>
         ) : (
           <>
-            <div
-              role="region"
+            <section
               aria-label="Editor with drop support"
               className="relative flex-1 min-h-0"
               onDragEnter={handleDragEnter}
@@ -1463,10 +1465,9 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
                   </span>
                 </div>
               )}
-            </div>
+            </section>
             {/* Visible drop zone */}
-            <div
-              role="region"
+            <section
               aria-label="Drop zone for images"
               className={`mx-6 mb-4 mt-2 border-2 border-dashed rounded-lg p-4 flex items-center justify-center gap-3 transition-colors ${
                 isDragOver
@@ -1493,7 +1494,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
                 </div>
                 <div className="text-xs text-dark-text-tertiary">Supports JPG, PNG, GIF</div>
               </div>
-            </div>
+            </section>
           </>
         )}
       </div>
@@ -1504,8 +1505,8 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
           <div className="flex items-center gap-4 text-xs text-dark-text-tertiary">
             <span>Markdown supported</span>
             <span>&bull;</span>
-            <span className={getSaveStatusTextColor()}>
-              {getSaveStatusText()}
+            <span className={getSaveStatusTextColor(saveStatus)}>
+              {getSaveStatusText(saveStatus, autoSaveEnabled)}
             </span>
             <span>&bull;</span>
             <span>Tab to indent</span>
@@ -1724,21 +1725,9 @@ function DrawCard({ drawing, isUsed, onInsert, onRename, onDelete }: Readonly<{
     } catch { return drawing.updated_at }
   })()
 
-  const handleCardClick = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement
-    const tag = target.tagName
-    if (tag === 'SELECT' || tag === 'OPTION' || tag === 'BUTTON' || tag === 'INPUT' || tag === 'SVG' || tag === 'PATH' || tag === 'POLYLINE') return
-    if (target.closest('select') || target.closest('button') || target.closest('input')) return
-    onInsert(drawing.id, size, zoom)
-  }
-
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={handleCardClick}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert(drawing.id, size, zoom) } }}
-      className={`border rounded-xl p-4 flex flex-col gap-1.5 cursor-pointer transition-colors hover:bg-dark-bg-tertiary/50 ${isUsed ? 'border-green-500/30 hover:border-green-500/50' : 'border-dark-border-subtle hover:border-primary-500/50'}`}
+      className={`border rounded-xl p-4 flex flex-col gap-1.5 transition-colors ${isUsed ? 'border-green-500/30 hover:border-green-500/50' : 'border-dark-border-subtle hover:border-primary-500/50'}`}
     >
       <div className="flex items-center gap-1.5">
         {editing ? (
@@ -1810,6 +1799,12 @@ function DrawCard({ drawing, isUsed, onInsert, onRename, onDelete }: Readonly<{
           </svg>
         </button>
       </div>
+      <button
+        onClick={() => onInsert(drawing.id, size, zoom)}
+        className="mt-1.5 w-full py-1.5 rounded-lg text-xs font-medium bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 transition-colors"
+      >
+        Insert
+      </button>
     </div>
   )
 }
