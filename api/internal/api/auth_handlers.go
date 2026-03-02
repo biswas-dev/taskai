@@ -235,13 +235,21 @@ func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	// Verify password
 	if err := auth.VerifyPassword(passwordHash, req.Password); err != nil {
 		// Log failed login attempt
-		go s.logUserActivity(context.Background(), entUser.ID, "failed_login", getClientIP(r), r.UserAgent())
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			s.logUserActivity(ctx, entUser.ID, "failed_login", getClientIP(r), r.UserAgent())
+		}()
 		respondError(w, http.StatusUnauthorized, "invalid email or password", "invalid_credentials")
 		return
 	}
 
 	// Log successful login
-	go s.logUserActivity(context.Background(), entUser.ID, "login", getClientIP(r), r.UserAgent())
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.logUserActivity(ctx, entUser.ID, "login", getClientIP(r), r.UserAgent())
+	}()
 
 	// Convert Ent user to API user struct
 	apiUser := User{
