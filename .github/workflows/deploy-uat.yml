@@ -107,13 +107,16 @@ jobs:
           ENDSSH
 
       - name: Verify deployment
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: |
           sleep 10
           echo "Checking API health..."
-          curl -f https://uat.taskai.cc/api/health || exit 1
+          curl -f -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" https://uat.taskai.cc/api/health || exit 1
 
           echo "Checking go-draw canvas.js is up to date..."
-          CANVAS_JS=$(curl -sL -H "Cache-Control: no-cache" "https://uat.taskai.cc/draw/static/canvas.js?v=$(date +%s)")
+          CANVAS_JS=$(curl -sL -H "CF-Access-Client-Id: $CF_ACCESS_CLIENT_ID" -H "CF-Access-Client-Secret: $CF_ACCESS_CLIENT_SECRET" -H "Cache-Control: no-cache" "https://uat.taskai.cc/draw/static/canvas.js?v=$(date +%s)")
           if echo "$CANVAS_JS" | grep -q 'isRotating'; then
             echo "✅ canvas.js contains rotation support"
           else

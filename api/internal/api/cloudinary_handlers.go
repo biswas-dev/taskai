@@ -900,7 +900,7 @@ func (s *Server) HandleGetStorageUsage(w http.ResponseWriter, r *http.Request) {
 		 FROM task_attachments ta
 		 LEFT JOIN users u ON ta.user_id = u.id
 		 WHERE ta.project_id = $1
-		 GROUP BY ta.user_id
+		 GROUP BY ta.user_id, u.first_name, u.last_name, u.name, u.email
 		 ORDER BY total_size DESC`, projectID,
 	)
 	if err != nil {

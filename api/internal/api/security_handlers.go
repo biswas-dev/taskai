@@ -65,7 +65,7 @@ func (s *Server) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	// Get current password hash
 	var currentHash string
-	err := s.db.QueryRow("SELECT password_hash FROM users WHERE id = ?", userID).Scan(&currentHash)
+	err := s.db.QueryRow("SELECT password_hash FROM users WHERE id = $1", userID).Scan(&currentHash)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
@@ -85,7 +85,7 @@ func (s *Server) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update password
-	_, err = s.db.Exec("UPDATE users SET password_hash = ?, password_changed_at = ? WHERE id = ?",
+	_, err = s.db.Exec("UPDATE users SET password_hash = $1, password_changed_at = $2 WHERE id = $3",
 		string(newHash), time.Now(), userID)
 	if err != nil {
 		http.Error(w, "Failed to update password", http.StatusInternalServerError)
@@ -106,7 +106,7 @@ func (s *Server) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 
 	// Get user email
 	var email string
-	err := s.db.QueryRow("SELECT email FROM users WHERE id = ?", userID).Scan(&email)
+	err := s.db.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&email)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
@@ -124,7 +124,7 @@ func (s *Server) Handle2FASetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store the secret (but don't enable 2FA yet)
-	_, err = s.db.Exec("UPDATE users SET totp_secret = ? WHERE id = ?", key.Secret(), userID)
+	_, err = s.db.Exec("UPDATE users SET totp_secret = $1 WHERE id = $2", key.Secret(), userID)
 	if err != nil {
 		http.Error(w, "Failed to save TOTP secret", http.StatusInternalServerError)
 		return
@@ -164,7 +164,7 @@ func (s *Server) Handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 
 	// Get TOTP secret
 	var secret string
-	err := s.db.QueryRow("SELECT totp_secret FROM users WHERE id = ?", userID).Scan(&secret)
+	err := s.db.QueryRow("SELECT totp_secret FROM users WHERE id = $1", userID).Scan(&secret)
 	if err != nil || secret == "" {
 		http.Error(w, "2FA setup not initiated", http.StatusBadRequest)
 		return
@@ -206,7 +206,7 @@ func (s *Server) Handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enable 2FA
-	_, err = s.db.Exec("UPDATE users SET totp_enabled = 1, backup_codes = ? WHERE id = ?",
+	_, err = s.db.Exec("UPDATE users SET totp_enabled = 1, backup_codes = $1 WHERE id = $2",
 		string(backupCodesJSON), userID)
 	if err != nil {
 		http.Error(w, "Failed to enable 2FA", http.StatusInternalServerError)
@@ -239,7 +239,7 @@ func (s *Server) Handle2FADisable(w http.ResponseWriter, r *http.Request) {
 
 	// Verify password before disabling 2FA
 	var passwordHash string
-	err := s.db.QueryRow("SELECT password_hash FROM users WHERE id = ?", userID).Scan(&passwordHash)
+	err := s.db.QueryRow("SELECT password_hash FROM users WHERE id = $1", userID).Scan(&passwordHash)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
@@ -251,7 +251,7 @@ func (s *Server) Handle2FADisable(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Disable 2FA
-	_, err = s.db.Exec("UPDATE users SET totp_enabled = 0, totp_secret = NULL, backup_codes = NULL WHERE id = ?", userID)
+	_, err = s.db.Exec("UPDATE users SET totp_enabled = 0, totp_secret = NULL, backup_codes = NULL WHERE id = $1", userID)
 	if err != nil {
 		http.Error(w, "Failed to disable 2FA", http.StatusInternalServerError)
 		return
@@ -270,7 +270,7 @@ func (s *Server) Handle2FAStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var totpEnabled int
-	err := s.db.QueryRow("SELECT totp_enabled FROM users WHERE id = ?", userID).Scan(&totpEnabled)
+	err := s.db.QueryRow("SELECT totp_enabled FROM users WHERE id = $1", userID).Scan(&totpEnabled)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "User not found", http.StatusNotFound)

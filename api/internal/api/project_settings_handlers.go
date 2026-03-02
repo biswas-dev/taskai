@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -83,7 +84,7 @@ func (s *Server) HandleGetProjectMembers(w http.ResponseWriter, r *http.Request)
 		       pm.role, pm.granted_by, pm.granted_at
 		FROM project_members pm
 		JOIN users u ON pm.user_id = u.id
-		WHERE pm.project_id = ?
+		WHERE pm.project_id = $1
 		ORDER BY pm.role DESC, pm.granted_at ASC
 	`
 
@@ -146,7 +147,7 @@ func (s *Server) HandleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 
 	// Find user by email
 	var memberUserID int
-	err = s.db.QueryRow("SELECT id FROM users WHERE email = ?", req.Email).Scan(&memberUserID)
+	err = s.db.QueryRow("SELECT id FROM users WHERE email = $1", req.Email).Scan(&memberUserID)
 	if err == sql.ErrNoRows {
 		http.Error(w, "User not found. Only registered users can be added.", http.StatusNotFound)
 		return
@@ -158,7 +159,7 @@ func (s *Server) HandleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 
 	// Check if user is the owner (can't add owner as member)
 	var ownerID int
-	err = s.db.QueryRow("SELECT owner_id FROM projects WHERE id = ?", projectID).Scan(&ownerID)
+	err = s.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&ownerID)
 	if err != nil {
 		http.Error(w, "Project not found", http.StatusNotFound)
 		return
@@ -170,7 +171,7 @@ func (s *Server) HandleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 
 	// Check if user is in the same team
 	var teamID int
-	err = s.db.QueryRow("SELECT team_id FROM projects WHERE id = ?", projectID).Scan(&teamID)
+	err = s.db.QueryRow("SELECT team_id FROM projects WHERE id = $1", projectID).Scan(&teamID)
 	if err != nil {
 		http.Error(w, "Failed to get project team", http.StatusInternalServerError)
 		return
@@ -180,7 +181,7 @@ func (s *Server) HandleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 	err = s.db.QueryRow(`
 		SELECT EXISTS(
 			SELECT 1 FROM team_members
-			WHERE team_id = ? AND user_id = ? AND status = 'active'
+			WHERE team_id = $1 AND user_id = $2 AND status = 'active'
 		)
 	`, teamID, memberUserID).Scan(&memberInTeam)
 	if err != nil {
@@ -193,21 +194,21 @@ func (s *Server) HandleAddProjectMember(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Insert member
-	result, err := s.db.Exec(`
+	var memberID int64
+	err = s.db.QueryRow(`
 		INSERT INTO project_members (project_id, user_id, role, granted_by, granted_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, projectID, memberUserID, req.Role, userID)
+		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+		RETURNING id
+	`, projectID, memberUserID, req.Role, userID).Scan(&memberID)
 
 	if err != nil {
-		if err.Error() == "UNIQUE constraint failed: project_members.project_id, project_members.user_id" {
+		if strings.Contains(err.Error(), "unique constraint") || strings.Contains(err.Error(), "UNIQUE constraint") {
 			http.Error(w, "User is already a member of this project", http.StatusConflict)
 			return
 		}
 		http.Error(w, "Failed to add member", http.StatusInternalServerError)
 		return
 	}
-
-	memberID, _ := result.LastInsertId()
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"message":   "Member added successfully",
@@ -260,7 +261,7 @@ func (s *Server) HandleUpdateProjectMember(w http.ResponseWriter, r *http.Reques
 
 	// Check if changing from owner to another role
 	var currentRole string
-	err = s.db.QueryRow(`SELECT role FROM project_members WHERE id = ? AND project_id = ?`, memberID, projectID).Scan(&currentRole)
+	err = s.db.QueryRow(`SELECT role FROM project_members WHERE id = $1 AND project_id = $2`, memberID, projectID).Scan(&currentRole)
 	if err != nil {
 		http.Error(w, "Member not found", http.StatusNotFound)
 		return
@@ -269,7 +270,7 @@ func (s *Server) HandleUpdateProjectMember(w http.ResponseWriter, r *http.Reques
 	// If changing from owner, ensure at least one other owner exists
 	if currentRole == "owner" && req.Role != "owner" {
 		var ownerCount int
-		err = s.db.QueryRow(`SELECT COUNT(*) FROM project_members WHERE project_id = ? AND role = 'owner'`, projectID).Scan(&ownerCount)
+		err = s.db.QueryRow(`SELECT COUNT(*) FROM project_members WHERE project_id = $1 AND role = 'owner'`, projectID).Scan(&ownerCount)
 		if err != nil {
 			http.Error(w, "Failed to check owner count", http.StatusInternalServerError)
 			return
@@ -283,8 +284,8 @@ func (s *Server) HandleUpdateProjectMember(w http.ResponseWriter, r *http.Reques
 	// Update member role
 	_, err = s.db.Exec(`
 		UPDATE project_members
-		SET role = ?
-		WHERE id = ? AND project_id = ?
+		SET role = $1
+		WHERE id = $2 AND project_id = $3
 	`, req.Role, memberID, projectID)
 
 	if err != nil {
@@ -328,7 +329,7 @@ func (s *Server) HandleRemoveProjectMember(w http.ResponseWriter, r *http.Reques
 
 	// Check if member being removed is an owner
 	var memberRole string
-	err = s.db.QueryRow(`SELECT role FROM project_members WHERE id = ? AND project_id = ?`, memberID, projectID).Scan(&memberRole)
+	err = s.db.QueryRow(`SELECT role FROM project_members WHERE id = $1 AND project_id = $2`, memberID, projectID).Scan(&memberRole)
 	if err != nil {
 		http.Error(w, "Member not found", http.StatusNotFound)
 		return
@@ -337,7 +338,7 @@ func (s *Server) HandleRemoveProjectMember(w http.ResponseWriter, r *http.Reques
 	// If removing an owner, ensure at least one other owner exists
 	if memberRole == "owner" {
 		var ownerCount int
-		err = s.db.QueryRow(`SELECT COUNT(*) FROM project_members WHERE project_id = ? AND role = 'owner'`, projectID).Scan(&ownerCount)
+		err = s.db.QueryRow(`SELECT COUNT(*) FROM project_members WHERE project_id = $1 AND role = 'owner'`, projectID).Scan(&ownerCount)
 		if err != nil {
 			http.Error(w, "Failed to check owner count", http.StatusInternalServerError)
 			return
@@ -351,7 +352,7 @@ func (s *Server) HandleRemoveProjectMember(w http.ResponseWriter, r *http.Reques
 	// Delete member
 	_, err = s.db.Exec(`
 		DELETE FROM project_members
-		WHERE id = ? AND project_id = ?
+		WHERE id = $1 AND project_id = $2
 	`, memberID, projectID)
 
 	if err != nil {
@@ -400,7 +401,7 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 			github_sync_enabled,
 			github_last_sync
 		FROM projects
-		WHERE id = ?
+		WHERE id = $1
 	`, projectID).Scan(
 		&settings.RepoURL,
 		&settings.Owner,
@@ -462,12 +463,12 @@ func (s *Server) HandleUpdateProjectGitHubSettings(w http.ResponseWriter, r *htt
 	_, err = s.db.Exec(`
 		UPDATE projects
 		SET
-			github_repo_url = ?,
-			github_owner = ?,
-			github_repo_name = ?,
-			github_branch = ?,
-			github_sync_enabled = ?
-		WHERE id = ?
+			github_repo_url = $1,
+			github_owner = $2,
+			github_repo_name = $3,
+			github_branch = $4,
+			github_sync_enabled = $5
+		WHERE id = $6
 	`, req.RepoURL, req.Owner, req.RepoName, req.Branch, syncEnabled, projectID)
 
 	if err != nil {
@@ -482,7 +483,7 @@ func (s *Server) HandleUpdateProjectGitHubSettings(w http.ResponseWriter, r *htt
 func (s *Server) userHasProjectAccess(userID, projectID int) (bool, error) {
 	// Check if user is owner
 	var ownerID int
-	err := s.db.QueryRow("SELECT owner_id FROM projects WHERE id = ?", projectID).Scan(&ownerID)
+	err := s.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&ownerID)
 	if err != nil {
 		return false, err
 	}
@@ -492,7 +493,7 @@ func (s *Server) userHasProjectAccess(userID, projectID int) (bool, error) {
 
 	// Check if user is a member
 	var memberID int
-	err = s.db.QueryRow("SELECT id FROM project_members WHERE project_id = ? AND user_id = ?", projectID, userID).Scan(&memberID)
+	err = s.db.QueryRow("SELECT id FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, userID).Scan(&memberID)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -507,7 +508,7 @@ func (s *Server) userHasProjectAccess(userID, projectID int) (bool, error) {
 func (s *Server) userIsProjectOwnerOrAdmin(userID, projectID int) (bool, error) {
 	// Check if user is owner
 	var ownerID int
-	err := s.db.QueryRow("SELECT owner_id FROM projects WHERE id = ?", projectID).Scan(&ownerID)
+	err := s.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&ownerID)
 	if err != nil {
 		return false, err
 	}
@@ -517,7 +518,7 @@ func (s *Server) userIsProjectOwnerOrAdmin(userID, projectID int) (bool, error) 
 
 	// Check if user is an admin member
 	var role string
-	err = s.db.QueryRow("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?", projectID, userID).Scan(&role)
+	err = s.db.QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, userID).Scan(&role)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

@@ -130,7 +130,7 @@ func (s *Server) HandleSaveEmailProvider(w http.ResponseWriter, r *http.Request)
 	// Upsert the email provider (singleton — always id=1)
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO email_provider (id, provider, api_key, sender_email, sender_name, updated_at)
-		 VALUES (1, 'brevo', ?, ?, ?, CURRENT_TIMESTAMP)
+		 VALUES (1, 'brevo', $1, $2, $3, CURRENT_TIMESTAMP)
 		 ON CONFLICT(id) DO UPDATE SET
 		   api_key = excluded.api_key,
 		   sender_email = excluded.sender_email,
@@ -156,7 +156,7 @@ func (s *Server) HandleSaveEmailProvider(w http.ResponseWriter, r *http.Request)
 	}
 
 	_, err = s.db.ExecContext(ctx,
-		`UPDATE email_provider SET status = ?, last_checked_at = ?, last_error = ?, consecutive_failures = ? WHERE id = 1`,
+		`UPDATE email_provider SET status = $1, last_checked_at = $2, last_error = $3, consecutive_failures = $4 WHERE id = 1`,
 		status, now, lastError, consecutiveFailures,
 	)
 	if err != nil {
@@ -248,7 +248,7 @@ func (s *Server) HandleTestEmailProvider(w http.ResponseWriter, r *http.Request)
 	}
 
 	_, err = s.db.ExecContext(ctx,
-		`UPDATE email_provider SET status = ?, last_checked_at = ?, last_error = ?, consecutive_failures = ? WHERE id = 1`,
+		`UPDATE email_provider SET status = $1, last_checked_at = $2, last_error = $3, consecutive_failures = $4 WHERE id = 1`,
 		status, now, lastError, consecutiveFailures,
 	)
 	if err != nil {
@@ -348,7 +348,7 @@ func (s *Server) checkBrevoHealth() {
 	}
 
 	_, err = s.db.ExecContext(ctx,
-		`UPDATE email_provider SET status = ?, last_checked_at = ?, last_error = ?, consecutive_failures = ? WHERE id = 1`,
+		`UPDATE email_provider SET status = $1, last_checked_at = $2, last_error = $3, consecutive_failures = $4 WHERE id = 1`,
 		status, now, lastError, consecutiveFailures,
 	)
 	if err != nil {
