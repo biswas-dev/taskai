@@ -213,7 +213,7 @@ func (s *Server) HandleGitHubPreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Load project members for auto-matching
+	// Load all team members for auto-matching (not just project members)
 	type memberInfo struct {
 		UserID    int64
 		Email     string
@@ -222,13 +222,13 @@ func (s *Server) HandleGitHubPreview(w http.ResponseWriter, r *http.Request) {
 		LastName  string
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.email, COALESCE(u.name,''), COALESCE(u.first_name,''), COALESCE(u.last_name,'')
-		FROM project_members pm
-		JOIN users u ON pm.user_id = u.id
-		WHERE pm.project_id = $1
+		SELECT DISTINCT u.id, u.email, COALESCE(u.name,''), COALESCE(u.first_name,''), COALESCE(u.last_name,'')
+		FROM users u
+		JOIN team_members tm ON tm.user_id = u.id
+		WHERE tm.team_id = (SELECT team_id FROM projects WHERE id = $1)
 	`, projectID)
 	if err != nil {
-		http.Error(w, "Failed to load project members", http.StatusInternalServerError)
+		http.Error(w, "Failed to load team members", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -242,17 +242,6 @@ func (s *Server) HandleGitHubPreview(w http.ResponseWriter, r *http.Request) {
 		members = append(members, m)
 	}
 	rows.Close()
-
-	// Also include the project owner
-	var ownerInfo memberInfo
-	_ = s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, COALESCE(u.name,''), COALESCE(u.first_name,''), COALESCE(u.last_name,'')
-		FROM projects p JOIN users u ON p.owner_id = u.id
-		WHERE p.id = $1
-	`, projectID).Scan(&ownerInfo.UserID, &ownerInfo.Email, &ownerInfo.Name, &ownerInfo.FirstName, &ownerInfo.LastName)
-	if ownerInfo.UserID != 0 {
-		members = append(members, ownerInfo)
-	}
 
 	// Auto-match GitHub users to TaskAI members
 	ghUsers := make([]GitHubUserMatch, 0, len(loginSet))

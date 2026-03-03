@@ -1224,7 +1224,7 @@ export default function ProjectSettings() {
                                   className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
                                 >
                                   <option value={0}>Unassigned</option>
-                                  {projectMembers.map(m => (
+                                  {teamMembers.map(m => (
                                     <option key={m.user_id} value={m.user_id}>
                                       {m.name || m.email}
                                     </option>
