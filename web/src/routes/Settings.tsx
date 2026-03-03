@@ -5,7 +5,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
-import { apiClient, type CloudinaryCredentialResponse, type APIKey, type Team, type TeamMember, type TeamInvitation, type SentInvitation, type UserSearchResult, type Invite } from '../lib/api'
+import { apiClient, type CloudinaryCredentialResponse, type APIKey, type Team, type TeamMember, type TeamInvitation, type SentInvitation, type UserSearchResult, type Invite, type ProjectInvitation } from '../lib/api'
 
 export default function Settings() {
   const navigate = useNavigate()
@@ -85,6 +85,12 @@ export default function Settings() {
   const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null)
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
 
+  // Project invitations (received)
+  const [projectInvitations, setProjectInvitations] = useState<ProjectInvitation[]>([])
+  const [projectInviteError, setProjectInviteError] = useState('')
+  const [projectInviteSuccess, setProjectInviteSuccess] = useState('')
+  const [isRespondingToProjectInvite, setIsRespondingToProjectInvite] = useState<number | null>(null)
+
   // Invite system state
   const [myInvites, setMyInvites] = useState<Invite[]>([])
   const [myInviteCount, setMyInviteCount] = useState(0)
@@ -102,6 +108,7 @@ export default function Settings() {
     loadTeamData()
     loadCloudinaryCredentials()
     loadInvites()
+    loadProjectInvitations()
   }, [])
 
   const loadProfile = async () => {
@@ -378,6 +385,45 @@ export default function Settings() {
       setIsUserAdmin(data.is_admin)
     } catch (error) {
       console.error('Failed to load data:', error)
+    }
+  }
+
+  const loadProjectInvitations = async () => {
+    try {
+      const data = await apiClient.getMyProjectInvitations()
+      setProjectInvitations(data)
+    } catch {
+      // non-critical
+    }
+  }
+
+  const handleAcceptProjectInvite = async (invId: number) => {
+    setProjectInviteError('')
+    setProjectInviteSuccess('')
+    setIsRespondingToProjectInvite(invId)
+    try {
+      await apiClient.acceptProjectInvitation(invId)
+      setProjectInviteSuccess('You have joined the project!')
+      loadProjectInvitations()
+    } catch (error: unknown) {
+      setProjectInviteError(error instanceof Error ? error.message : 'Failed to accept invitation')
+    } finally {
+      setIsRespondingToProjectInvite(null)
+    }
+  }
+
+  const handleRejectProjectInvite = async (invId: number) => {
+    setProjectInviteError('')
+    setProjectInviteSuccess('')
+    setIsRespondingToProjectInvite(invId)
+    try {
+      await apiClient.rejectProjectInvitation(invId)
+      setProjectInviteSuccess('Invitation declined')
+      loadProjectInvitations()
+    } catch (error: unknown) {
+      setProjectInviteError(error instanceof Error ? error.message : 'Failed to decline invitation')
+    } finally {
+      setIsRespondingToProjectInvite(null)
     }
   }
 
@@ -1220,17 +1266,17 @@ export default function Settings() {
                     <label className="block text-sm font-medium text-dark-text-primary mb-2">
                       Expiration
                     </label>
-                    <SearchSelect
+                    <select
                       value={newKeyExpires === undefined ? '' : String(newKeyExpires)}
-                      onChange={(v) => setNewKeyExpires(v ? Number.parseInt(v) : undefined)}
-                      options={[
-                        { value: '30', label: '30 days' },
-                        { value: '90', label: '90 days' },
-                        { value: '180', label: '180 days' },
-                        { value: '365', label: '1 year' },
-                        { value: '', label: 'Never expires' },
-                      ]}
-                    />
+                      onChange={(e) => setNewKeyExpires(e.target.value ? Number.parseInt(e.target.value) : undefined)}
+                      className="w-full px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg text-sm text-dark-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50"
+                    >
+                      <option value="30">30 days</option>
+                      <option value="90">90 days</option>
+                      <option value="180">180 days</option>
+                      <option value="365">1 year</option>
+                      <option value="">Never expires</option>
+                    </select>
                   </div>
 
                   <Button type="submit" disabled={isCreatingKey}>
@@ -1837,6 +1883,60 @@ print(response.json())`}
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* Project Invitations */}
+                {(projectInvitations.length > 0 || projectInviteSuccess || projectInviteError) && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-semibold text-dark-text-primary mb-3">Project Invitations</h3>
+                    {projectInviteSuccess && (
+                      <div className="mb-3 p-3 bg-success-500/10 border border-success-500/30 rounded-lg text-sm text-success-300">
+                        {projectInviteSuccess}
+                      </div>
+                    )}
+                    {projectInviteError && (
+                      <div className="mb-3 p-3 bg-danger-500/10 border border-danger-500/30 rounded-lg text-sm text-danger-300">
+                        {projectInviteError}
+                      </div>
+                    )}
+                    {projectInvitations.length === 0 ? (
+                      <p className="text-sm text-dark-text-tertiary">No pending project invitations</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {projectInvitations.map((inv) => (
+                          <div key={inv.id} className="p-4 bg-primary-500/10 border border-primary-500/30 rounded-lg">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="font-medium text-dark-text-primary truncate">
+                                  {inv.project_name}
+                                </p>
+                                <p className="text-sm text-dark-text-secondary">
+                                  Invited by {inv.inviter_name} · <span className="capitalize">{inv.role}</span>
+                                </p>
+                              </div>
+                              <div className="flex gap-2 flex-shrink-0">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleAcceptProjectInvite(inv.id)}
+                                  disabled={isRespondingToProjectInvite === inv.id}
+                                >
+                                  {isRespondingToProjectInvite === inv.id ? 'Accepting...' : 'Accept'}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleRejectProjectInvite(inv.id)}
+                                  disabled={isRespondingToProjectInvite === inv.id}
+                                >
+                                  Decline
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -130,35 +130,22 @@ export default function AcceptTeamInvite() {
                 </p>
               </div>
 
-              <p className="text-dark-text-tertiary text-sm text-center mb-6">
-                Sign in to accept this invitation.
-              </p>
-
               <div className="space-y-3">
-                <Link to={`/login?redirect=${encodeURIComponent(`/accept-invite?token=${token}`)}`} className="block">
-                  <Button variant="primary" fullWidth>
-                    Sign in to Accept
-                  </Button>
-                </Link>
-
-                {state.invitation.requires_signup && (
+                {state.invitation.requires_signup ? (
                   <Link
-                    to={`/signup?code=${encodeURIComponent(state.invitation.invite_code || '')}&redirect=${encodeURIComponent(`/accept-invite?token=${token}`)}`}
+                    to={`/signup?code=${encodeURIComponent(state.invitation.invite_code || '')}&email=${encodeURIComponent(state.invitation.invitee_email || '')}&redirect=${encodeURIComponent(`/accept-invite?token=${token}`)}`}
                     className="block"
                   >
-                    <Button variant="secondary" fullWidth>
-                      Create Account & Accept
+                    <Button variant="primary" fullWidth>
+                      Create Account &amp; Join
                     </Button>
                   </Link>
-                )}
-
-                {!state.invitation.requires_signup && (
-                  <p className="text-xs text-dark-text-quaternary text-center">
-                    Don't have an account?{' '}
-                    <Link to="/signup" className="text-primary-400 hover:text-primary-300">
-                      Sign up
-                    </Link>
-                  </p>
+                ) : (
+                  <Link to={`/login?redirect=${encodeURIComponent(`/accept-invite?token=${token}`)}`} className="block">
+                    <Button variant="primary" fullWidth>
+                      Sign in to Accept
+                    </Button>
+                  </Link>
                 )}
               </div>
             </div>

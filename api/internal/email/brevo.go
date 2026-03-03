@@ -145,6 +145,22 @@ func (s *BrevoService) SendProjectInvitationNewUser(ctx context.Context, toEmail
 	return s.SendEmail(ctx, toEmail, subject, html)
 }
 
+// SendProjectMemberInvitation sends a notification to an existing user that they've been invited to a project
+func (s *BrevoService) SendProjectMemberInvitation(ctx context.Context, toEmail, inviterName, projectName, appURL string) error {
+	settingsURL := appURL + "/app/settings"
+	subject := fmt.Sprintf("%s invited you to join \"%s\"", inviterName, projectName)
+
+	html := buildEmailTemplate(
+		fmt.Sprintf("You're invited to \"%s\"", projectName),
+		fmt.Sprintf("<strong>%s</strong> has invited you to collaborate on <strong>%s</strong> in TaskAI. Visit your settings to accept or reject the invitation.", inviterName, projectName),
+		settingsURL,
+		"View Invitation",
+		"This invitation will remain pending until you accept or reject it.",
+	)
+
+	return s.SendEmail(ctx, toEmail, subject, html)
+}
+
 // buildEmailTemplate generates a responsive HTML email with TaskAI branding
 func buildEmailTemplate(heading, bodyText, ctaURL, ctaLabel, footerNote string) string {
 	return fmt.Sprintf(`<!DOCTYPE html>

@@ -5,7 +5,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
-import { apiClient, type SwimLane, type Project } from '../lib/api'
+import { apiClient, type SwimLane, type Project, type ProjectInvitation } from '../lib/api'
 
 interface ProjectMember {
   id: number
@@ -44,6 +44,7 @@ export default function ProjectSettings() {
 
   // Members state
   const [members, setMembers] = useState<ProjectMember[]>([])
+  const [invitations, setInvitations] = useState<ProjectInvitation[]>([])
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([])
   const [selectedUserId, setSelectedUserId] = useState('')
   const [newMemberRole, setNewMemberRole] = useState('member')
@@ -82,6 +83,7 @@ export default function ProjectSettings() {
   useEffect(() => {
     loadProject()
     loadMembers()
+    loadInvitations()
     loadTeamMembers()
     loadGitHubSettings()
     loadSwimLanes()
@@ -103,6 +105,15 @@ export default function ProjectSettings() {
       setMembers(data)
     } catch (error: unknown) {
       console.error('Failed to load data:', error)
+    }
+  }
+
+  const loadInvitations = async () => {
+    try {
+      const data = await apiClient.getProjectInvitations(projectId)
+      setInvitations(data)
+    } catch {
+      // Not owner/admin — ignore
     }
   }
 
@@ -247,7 +258,7 @@ export default function ProjectSettings() {
     }
   }
 
-  const handleAddMember = async (e: React.FormEvent) => {
+  const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault()
     setMemberError('')
     setMemberSuccess('')
@@ -260,28 +271,46 @@ export default function ProjectSettings() {
     setIsAddingMember(true)
 
     try {
-      const userId = parseInt(selectedUserId)
-      const selectedMember = teamMembers.find(m => m.user_id === userId)
-
-      await apiClient.addProjectMember(projectId, {
-        email: selectedMember?.email || '',
+      await apiClient.inviteProjectMember(projectId, {
+        user_id: parseInt(selectedUserId),
         role: newMemberRole,
       })
 
-      setMemberSuccess('Member added successfully')
+      setMemberSuccess('Invitation sent')
       setSelectedUserId('')
       setNewMemberRole('member')
-      loadMembers()
+      loadInvitations()
     } catch (error: unknown) {
-      setMemberError(error instanceof Error ? error.message : 'Failed to add member')
+      setMemberError(error instanceof Error ? error.message : 'Failed to send invitation')
     } finally {
       setIsAddingMember(false)
     }
   }
 
-  // Filter team members that aren't already project members
+  const handleWithdrawInvitation = async (invId: number) => {
+    try {
+      await apiClient.withdrawProjectInvitation(invId)
+      setMemberSuccess('Invitation withdrawn')
+      loadInvitations()
+    } catch (error: unknown) {
+      setMemberError(error instanceof Error ? error.message : 'Failed to withdraw invitation')
+    }
+  }
+
+  const handleResendInvitation = async (invId: number) => {
+    try {
+      await apiClient.resendProjectInvitation(invId)
+      setMemberSuccess('Invitation resent')
+      loadInvitations()
+    } catch (error: unknown) {
+      setMemberError(error instanceof Error ? error.message : 'Failed to resend invitation')
+    }
+  }
+
+  // Filter team members that aren't already project members and don't have a pending invitation
   const availableTeamMembers = teamMembers.filter(
-    tm => !members.some(pm => pm.user_id === tm.user_id)
+    tm => !members.some(pm => pm.user_id === tm.user_id) &&
+          !invitations.some(inv => inv.invitee_user_id === tm.user_id && inv.status === 'pending')
   )
 
   const handleUpdateMemberRole = async (memberId: number, role: string) => {
@@ -414,8 +443,8 @@ export default function ProjectSettings() {
               {memberError && <FormError message={memberError} className="mb-4" />}
 
               {/* Add Member Form */}
-              <form onSubmit={handleAddMember} className="mb-6 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
-                <h3 className="font-semibold text-dark-text-primary mb-4">Grant Project Access</h3>
+              <form onSubmit={handleInviteMember} className="mb-6 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                <h3 className="font-semibold text-dark-text-primary mb-4">Invite to Project</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-dark-text-primary mb-1">
@@ -450,10 +479,10 @@ export default function ProjectSettings() {
                 </div>
                 <div className="mt-4">
                   <Button type="submit" disabled={isAddingMember || availableTeamMembers.length === 0} size="sm">
-                    {isAddingMember ? 'Adding...' : 'Grant Access'}
+                    {isAddingMember ? 'Sending...' : 'Send Invite'}
                   </Button>
                   {availableTeamMembers.length === 0 && (
-                    <p className="text-sm text-dark-text-tertiary mt-2">All team members already have access</p>
+                    <p className="text-sm text-dark-text-tertiary mt-2">All team members already have access or a pending invitation</p>
                   )}
                 </div>
               </form>
@@ -512,6 +541,55 @@ export default function ProjectSettings() {
                   </div>
                 )}
               </div>
+
+              {/* Pending Invitations */}
+              {invitations.filter(inv => ['pending', 'rejected', 'withdrawn'].includes(inv.status)).length > 0 && (
+                <div className="mt-6">
+                  <h3 className="font-semibold text-dark-text-primary mb-3">Invitations</h3>
+                  <div className="space-y-2">
+                    {invitations.filter(inv => ['pending', 'rejected', 'withdrawn'].includes(inv.status)).map((inv) => (
+                      <div key={inv.id} className="flex items-center justify-between p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gradient-to-br from-indigo-500/30 to-purple-600/30 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                            {(inv.invitee_email || '?').charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-medium text-dark-text-primary">{inv.invitee_name || inv.invitee_email}</p>
+                            <p className="text-xs text-dark-text-tertiary">Invited {new Date(inv.invited_at).toLocaleDateString()} · {inv.role}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {inv.status === 'pending' && (
+                            <>
+                              <span className="px-2 py-1 text-xs font-medium bg-warning-500/10 text-warning-400 border border-warning-500/20 rounded-full">Pending</span>
+                              <button
+                                onClick={() => handleResendInvitation(inv.id)}
+                                disabled={!inv.can_resend}
+                                title={inv.can_resend ? 'Resend invitation' : 'Can resend in 2 days'}
+                                className="px-2 py-1 text-xs text-dark-text-tertiary hover:text-dark-text-primary disabled:opacity-40 disabled:cursor-not-allowed border border-dark-border-subtle rounded transition-colors"
+                              >
+                                Resend
+                              </button>
+                              <button
+                                onClick={() => handleWithdrawInvitation(inv.id)}
+                                className="px-2 py-1 text-xs text-danger-400 hover:text-danger-300 border border-danger-500/20 rounded transition-colors"
+                              >
+                                Withdraw
+                              </button>
+                            </>
+                          )}
+                          {inv.status === 'rejected' && (
+                            <span className="px-2 py-1 text-xs font-medium bg-dark-bg-tertiary text-dark-text-tertiary border border-dark-border-subtle rounded-full">Rejected</span>
+                          )}
+                          {inv.status === 'withdrawn' && (
+                            <span className="px-2 py-1 text-xs font-medium bg-dark-bg-tertiary text-dark-text-tertiary border border-dark-border-subtle rounded-full">Withdrawn</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Role Descriptions */}
               <div className="mt-6 p-4 bg-primary-500/10 border border-primary-500/30 rounded-lg">

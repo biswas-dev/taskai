@@ -11,11 +11,12 @@ import FormError from '../components/ui/FormError'
 export default function Signup() {
   const [searchParams] = useSearchParams()
   const inviteCodeFromURL = searchParams.get('code') || ''
+  const emailFromURL = searchParams.get('email') || ''
   const redirectTo = searchParams.get('redirect')
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(emailFromURL)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [inviteCode, setInviteCode] = useState(inviteCodeFromURL)

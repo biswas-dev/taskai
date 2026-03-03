@@ -80,7 +80,6 @@ describe('AcceptTeamInvite', () => {
     })
     expect(screen.getByText('Alice')).toBeInTheDocument()
     expect(screen.getByText('Acme Corp')).toBeInTheDocument()
-    expect(screen.getByText('Sign in to accept this invitation.')).toBeInTheDocument()
     expect(screen.getByText('Sign in to Accept')).toBeInTheDocument()
 
     // Verify sign-in link encodes the redirect properly
@@ -88,12 +87,8 @@ describe('AcceptTeamInvite', () => {
     expect(signInLink).toHaveAttribute('href', expect.stringContaining('/login?redirect='))
     expect(signInLink).toHaveAttribute('href', expect.stringContaining('valid-token'))
 
-    // No signup required, so show "Don't have an account?" with sign up link
-    expect(screen.getByText(/Don't have an account\?/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /sign up/i })).toHaveAttribute('href', '/signup')
-
-    // "Create Account & Accept" button should NOT be present
-    expect(screen.queryByText('Create Account & Accept')).not.toBeInTheDocument()
+    // Existing user: no signup button shown
+    expect(screen.queryByText('Create Account & Join')).not.toBeInTheDocument()
   })
 
   it('shows signup button when requires_signup is true', async () => {
@@ -111,18 +106,20 @@ describe('AcceptTeamInvite', () => {
     render(<AcceptTeamInvite />)
 
     await waitFor(() => {
-      expect(screen.getByText('Create Account & Accept')).toBeInTheDocument()
+      expect(screen.getByText('Create Account & Join')).toBeInTheDocument()
     })
 
-    // Verify signup link encodes invite code and redirect
-    const signupLink = screen.getByText('Create Account & Accept').closest('a')
+    // Verify signup link encodes invite code, email and redirect
+    const signupLink = screen.getByText('Create Account & Join').closest('a')
     expect(signupLink).toHaveAttribute('href', expect.stringContaining('/signup?code='))
     expect(signupLink).toHaveAttribute('href', expect.stringContaining('INV-CODE-123'))
+    expect(signupLink).toHaveAttribute('href', expect.stringContaining('email='))
+    expect(signupLink).toHaveAttribute('href', expect.stringContaining('dave%40example.com'))
     expect(signupLink).toHaveAttribute('href', expect.stringContaining('redirect='))
     expect(signupLink).toHaveAttribute('href', expect.stringContaining('signup-token'))
 
-    // "Don't have an account?" text should NOT be present when requires_signup is true
-    expect(screen.queryByText(/Don't have an account\?/)).not.toBeInTheDocument()
+    // New user: no sign-in button shown
+    expect(screen.queryByText('Sign in to Accept')).not.toBeInTheDocument()
   })
 
   it('auto-accepts when user is logged in', async () => {

@@ -5,6 +5,7 @@ import Sidebar from '../components/Sidebar'
 import ProjectModal from '../components/ProjectModal'
 import SyncStatus from '../components/SyncStatus'
 import CommandPalette, { searchShortcutLabel } from '../components/CommandPalette'
+import ProjectInvitationBanner from '../components/ProjectInvitationBanner'
 import { Project } from '../lib/api'
 
 export default function Dashboard() {
@@ -96,6 +97,9 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {/* Project invitation banner */}
+      <ProjectInvitationBanner />
 
       {/* Main Layout */}
       <div className="flex flex-1 overflow-hidden">

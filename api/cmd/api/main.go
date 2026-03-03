@@ -268,6 +268,16 @@ func main() {
 			r.Get("/projects/{id}/github", server.HandleGetProjectGitHubSettings)
 			r.Patch("/projects/{id}/github", server.HandleUpdateProjectGitHubSettings)
 
+			// Project invitation routes
+			r.Post("/projects/{id}/invitations", server.HandleInviteProjectMember)
+			r.Get("/projects/{id}/invitations", server.HandleGetProjectInvitations)
+			r.Post("/project-invitations/{id}/accept", server.HandleAcceptProjectInvitation)
+			r.Post("/project-invitations/{id}/reject", server.HandleRejectProjectInvitation)
+			r.Delete("/project-invitations/{id}", server.HandleWithdrawProjectInvitation)
+			r.Post("/project-invitations/{id}/resend", server.HandleResendProjectInvitation)
+			r.Get("/my/project-invitations", server.HandleGetMyProjectInvitations)
+			r.Get("/my/project-invitations/count", server.HandleGetMyProjectInvitationCount)
+
 			// Security/Settings routes
 			r.Post("/settings/password", server.HandleChangePassword)
 			r.Get("/settings/2fa/status", server.Handle2FAStatus)
