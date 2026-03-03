@@ -680,7 +680,7 @@ func TestHandleRejectInvitationAlreadyResponded(t *testing.T) {
 	AssertError(t, rec, http.StatusConflict, "already responded", "already_responded")
 }
 
-func TestHandleAcceptInvitationAddsToTeamProjects(t *testing.T) {
+func TestHandleAcceptInvitationDoesNotAddToTeamProjects(t *testing.T) {
 	ts := NewTestServer(t)
 	defer ts.Close()
 
@@ -722,14 +722,14 @@ func TestHandleAcceptInvitationAddsToTeamProjects(t *testing.T) {
 
 	AssertStatusCode(t, rec.Code, http.StatusOK)
 
-	// Verify user was added to the team project
+	// Verify user was NOT added to the team project (explicit access only)
 	var projectMemberCount int
 	err = ts.DB.QueryRow("SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ?", projectID, inviteeID).Scan(&projectMemberCount)
 	if err != nil {
 		t.Fatalf("Failed to query project member: %v", err)
 	}
-	if projectMemberCount != 1 {
-		t.Errorf("Expected invitee to be a project member, count=%d", projectMemberCount)
+	if projectMemberCount != 0 {
+		t.Errorf("Expected invitee NOT to be a project member after accepting team invitation, count=%d", projectMemberCount)
 	}
 }
 
@@ -1197,7 +1197,7 @@ func TestHandleAcceptInvitationByToken_Success(t *testing.T) {
 	}
 }
 
-func TestHandleAcceptInvitationByToken_AddsToProjects(t *testing.T) {
+func TestHandleAcceptInvitationByToken_DoesNotAddToProjects(t *testing.T) {
 	ts := NewTestServer(t)
 	defer ts.Close()
 
@@ -1223,11 +1223,11 @@ func TestHandleAcceptInvitationByToken_AddsToProjects(t *testing.T) {
 
 	AssertStatusCode(t, rec.Code, http.StatusOK)
 
-	// Verify user was added to the project
+	// Verify user was NOT added to the project (explicit access only)
 	var projMemberCount int
 	ts.DB.QueryRowContext(bgCtx, `SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ?`, projID, inviteeID).Scan(&projMemberCount)
-	if projMemberCount != 1 {
-		t.Errorf("Expected 1 project member row, got %d", projMemberCount)
+	if projMemberCount != 0 {
+		t.Errorf("Expected 0 project member rows after accepting token invite, got %d", projMemberCount)
 	}
 }
 
@@ -1260,5 +1260,47 @@ func TestHandleInviteTeamMember_GeneratesToken(t *testing.T) {
 	}
 	if tokenExpires.Before(time.Now()) {
 		t.Error("Expected token_expires_at to be in the future")
+	}
+}
+
+func TestHandleAddTeamMemberDoesNotAddToProjects(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
+	newMemberID := ts.CreateTestUser(t, "newmember@example.com", "password123")
+	teamID := createTestTeam(t, ts, ownerID, "Test Team")
+
+	// Create a project belonging to this team
+	bgCtx := context.Background()
+	projResult, err := ts.DB.ExecContext(bgCtx,
+		`INSERT INTO projects (name, owner_id, team_id, created_at, updated_at) VALUES ('Team Project', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		ownerID, teamID,
+	)
+	if err != nil {
+		t.Fatalf("Failed to create project: %v", err)
+	}
+	projID, _ := projResult.LastInsertId()
+
+	// Add owner as project member
+	_, err = ts.DB.ExecContext(bgCtx,
+		`INSERT INTO project_members (project_id, user_id, role, granted_by) VALUES (?, ?, 'owner', ?)`,
+		projID, ownerID, ownerID,
+	)
+	if err != nil {
+		t.Fatalf("Failed to add project owner member: %v", err)
+	}
+
+	body := AddTeamMemberRequest{UserID: newMemberID}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, "/api/team/members", body, ownerID, nil)
+	ts.HandleAddTeamMember(rec, req)
+
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	// Verify new member was NOT added to the project (explicit access only)
+	var projMemberCount int
+	ts.DB.QueryRowContext(bgCtx, `SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ?`, projID, newMemberID).Scan(&projMemberCount)
+	if projMemberCount != 0 {
+		t.Errorf("Expected 0 project member rows after direct team add, got %d", projMemberCount)
 	}
 }

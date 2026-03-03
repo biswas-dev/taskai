@@ -856,6 +856,7 @@ func TestTeamProjectAccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create project failed: %v", err)
 	}
+	projectID := int64(project["id"].(float64))
 
 	// User1 invites user2 to their team
 	inviteBody := map[string]string{"email": user2Email}
@@ -893,7 +894,7 @@ func TestTeamProjectAccess(t *testing.T) {
 		t.Fatalf("Expected status 200, got %d: %s", acceptResp.StatusCode, string(body))
 	}
 
-	// User2 should now be able to see the project
+	// User2 should NOT see the project yet — team membership alone grants no project access
 	listProjectsResp, err := ts.DoRequest("GET", "/api/projects", nil, user2Token)
 	if err != nil {
 		t.Fatalf("List projects failed: %v", err)
@@ -903,29 +904,20 @@ func TestTeamProjectAccess(t *testing.T) {
 		t.Fatalf("Decode projects failed: %v", err)
 	}
 
-	// Verify user2 can see the project
-	found := false
-	projectID := int64(project["id"].(float64))
 	for _, p := range projects {
 		if int64(p["id"].(float64)) == projectID {
-			found = true
-			if p["name"].(string) != "Shared Project" {
-				t.Errorf("Expected project name 'Shared Project', got %s", p["name"].(string))
-			}
+			t.Errorf("User2 should NOT see the project before being explicitly added (found project ID %d)", projectID)
 			break
 		}
 	}
-	if !found {
-		t.Errorf("User2 cannot see the shared project (expected to find project ID %d)", projectID)
-	}
 
-	// User1 creates a new project after user2 joined
+	// User1 creates a new project after user2 joined — user2 should NOT see this either
 	newProject, err := ts.CreateProject(user1Token, "New Project After Join", "Created after user2 joined team")
 	if err != nil {
 		t.Fatalf("Create new project failed: %v", err)
 	}
+	newProjectID := int64(newProject["id"].(float64))
 
-	// User2 should also see this new project
 	listProjectsResp2, err := ts.DoRequest("GET", "/api/projects", nil, user2Token)
 	if err != nil {
 		t.Fatalf("List projects failed: %v", err)
@@ -935,15 +927,10 @@ func TestTeamProjectAccess(t *testing.T) {
 		t.Fatalf("Decode projects failed: %v", err)
 	}
 
-	found2 := false
-	newProjectID := int64(newProject["id"].(float64))
 	for _, p := range projects2 {
 		if int64(p["id"].(float64)) == newProjectID {
-			found2 = true
+			t.Errorf("User2 should NOT see the new project before being explicitly added (found project ID %d)", newProjectID)
 			break
 		}
-	}
-	if !found2 {
-		t.Errorf("User2 cannot see the new project created after they joined (expected to find project ID %d)", newProjectID)
 	}
 }

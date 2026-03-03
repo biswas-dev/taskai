@@ -12,7 +12,6 @@ import (
 	"go.uber.org/zap"
 
 	"taskai/ent"
-	"taskai/ent/project"
 	"taskai/ent/team"
 	"taskai/ent/teammember"
 	"taskai/ent/teaminvitation"
@@ -470,32 +469,6 @@ func (s *Server) HandleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Add user to all existing team projects
-	// Get all projects for this team
-	projects, err := tx.Project.Query().
-		Where(project.TeamID(entInv.TeamID)).
-		All(ctx)
-	if err != nil {
-		s.logger.Error("Failed to get team projects", zap.Error(err))
-		respondError(w, http.StatusInternalServerError, "failed to get team projects", "internal_error")
-		return
-	}
-
-	// Add user as member to each project
-	for _, proj := range projects {
-		_, err := tx.ProjectMember.Create().
-			SetProjectID(proj.ID).
-			SetUserID(userID).
-			SetRole("member").
-			SetGrantedBy(proj.OwnerID).
-			Save(ctx)
-		if err != nil {
-			s.logger.Error("Failed to add user to project", zap.Error(err), zap.Int64("project_id", proj.ID))
-			respondError(w, http.StatusInternalServerError, "failed to add to team projects", "internal_error")
-			return
-		}
-	}
-
 	if err := tx.Commit(); err != nil {
 		s.logger.Error("Failed to commit transaction", zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to process invitation", "internal_error")
@@ -885,30 +858,6 @@ func (s *Server) HandleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Add user to all existing team projects
-	projects, err := tx.Project.Query().
-		Where(project.TeamID(teamID)).
-		All(ctx)
-	if err != nil {
-		s.logger.Error("Failed to get team projects", zap.Error(err))
-		respondError(w, http.StatusInternalServerError, "failed to get team projects", "internal_error")
-		return
-	}
-
-	for _, proj := range projects {
-		_, err := tx.ProjectMember.Create().
-			SetProjectID(proj.ID).
-			SetUserID(req.UserID).
-			SetRole("member").
-			SetGrantedBy(proj.OwnerID).
-			Save(ctx)
-		if err != nil {
-			s.logger.Error("Failed to add user to project", zap.Error(err), zap.Int64("project_id", proj.ID))
-			respondError(w, http.StatusInternalServerError, "failed to add to team projects", "internal_error")
-			return
-		}
-	}
-
 	if err := tx.Commit(); err != nil {
 		s.logger.Error("Failed to commit transaction", zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to add member", "internal_error")
@@ -1144,30 +1093,6 @@ func (s *Server) HandleAcceptInvitationByToken(w http.ResponseWriter, r *http.Re
 		s.logger.Error("Failed to add team member", zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to add team member", "internal_error")
 		return
-	}
-
-	// Add user to all existing team projects
-	projects, err := tx.Project.Query().
-		Where(project.TeamID(entInv.TeamID)).
-		All(ctx)
-	if err != nil {
-		s.logger.Error("Failed to get team projects", zap.Error(err))
-		respondError(w, http.StatusInternalServerError, "failed to get team projects", "internal_error")
-		return
-	}
-
-	for _, proj := range projects {
-		_, err := tx.ProjectMember.Create().
-			SetProjectID(proj.ID).
-			SetUserID(userID).
-			SetRole("member").
-			SetGrantedBy(proj.OwnerID).
-			Save(ctx)
-		if err != nil {
-			s.logger.Error("Failed to add user to project", zap.Error(err), zap.Int64("project_id", proj.ID))
-			respondError(w, http.StatusInternalServerError, "failed to add to team projects", "internal_error")
-			return
-		}
 	}
 
 	if err := tx.Commit(); err != nil {

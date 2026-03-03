@@ -720,7 +720,7 @@ func TestHandleCreateProject_NoTeam(t *testing.T) {
 	AssertError(t, rec, http.StatusInternalServerError, "failed to get user team", "internal_error")
 }
 
-func TestHandleCreateProject_AddsTeamMembers(t *testing.T) {
+func TestHandleCreateProject_DoesNotAddTeamMembers(t *testing.T) {
 	ts := NewTestServer(t)
 	defer ts.Close()
 
@@ -747,7 +747,7 @@ func TestHandleCreateProject_AddsTeamMembers(t *testing.T) {
 	var project Project
 	DecodeJSON(t, rec, &project)
 
-	// Verify team member was added to the project
+	// Verify team member was NOT auto-added to the project (explicit access only)
 	var count int
 	err = ts.DB.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ?`,
@@ -756,8 +756,21 @@ func TestHandleCreateProject_AddsTeamMembers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to check membership: %v", err)
 	}
-	if count != 1 {
-		t.Errorf("Expected team member to be added to project, but got count %d", count)
+	if count != 0 {
+		t.Errorf("Expected team member NOT to be auto-added to project, but got count %d", count)
+	}
+
+	// Verify only the creator is a member
+	var totalCount int
+	err = ts.DB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM project_members WHERE project_id = ?`,
+		project.ID,
+	).Scan(&totalCount)
+	if err != nil {
+		t.Fatalf("Failed to check total membership: %v", err)
+	}
+	if totalCount != 1 {
+		t.Errorf("Expected only 1 project member (the creator), got %d", totalCount)
 	}
 }
 

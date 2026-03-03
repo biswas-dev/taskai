@@ -12,7 +12,6 @@ import (
 	"taskai/ent"
 	"taskai/ent/project"
 	"taskai/ent/projectmember"
-	"taskai/ent/teammember"
 )
 
 type Project struct {
@@ -168,33 +167,6 @@ func (s *Server) HandleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to add project owner", "internal_error")
 		return
-	}
-
-	// Get all other active team members to add to the project
-	teamMembers, err := tx.TeamMember.Query().
-		Where(
-			teammember.TeamID(teamID),
-			teammember.UserIDNEQ(userID),
-			teammember.Status("active"),
-		).
-		All(ctx)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to add team members to project", "internal_error")
-		return
-	}
-
-	// Add all team members to the project
-	for _, tm := range teamMembers {
-		_, err = tx.ProjectMember.Create().
-			SetProjectID(newProject.ID).
-			SetUserID(tm.UserID).
-			SetRole("member").
-			SetGrantedBy(userID).
-			Save(ctx)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to add team members to project", "internal_error")
-			return
-		}
 	}
 
 	// Create default swim lanes for the new project
