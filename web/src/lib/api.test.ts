@@ -754,21 +754,21 @@ describe('ApiClient', () => {
 
   // --- Assets ---
   describe('getAssets', () => {
-    it('calls correct URL with no params', async () => {
+    it('calls correct URL with project_id', async () => {
       mockResponse([])
-      await apiClient.getAssets()
+      await apiClient.getAssets(42)
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/assets'),
         expect.any(Object)
       )
       const url = mockFetch.mock.calls[0][0] as string
-      expect(url).toMatch(/\/api\/assets$/)
+      expect(url).toContain('project_id=42')
     })
 
     it('passes query params correctly', async () => {
       mockResponse([])
-      await apiClient.getAssets({ q: 'photo', type: 'image', limit: 20 })
+      await apiClient.getAssets(42, { q: 'photo', type: 'image', limit: 20 })
 
       const url = mockFetch.mock.calls[0][0] as string
       expect(url).toContain('q=photo')
@@ -778,7 +778,7 @@ describe('ApiClient', () => {
 
     it('URL encodes search query', async () => {
       mockResponse([])
-      await apiClient.getAssets({ q: 'hello world' })
+      await apiClient.getAssets(42, { q: 'hello world' })
 
       const url = mockFetch.mock.calls[0][0] as string
       expect(url).toContain('q=hello+world')
@@ -786,7 +786,7 @@ describe('ApiClient', () => {
 
     it('passes offset param', async () => {
       mockResponse([])
-      await apiClient.getAssets({ offset: 10 })
+      await apiClient.getAssets(42, { offset: 10 })
 
       const url = mockFetch.mock.calls[0][0] as string
       expect(url).toContain('offset=10')
@@ -871,7 +871,7 @@ describe('ApiClient', () => {
   describe('error handling', () => {
     it('throws on non-ok response', async () => {
       mockErrorResponse('Not authorized', 401)
-      await expect(apiClient.getAssets()).rejects.toThrow('Not authorized')
+      await expect(apiClient.getAssets(1)).rejects.toThrow('Not authorized')
     })
 
     it('throws generic error for 500 errors', async () => {
@@ -883,7 +883,7 @@ describe('ApiClient', () => {
         },
         json: () => Promise.resolve({ error: 'Internal server error' }),
       })
-      await expect(apiClient.getAssets()).rejects.toThrow('Internal server error')
+      await expect(apiClient.getAssets(1)).rejects.toThrow('Internal server error')
     })
 
     it('handles 204 No Content responses', async () => {
@@ -897,7 +897,7 @@ describe('ApiClient', () => {
   describe('authorization', () => {
     it('includes Bearer token in requests', async () => {
       mockResponse([])
-      await apiClient.getAssets()
+      await apiClient.getAssets(1)
 
       const config = mockFetch.mock.calls[0][1] as RequestInit
       expect((config.headers as Record<string, string>)['Authorization']).toContain('Bearer')
@@ -905,7 +905,7 @@ describe('ApiClient', () => {
 
     it('sets Content-Type to application/json', async () => {
       mockResponse([])
-      await apiClient.getAssets()
+      await apiClient.getAssets(1)
 
       const config = mockFetch.mock.calls[0][1] as RequestInit
       expect((config.headers as Record<string, string>)['Content-Type']).toBe('application/json')

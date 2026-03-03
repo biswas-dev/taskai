@@ -22,7 +22,7 @@ function formatDate(dateStr: string): string {
 
 type FileTypeFilter = '' | 'image' | 'video' | 'pdf'
 
-export default function MyAssets() {
+export default function MyAssets({ projectId }: { projectId: number }) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -40,7 +40,7 @@ export default function MyAssets() {
     try {
       setLoading(true)
       setError('')
-      const data = await apiClient.getAssets({
+      const data = await apiClient.getAssets(projectId, {
         q: q || undefined,
         type: type || undefined,
         limit: 50,

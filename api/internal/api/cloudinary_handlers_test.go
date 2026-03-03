@@ -12,7 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// createTestProjectForCloudinary creates a project owned by the given user and returns its ID
+// createTestProjectForCloudinary creates a project owned by the given user, adds them as
+// a member (owner role), and returns the project ID.
 func createTestProjectForCloudinary(t *testing.T, ts *TestServer, ownerID int64) int64 {
 	t.Helper()
 
@@ -28,6 +29,15 @@ func createTestProjectForCloudinary(t *testing.T, ts *TestServer, ownerID int64)
 	id, err := result.LastInsertId()
 	if err != nil {
 		t.Fatalf("Failed to get project ID: %v", err)
+	}
+
+	// Add creator as project member so checkProjectAccess passes
+	_, err = ts.DB.ExecContext(ctx,
+		`INSERT INTO project_members (project_id, user_id, role, granted_by) VALUES (?, ?, 'owner', ?)`,
+		id, ownerID, ownerID,
+	)
+	if err != nil {
+		t.Fatalf("Failed to add owner as project member: %v", err)
 	}
 
 	return id
@@ -116,18 +126,21 @@ func makeAuthRequest(t *testing.T, method, path string, body interface{}, userID
 func TestHandleListAssets(t *testing.T) {
 	tests := []struct {
 		name       string
-		query      string
+		extraQuery string // extra query params (without project_id)
 		wantStatus int
 		wantCount  int
-		setupFunc  func(t *testing.T, ts *TestServer) int64 // returns userID to use for request
+		// returns (userID, projectID) to use for request
+		setupFunc  func(t *testing.T, ts *TestServer) (int64, int64)
 		checkOwner bool
 	}{
 		{
 			name:       "empty list when no attachments",
 			wantStatus: http.StatusOK,
 			wantCount:  0,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
-				return ts.CreateTestUser(t, "user@example.com", "password123")
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
+				userID := ts.CreateTestUser(t, "user@example.com", "password123")
+				projectID := createTestProjectForCloudinary(t, ts, userID)
+				return userID, projectID
 			},
 		},
 		{
@@ -135,123 +148,133 @@ func TestHandleListAssets(t *testing.T) {
 			wantStatus: http.StatusOK,
 			wantCount:  2,
 			checkOwner: true,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "photo1.jpg", "My photo")
 				createTestAttachment(t, ts, taskID, userID, projectID, "pdf", "doc.pdf", "My doc")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
 			name:       "returns shared project members attachments",
 			wantStatus: http.StatusOK,
 			wantCount:  3, // 2 own + 1 shared
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				user1ID := ts.CreateTestUser(t, "user1@example.com", "password123")
 				user2ID := ts.CreateTestUser(t, "user2@example.com", "password123")
 
+				// createTestProjectForCloudinary already adds user1 as owner member
 				projectID := createTestProjectForCloudinary(t, ts, user1ID)
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 
-				// Add both users as project members
-				addProjectMember(t, ts, projectID, user1ID, user1ID, "admin")
 				addProjectMember(t, ts, projectID, user2ID, user1ID, "editor")
 
-				// user1's attachments
 				createTestAttachment(t, ts, taskID, user1ID, projectID, "image", "user1_photo.jpg", "User1 photo")
 				createTestAttachment(t, ts, taskID, user1ID, projectID, "pdf", "user1_doc.pdf", "User1 doc")
-				// user2's attachment (should appear for user1 via shared project)
 				createTestAttachment(t, ts, taskID, user2ID, projectID, "image", "user2_photo.jpg", "User2 photo")
 
-				return user1ID
+				return user1ID, projectID
 			},
 		},
 		{
 			name:       "filters by type=image",
-			query:      "?type=image",
+			extraQuery: "&type=image",
 			wantStatus: http.StatusOK,
 			wantCount:  1,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "photo.jpg", "Photo")
 				createTestAttachment(t, ts, taskID, userID, projectID, "pdf", "doc.pdf", "Doc")
 				createTestAttachment(t, ts, taskID, userID, projectID, "video", "clip.mp4", "Video")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
 			name:       "filters by type=video",
-			query:      "?type=video",
+			extraQuery: "&type=video",
 			wantStatus: http.StatusOK,
 			wantCount:  1,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "photo.jpg", "Photo")
 				createTestAttachment(t, ts, taskID, userID, projectID, "video", "clip.mp4", "Video")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
 			name:       "filters by type=pdf",
-			query:      "?type=pdf",
+			extraQuery: "&type=pdf",
 			wantStatus: http.StatusOK,
 			wantCount:  1,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "photo.jpg", "Photo")
 				createTestAttachment(t, ts, taskID, userID, projectID, "pdf", "report.pdf", "Report")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
 			name:       "search by query matches alt_name",
-			query:      "?q=sunset",
+			extraQuery: "&q=sunset",
 			wantStatus: http.StatusOK,
 			wantCount:  1,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "img001.jpg", "Beautiful sunset")
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "img002.jpg", "Mountain view")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
 			name:       "search by query matches filename",
-			query:      "?q=report",
+			extraQuery: "&q=report",
 			wantStatus: http.StatusOK,
 			wantCount:  1,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "pdf", "report_2024.pdf", "")
 				createTestAttachment(t, ts, taskID, userID, projectID, "pdf", "invoice.pdf", "")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
 			name:       "pagination with limit and offset",
-			query:      "?limit=2&offset=1",
+			extraQuery: "&limit=2&offset=1",
 			wantStatus: http.StatusOK,
 			wantCount:  2,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "a.jpg", "A")
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "b.jpg", "B")
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "c.jpg", "C")
-				return userID
+				return userID, projectID
+			},
+		},
+		{
+			name:       "non-member gets 403",
+			wantStatus: http.StatusForbidden,
+			wantCount:  0,
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
+				ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
+				nonMemberID := ts.CreateTestUser(t, "other@example.com", "password123")
+				projectID := createTestProjectForCloudinary(t, ts, ownerID)
+				_ = nonMemberID
+				// Return nonMemberID as the requester but the owner's projectID
+				return nonMemberID, projectID
 			},
 		},
 	}
@@ -261,17 +284,18 @@ func TestHandleListAssets(t *testing.T) {
 			ts := NewTestServer(t)
 			defer ts.Close()
 
-			userID := tt.setupFunc(t, ts)
+			userID, projectID := tt.setupFunc(t, ts)
 
-			path := "/api/assets"
-			if tt.query != "" {
-				path += tt.query
-			}
+			path := fmt.Sprintf("/api/assets?project_id=%d%s", projectID, tt.extraQuery)
 
 			rec, req := makeAuthRequest(t, http.MethodGet, path, nil, userID, nil)
 			ts.HandleListAssets(rec, req)
 
 			AssertStatusCode(t, rec.Code, tt.wantStatus)
+
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
 
 			var assets []AssetResponse
 			DecodeJSON(t, rec, &assets)
@@ -297,17 +321,18 @@ func TestHandleListAssetsRequiresAuth(t *testing.T) {
 
 	userID := ts.CreateTestUser(t, "user@example.com", "password123")
 	token := ts.GenerateTestToken(t, userID, "user@example.com")
+	projectID := createTestProjectForCloudinary(t, ts, userID)
 
-	// With valid auth through middleware
+	// With valid auth through middleware (project_id required)
 	headers := map[string]string{
 		"Authorization": fmt.Sprintf("Bearer %s", token),
 	}
-	rec, req := MakeRequest(t, http.MethodGet, "/api/assets", nil, headers)
+	rec, req := MakeRequest(t, http.MethodGet, fmt.Sprintf("/api/assets?project_id=%d", projectID), nil, headers)
 	ts.JWTAuth(http.HandlerFunc(ts.HandleListAssets)).ServeHTTP(rec, req)
 	AssertStatusCode(t, rec.Code, http.StatusOK)
 
 	// Without auth through middleware
-	rec2, req2 := MakeRequest(t, http.MethodGet, "/api/assets", nil, nil)
+	rec2, req2 := MakeRequest(t, http.MethodGet, fmt.Sprintf("/api/assets?project_id=%d", projectID), nil, nil)
 	ts.JWTAuth(http.HandlerFunc(ts.HandleListAssets)).ServeHTTP(rec2, req2)
 	AssertStatusCode(t, rec2.Code, http.StatusUnauthorized)
 }
@@ -587,8 +612,7 @@ func TestHandleListImages(t *testing.T) {
 			wantCount:  2,
 			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
-				projectID := createTestProjectForCloudinary(t, ts, userID)
-				addProjectMember(t, ts, projectID, userID, userID, "admin")
+				projectID := createTestProjectForCloudinary(t, ts, userID) // auto-adds owner
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "photo1.jpg", "Photo 1")
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "photo2.jpg", "Photo 2")
@@ -603,8 +627,7 @@ func TestHandleListImages(t *testing.T) {
 			wantCount:  1,
 			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
-				projectID := createTestProjectForCloudinary(t, ts, userID)
-				addProjectMember(t, ts, projectID, userID, userID, "admin")
+				projectID := createTestProjectForCloudinary(t, ts, userID) // auto-adds owner
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "sunset.jpg", "Beautiful sunset")
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "mountain.jpg", "Mountain view")
@@ -617,8 +640,7 @@ func TestHandleListImages(t *testing.T) {
 			wantCount:  0,
 			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
-				projectID := createTestProjectForCloudinary(t, ts, userID)
-				addProjectMember(t, ts, projectID, userID, userID, "admin")
+				projectID := createTestProjectForCloudinary(t, ts, userID) // auto-adds owner
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "pdf", "doc.pdf", "Doc")
 				return userID, projectID
@@ -640,8 +662,7 @@ func TestHandleListImages(t *testing.T) {
 			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
 				nonMemberID := ts.CreateTestUser(t, "other@example.com", "password123")
-				projectID := createTestProjectForCloudinary(t, ts, ownerID)
-				addProjectMember(t, ts, projectID, ownerID, ownerID, "admin")
+				projectID := createTestProjectForCloudinary(t, ts, ownerID) // auto-adds owner
 				return nonMemberID, projectID
 			},
 		},
@@ -651,10 +672,9 @@ func TestHandleListImages(t *testing.T) {
 			wantCount:  1, // only the image from the requested project
 			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
+				// both projects auto-add userID as owner
 				projectID := createTestProjectForCloudinary(t, ts, userID)
 				otherProjectID := createTestProjectForCloudinary(t, ts, userID)
-				addProjectMember(t, ts, projectID, userID, userID, "admin")
-				addProjectMember(t, ts, otherProjectID, userID, userID, "admin")
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				otherTaskID := createTestTaskForCloudinary(t, ts, otherProjectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "mine.jpg", "Mine")
@@ -733,17 +753,17 @@ func TestHandleListAssetsOwnerFlag(t *testing.T) {
 	user1ID := ts.CreateTestUser(t, "user1@example.com", "password123")
 	user2ID := ts.CreateTestUser(t, "user2@example.com", "password123")
 
+	// createTestProjectForCloudinary already adds user1 as owner member
 	projectID := createTestProjectForCloudinary(t, ts, user1ID)
 	taskID := createTestTaskForCloudinary(t, ts, projectID)
 
-	addProjectMember(t, ts, projectID, user1ID, user1ID, "admin")
 	addProjectMember(t, ts, projectID, user2ID, user1ID, "editor")
 
 	createTestAttachment(t, ts, taskID, user1ID, projectID, "image", "mine.jpg", "My photo")
 	createTestAttachment(t, ts, taskID, user2ID, projectID, "image", "theirs.jpg", "Their photo")
 
-	// Request as user1
-	rec, req := makeAuthRequest(t, http.MethodGet, "/api/assets", nil, user1ID, nil)
+	// Request as user1 (must pass project_id)
+	rec, req := makeAuthRequest(t, http.MethodGet, fmt.Sprintf("/api/assets?project_id=%d", projectID), nil, user1ID, nil)
 	ts.HandleListAssets(rec, req)
 	AssertStatusCode(t, rec.Code, http.StatusOK)
 

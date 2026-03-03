@@ -46,7 +46,7 @@ describe('MyAssets', () => {
 
   it('renders loading state initially', () => {
     mockedApi.getAssets.mockReturnValue(new Promise(() => {})) // never resolves
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
     expect(screen.getByText('Loading assets...')).toBeInTheDocument()
   })
 
@@ -57,7 +57,7 @@ describe('MyAssets', () => {
     ]
     mockedApi.getAssets.mockResolvedValue(assets)
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('Sunset Photo')).toBeInTheDocument()
@@ -68,7 +68,7 @@ describe('MyAssets', () => {
   it('shows empty state when no files', async () => {
     mockedApi.getAssets.mockResolvedValue([])
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('No files uploaded yet')).toBeInTheDocument()
@@ -78,7 +78,7 @@ describe('MyAssets', () => {
   it('shows filter message when empty with active filters', async () => {
     mockedApi.getAssets.mockResolvedValue([])
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('No files uploaded yet')).toBeInTheDocument()
@@ -99,7 +99,7 @@ describe('MyAssets', () => {
   it('search input triggers reload after debounce', async () => {
     mockedApi.getAssets.mockResolvedValue([])
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Search by name...')).toBeInTheDocument()
@@ -113,6 +113,7 @@ describe('MyAssets', () => {
     await waitFor(() => {
       // Initial call + debounced call
       expect(mockedApi.getAssets).toHaveBeenCalledWith(
+        1,
         expect.objectContaining({ q: 'sunset' })
       )
     }, { timeout: 1000 })
@@ -121,7 +122,7 @@ describe('MyAssets', () => {
   it('file type filter buttons work', async () => {
     mockedApi.getAssets.mockResolvedValue([])
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('Images')).toBeInTheDocument()
@@ -132,6 +133,7 @@ describe('MyAssets', () => {
 
     await waitFor(() => {
       expect(mockedApi.getAssets).toHaveBeenCalledWith(
+        1,
         expect.objectContaining({ type: 'video' })
       )
     })
@@ -141,7 +143,7 @@ describe('MyAssets', () => {
     const asset = makeAsset({ is_owner: true, alt_name: 'My Photo' })
     mockedApi.getAssets.mockResolvedValue([asset])
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('My Photo')).toBeInTheDocument()
@@ -159,7 +161,7 @@ describe('MyAssets', () => {
     mockedApi.getAssets.mockResolvedValue([asset])
     mockedApi.deleteAttachment.mockResolvedValue(undefined)
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByTitle('Delete file')).toBeInTheDocument()
@@ -183,7 +185,7 @@ describe('MyAssets', () => {
     const asset = makeAsset({ is_owner: false })
     mockedApi.getAssets.mockResolvedValue([asset])
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('View only')).toBeInTheDocument()
@@ -194,7 +196,7 @@ describe('MyAssets', () => {
     const asset = makeAsset({ is_owner: false })
     mockedApi.getAssets.mockResolvedValue([asset])
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('View only')).toBeInTheDocument()
@@ -211,7 +213,7 @@ describe('MyAssets', () => {
     })
     mockedApi.getAssets.mockResolvedValue([asset])
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('1 MB')).toBeInTheDocument()
@@ -222,7 +224,7 @@ describe('MyAssets', () => {
   it('shows error message on API failure', async () => {
     mockedApi.getAssets.mockRejectedValue(new Error('Network error'))
 
-    render(<MyAssets />)
+    render(<MyAssets projectId={1} />)
 
     await waitFor(() => {
       expect(screen.getByText('Network error')).toBeInTheDocument()

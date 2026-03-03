@@ -955,14 +955,14 @@ class ApiClient {
   }
 
   // Asset management
-  async getAssets(params?: { q?: string; type?: string; limit?: number; offset?: number }): Promise<Asset[]> {
+  async getAssets(projectId: number, params?: { q?: string; type?: string; limit?: number; offset?: number }): Promise<Asset[]> {
     const searchParams = new URLSearchParams()
+    searchParams.set('project_id', String(projectId))
     if (params?.q) searchParams.set('q', params.q)
     if (params?.type) searchParams.set('type', params.type)
     if (params?.limit) searchParams.set('limit', String(params.limit))
     if (params?.offset) searchParams.set('offset', String(params.offset))
-    const qs = searchParams.toString()
-    return this.request<Asset[]>(`/api/assets${qs ? '?' + qs : ''}`)
+    return this.request<Asset[]>(`/api/assets?${searchParams.toString()}`)
   }
 
   // Invite endpoints

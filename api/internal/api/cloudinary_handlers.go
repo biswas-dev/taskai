@@ -950,7 +950,8 @@ func (s *Server) HandleGetStorageUsage(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, usage)
 }
 
-// HandleListAssets returns all file assets accessible to the current user (own + shared project members)
+// HandleListAssets returns file assets for a specific project. The project_id
+// must be supplied as a query param; only project members can access.
 func (s *Server) HandleListAssets(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -968,7 +969,31 @@ func (s *Server) HandleListAssets(w http.ResponseWriter, r *http.Request) {
 		offset = o
 	}
 
-	// Build query dynamically based on filters
+	// project_id is required — assets are always scoped to a project
+	projectIDStr := r.URL.Query().Get("project_id")
+	if projectIDStr == "" {
+		respondError(w, http.StatusBadRequest, "project_id required", "bad_request")
+		return
+	}
+	projectID, err := strconv.ParseInt(projectIDStr, 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid project_id", "bad_request")
+		return
+	}
+
+	// Verify the current user is a member of this project
+	hasAccess, err := s.checkProjectAccess(ctx, userID, projectID)
+	if err != nil {
+		s.logger.Error("Failed to check project access", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "internal error", "internal_error")
+		return
+	}
+	if !hasAccess {
+		respondError(w, http.StatusForbidden, "forbidden", "forbidden")
+		return
+	}
+
+	// Build query — show all assets for the project, mark which ones the user owns
 	baseQuery := `SELECT DISTINCT ta.id, ta.task_id, ta.project_id, ta.user_id, ta.filename, ta.alt_name,
 		ta.file_type, ta.content_type, ta.file_size,
 		ta.cloudinary_url, ta.cloudinary_public_id, ta.created_at,
@@ -976,15 +1001,9 @@ func (s *Server) HandleListAssets(w http.ResponseWriter, r *http.Request) {
 		CASE WHEN ta.user_id = $1 THEN 1 ELSE 0 END as is_owner
 	 FROM task_attachments ta
 	 LEFT JOIN users u ON ta.user_id = u.id
-	 WHERE (
-	   ta.user_id = $2 OR ta.user_id IN (
-	     SELECT DISTINCT pm2.user_id FROM project_members pm1
-	     JOIN project_members pm2 ON pm1.project_id = pm2.project_id
-	     WHERE pm1.user_id = $3 AND pm2.user_id != $4
-	   )
-	 )`
+	 WHERE ta.project_id = $2`
 
-	args := []interface{}{userID, userID, userID, userID}
+	args := []interface{}{userID, projectID}
 
 	if fileType != "" {
 		baseQuery += fmt.Sprintf(` AND ta.file_type = $%d`, len(args)+1)

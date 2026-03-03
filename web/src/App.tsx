@@ -58,7 +58,7 @@ function AppRoutes() {
           <Route path="projects/:projectId/tasks/:taskNumber" element={<TaskDetail />} />
           <Route path="projects/:projectId/sprints" element={<Sprints />} />
           <Route path="projects/:projectId/tags" element={<Tags />} />
-          <Route path="assets" element={<Assets />} />
+          <Route path="projects/:projectId/assets" element={<Assets />} />
           <Route path="admin" element={<Admin />} />
           <Route path="settings" element={<Settings />} />
         </Route>
