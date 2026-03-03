@@ -18,7 +18,7 @@ export default function Sidebar({ onCreateProject, isOpen, onClose, isPinned, on
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
-  const { id: selectedProjectId } = useParams<{ id: string }>()
+  const { projectId: selectedProjectId } = useParams<{ projectId: string }>()
 
   useEffect(() => {
     loadProjects()

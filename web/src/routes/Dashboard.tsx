@@ -122,6 +122,14 @@ export default function Dashboard() {
           </div>
         </header>
 
+        {/* Left-edge hover trigger — opens sidebar when mouse hugs the left side */}
+        {!sidebarPinned && (
+          <div
+            className="fixed left-0 top-0 bottom-0 w-2 z-30"
+            onMouseEnter={() => setSidebarOpen(true)}
+          />
+        )}
+
         {/* Main Layout */}
         <div className="flex flex-1 overflow-hidden">
           {/* Sidebar */}
