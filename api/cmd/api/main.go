@@ -201,6 +201,7 @@ func main() {
 			r.Use(api.RateLimitMiddleware(20))
 			r.Post("/signup", server.HandleSignup)
 			r.Post("/login", server.HandleLogin)
+			r.Get("/github/callback", server.HandleGitHubCallback)
 		})
 
 		// Invite validation (public, rate limited)
@@ -297,6 +298,9 @@ func main() {
 			r.Post("/projects/{id}/github/preview", server.HandleGitHubPreview)
 			r.Post("/projects/{id}/github/pull", server.HandleGitHubPull)
 			r.Post("/projects/{id}/github/sync", server.HandleGitHubSync)
+			r.Post("/projects/{id}/github/oauth-init", server.HandleGitHubOAuthInit)
+			r.Get("/projects/{id}/github/repos", server.HandleGitHubListRepos)
+			r.Delete("/projects/{id}/github/token", server.HandleGitHubDisconnect)
 
 			// Project invitation routes
 			r.Post("/projects/{id}/invitations", server.HandleInviteProjectMember)

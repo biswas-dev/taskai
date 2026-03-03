@@ -76,6 +76,8 @@ describe('ProjectSettings', () => {
       github_branch: 'main',
       github_sync_enabled: false,
       github_last_sync: null,
+      github_token_set: false,
+      github_login: null,
     })
     mocks.getSwimLanes.mockResolvedValue(swimLanes)
     mocks.getStorageUsage.mockResolvedValue([])
@@ -246,7 +248,7 @@ describe('ProjectSettings', () => {
       render(<ProjectSettings />)
       await waitFor(() => {
         expect(screen.getByText('GitHub Integration')).toBeInTheDocument()
-        expect(screen.getByText('Save GitHub Settings')).toBeInTheDocument()
+        expect(screen.getByText('Connect with GitHub')).toBeInTheDocument()
       })
     })
   })

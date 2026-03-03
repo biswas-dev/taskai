@@ -33,6 +33,7 @@ type ProjectGitHubSettings struct {
 	SyncEnabled  bool       `json:"github_sync_enabled"`
 	LastSync     *time.Time `json:"github_last_sync"`
 	TokenSet     bool       `json:"github_token_set"`
+	Login        *string    `json:"github_login"`
 }
 
 // AddMemberRequest represents a request to add a member to a project
@@ -394,6 +395,7 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 	var settings ProjectGitHubSettings
 	var lastSync sql.NullTime
 	var token sql.NullString
+	var loginNull sql.NullString
 
 	err = s.db.QueryRow(`
 		SELECT
@@ -403,7 +405,8 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 			COALESCE(github_branch, 'main'),
 			github_sync_enabled,
 			github_last_sync,
-			github_token
+			github_token,
+			github_login
 		FROM projects
 		WHERE id = $1
 	`, projectID).Scan(
@@ -414,6 +417,7 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 		&settings.SyncEnabled,
 		&lastSync,
 		&token,
+		&loginNull,
 	)
 
 	if err != nil {
@@ -425,6 +429,9 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 		settings.LastSync = &lastSync.Time
 	}
 	settings.TokenSet = token.Valid && token.String != ""
+	if loginNull.Valid && loginNull.String != "" {
+		settings.Login = &loginNull.String
+	}
 
 	respondJSON(w, http.StatusOK, settings)
 }

@@ -28,6 +28,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       # Yjs processor URL for wiki collaboration
       - YJS_PROCESSOR_URL=${YJS_PROCESSOR_URL:-http://yjs-processor:3001}
+      # GitHub OAuth
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - APP_URL=${APP_URL:-http://localhost:5173}
     volumes:
       # Mount SQLite database for persistence
       - taskai-data:/data

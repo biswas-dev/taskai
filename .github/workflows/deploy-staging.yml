@@ -61,6 +61,9 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
           GIT_COMMIT: ${{ steps.version.outputs.GIT_COMMIT }}
           BUILD_TIME: ${{ steps.version.outputs.BUILD_TIME }}
+          GITHUB_CLIENT_ID: ${{ secrets.STAGING_GITHUB_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GITHUB_CLIENT_SECRET }}
+          APP_URL: https://staging.taskai.cc
         run: |
           mkdir -p ~/.ssh
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
@@ -79,6 +82,9 @@ jobs:
             export VERSION='$VERSION'
             export GIT_COMMIT='$GIT_COMMIT'
             export BUILD_TIME='$BUILD_TIME'
+            export GITHUB_CLIENT_ID='$GITHUB_CLIENT_ID'
+            export GITHUB_CLIENT_SECRET='$GITHUB_CLIENT_SECRET'
+            export APP_URL='$APP_URL'
 
             # Login to Docker Hub to avoid rate limiting
             echo '$DOCKERHUB_TOKEN' | docker login -u '$DOCKERHUB_USERNAME' --password-stdin

@@ -42,6 +42,11 @@ type Config struct {
 
 	// Yjs Processor
 	YJSProcessorURL string
+
+	// GitHub OAuth
+	GitHubClientID     string
+	GitHubClientSecret string
+	AppURL             string
 }
 
 // Load reads configuration from environment variables
@@ -65,6 +70,9 @@ func Load() *Config {
 		EnablePprof:             getEnv("ENABLE_PPROF", "false") == "true",
 		DBQueryTimeout:          time.Duration(getEnvAsInt("DB_QUERY_TIMEOUT_SECONDS", 5)) * time.Second,
 		YJSProcessorURL:         getEnv("YJS_PROCESSOR_URL", "http://localhost:3001"),
+		GitHubClientID:          getEnv("GITHUB_CLIENT_ID", ""),
+		GitHubClientSecret:      getEnv("GITHUB_CLIENT_SECRET", ""),
+		AppURL:                  getEnv("APP_URL", "http://localhost:5173"),
 	}
 
 	// Validate critical configuration

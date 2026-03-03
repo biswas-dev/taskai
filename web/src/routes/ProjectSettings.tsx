@@ -5,7 +5,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
-import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubPreviewResponse, type GitHubUserMatch } from '../lib/api'
+import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubPreviewResponse, type GitHubUserMatch, type GitHubRepo } from '../lib/api'
 
 interface ProjectMember {
   id: number
@@ -33,6 +33,7 @@ interface GitHubSettings {
   github_sync_enabled: boolean
   github_last_sync: string | null
   github_token_set: boolean
+  github_login: string | null
 }
 
 export default function ProjectSettings() {
@@ -62,11 +63,17 @@ export default function ProjectSettings() {
     github_sync_enabled: false,
     github_last_sync: null,
     github_token_set: false,
+    github_login: null,
   })
-  const [githubToken, setGithubToken] = useState('')
   const [githubError, setGithubError] = useState('')
   const [githubSuccess, setGithubSuccess] = useState('')
   const [isSavingGitHub, setIsSavingGitHub] = useState(false)
+  const [isConnectingGitHub, setIsConnectingGitHub] = useState(false)
+  const [isDisconnectingGitHub, setIsDisconnectingGitHub] = useState(false)
+  const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([])
+  const [isLoadingRepos, setIsLoadingRepos] = useState(false)
+  const [selectedRepoFullName, setSelectedRepoFullName] = useState('')
+  const [repoSearchQuery, setRepoSearchQuery] = useState('')
 
   // GitHub import state
   const [githubPreview, setGithubPreview] = useState<GitHubPreviewResponse | null>(null)
@@ -104,6 +111,16 @@ export default function ProjectSettings() {
     loadGitHubSettings()
     loadSwimLanes()
     loadStorageUsage()
+
+    // Detect ?github=connected from OAuth callback
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('github') === 'connected') {
+      setGithubSuccess('GitHub connected successfully!')
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (params.get('github') === 'error') {
+      setGithubError('GitHub connection failed. Please try again.')
+      window.history.replaceState({}, '', window.location.pathname)
+    }
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadProject = async () => {
@@ -147,8 +164,66 @@ export default function ProjectSettings() {
     try {
       const data = await apiClient.getProjectGitHub(projectId)
       setGithubSettings(data)
+      if (data.github_token_set) {
+        loadGitHubRepos()
+        if (data.github_owner) setSelectedRepoFullName(`${data.github_owner}/${data.github_repo_name}`)
+      }
     } catch (error: unknown) {
       console.error('Failed to load data:', error)
+    }
+  }
+
+  const loadGitHubRepos = async () => {
+    setIsLoadingRepos(true)
+    try {
+      const repos = await apiClient.githubListRepos(projectId)
+      setGithubRepos(repos)
+    } catch {
+      // Silently fail — token may have expired
+    } finally {
+      setIsLoadingRepos(false)
+    }
+  }
+
+  const handleConnectGitHub = async () => {
+    setIsConnectingGitHub(true)
+    setGithubError('')
+    try {
+      const { auth_url } = await apiClient.githubOAuthInit(projectId)
+      window.location.href = auth_url
+    } catch (error: unknown) {
+      setGithubError(error instanceof Error ? error.message : 'Failed to initiate GitHub connection')
+      setIsConnectingGitHub(false)
+    }
+  }
+
+  const handleDisconnectGitHub = async () => {
+    setIsDisconnectingGitHub(true)
+    setGithubError('')
+    try {
+      await apiClient.githubDisconnect(projectId)
+      setGithubSettings(prev => ({ ...prev, github_token_set: false, github_login: null, github_owner: '', github_repo_name: '', github_repo_url: '' }))
+      setGithubRepos([])
+      setSelectedRepoFullName('')
+      setGithubSuccess('')
+    } catch (error: unknown) {
+      setGithubError(error instanceof Error ? error.message : 'Failed to disconnect GitHub')
+    } finally {
+      setIsDisconnectingGitHub(false)
+    }
+  }
+
+  const handleRepoSelect = (fullName: string) => {
+    setSelectedRepoFullName(fullName)
+    const repo = githubRepos.find(r => r.full_name === fullName)
+    if (repo) {
+      setGithubSettings(prev => ({
+        ...prev,
+        github_owner: repo.owner,
+        github_repo_name: repo.name,
+        github_repo_url: repo.html_url,
+        github_branch: repo.default_branch || 'main',
+      }))
     }
   }
 
@@ -157,7 +232,7 @@ export default function ProjectSettings() {
     setImportSuccess('')
     setIsPreviewing(true)
     try {
-      const preview = await apiClient.githubPreview(projectId, githubToken || undefined)
+      const preview = await apiClient.githubPreview(projectId)
       setGithubPreview(preview)
       // Initialize user assignments from auto-matched users
       const assignments: Record<string, number> = {}
@@ -178,7 +253,6 @@ export default function ProjectSettings() {
     setIsPulling(true)
     try {
       const result = await apiClient.githubPull(projectId, {
-        token: githubToken || undefined,
         pull_sprints: pullSprints,
         pull_tags: pullTags,
         pull_tasks: pullTasks,
@@ -418,22 +492,14 @@ export default function ProjectSettings() {
     setIsSavingGitHub(true)
 
     try {
-      const payload: Record<string, unknown> = {
+      await apiClient.updateProjectGitHub(projectId, {
         github_repo_url: githubSettings.github_repo_url,
         github_owner: githubSettings.github_owner,
         github_repo_name: githubSettings.github_repo_name,
         github_branch: githubSettings.github_branch,
         github_sync_enabled: githubSettings.github_sync_enabled,
-      }
-      if (githubToken) {
-        payload.github_token = githubToken
-      }
-      await apiClient.updateProjectGitHub(projectId, payload as Parameters<typeof apiClient.updateProjectGitHub>[1])
+      })
       setGithubSuccess('GitHub settings saved successfully')
-      if (githubToken) {
-        setGithubToken('')
-        setGithubSettings(prev => ({ ...prev, github_token_set: true }))
-      }
     } catch (error: unknown) {
       setGithubError(error instanceof Error ? error.message : 'Failed to save GitHub settings')
     } finally {
@@ -989,76 +1055,98 @@ export default function ProjectSettings() {
 
               {githubError && <FormError message={githubError} className="mb-4" />}
 
-              <form onSubmit={handleSaveGitHub} className="space-y-4">
-                <TextInput
-                  label="Repository URL"
-                  type="url"
-                  value={githubSettings.github_repo_url}
-                  onChange={(e) => setGithubSettings({ ...githubSettings, github_repo_url: e.target.value })}
-                  placeholder="https://github.com/owner/repo"
-                  helpText="Full URL to the GitHub repository"
-                />
+              {!githubSettings.github_token_set ? (
+                /* --- Not connected --- */
+                <div className="py-4">
+                  <p className="text-sm text-dark-text-secondary mb-4">Connect this project to your GitHub account to pick a repository.</p>
+                  <Button onClick={handleConnectGitHub} disabled={isConnectingGitHub}>
+                    {isConnectingGitHub ? 'Redirecting...' : 'Connect with GitHub'}
+                  </Button>
+                </div>
+              ) : (
+                /* --- Connected --- */
+                <form onSubmit={handleSaveGitHub} className="space-y-4">
+                  {/* Connected as badge + disconnect */}
+                  <div className="flex items-center justify-between p-3 bg-success-500/10 border border-success-500/20 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-success-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      <span className="text-sm font-medium text-success-300">
+                        Connected{githubSettings.github_login ? ` as @${githubSettings.github_login}` : ''}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDisconnectGitHub}
+                      disabled={isDisconnectingGitHub}
+                      className="text-xs text-dark-text-tertiary hover:text-error-400 transition-colors"
+                    >
+                      {isDisconnectingGitHub ? 'Disconnecting...' : 'Disconnect'}
+                    </button>
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Repository picker */}
+                  <div>
+                    <label className="block text-sm font-medium text-dark-text-primary mb-1">Repository</label>
+                    {isLoadingRepos ? (
+                      <div className="text-sm text-dark-text-tertiary py-2">Loading repositories...</div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          value={repoSearchQuery}
+                          onChange={(e) => setRepoSearchQuery(e.target.value)}
+                          placeholder="Search or select a repository..."
+                          className="w-full px-3 py-2 mb-1 bg-dark-bg-secondary border border-dark-border-subtle text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm"
+                        />
+                        <select
+                          value={selectedRepoFullName}
+                          onChange={(e) => handleRepoSelect(e.target.value)}
+                          className="w-full px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm"
+                          size={Math.min(8, githubRepos.filter(r => !repoSearchQuery || r.full_name.toLowerCase().includes(repoSearchQuery.toLowerCase())).length + 1)}
+                        >
+                          <option value="">— Select a repository —</option>
+                          {githubRepos
+                            .filter(r => !repoSearchQuery || r.full_name.toLowerCase().includes(repoSearchQuery.toLowerCase()))
+                            .map(r => (
+                              <option key={r.id} value={r.full_name}>
+                                {r.full_name}{r.private ? ' 🔒' : ''}
+                              </option>
+                            ))}
+                        </select>
+                      </>
+                    )}
+                  </div>
+
                   <TextInput
-                    label="Repository Owner"
+                    label="Branch"
                     type="text"
-                    value={githubSettings.github_owner}
-                    onChange={(e) => setGithubSettings({ ...githubSettings, github_owner: e.target.value })}
-                    placeholder="username or organization"
+                    value={githubSettings.github_branch}
+                    onChange={(e) => setGithubSettings({ ...githubSettings, github_branch: e.target.value })}
+                    placeholder="main"
+                    helpText="The default branch to track (e.g., main, master, develop)"
                   />
 
-                  <TextInput
-                    label="Repository Name"
-                    type="text"
-                    value={githubSettings.github_repo_name}
-                    onChange={(e) => setGithubSettings({ ...githubSettings, github_repo_name: e.target.value })}
-                    placeholder="repository-name"
-                  />
-                </div>
+                  <div className="flex items-center gap-3 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                    <input
+                      type="checkbox"
+                      id="sync-enabled"
+                      checked={githubSettings.github_sync_enabled}
+                      onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_enabled: e.target.checked })}
+                      className="w-4 h-4 text-primary-600 border-dark-border-subtle rounded focus:ring-2 focus:ring-primary-500"
+                    />
+                    <label htmlFor="sync-enabled" className="flex-1">
+                      <span className="font-medium text-dark-text-primary">Enable GitHub Sync</span>
+                      <p className="text-sm text-dark-text-secondary mt-0.5">Automatically sync tasks with GitHub issues</p>
+                    </label>
+                  </div>
 
-                <TextInput
-                  label="Default Branch"
-                  type="text"
-                  value={githubSettings.github_branch}
-                  onChange={(e) => setGithubSettings({ ...githubSettings, github_branch: e.target.value })}
-                  placeholder="main"
-                  helpText="The default branch to track (e.g., main, master, develop)"
-                />
-
-                <div>
-                  <label className="block text-sm font-medium text-dark-text-primary mb-1">
-                    GitHub Token {githubSettings.github_token_set && <span className="text-success-400 font-normal">(set)</span>}
-                  </label>
-                  <input
-                    type="password"
-                    value={githubToken}
-                    onChange={(e) => setGithubToken(e.target.value)}
-                    placeholder={githubSettings.github_token_set ? '••••••• (leave blank to keep existing)' : 'GitHub Personal Access Token'}
-                    className="w-full px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors"
-                    autoComplete="new-password"
-                  />
-                  <p className="mt-1 text-xs text-dark-text-tertiary">Required for private repos and higher API rate limits. Needs <code>repo</code> scope.</p>
-                </div>
-
-                <div className="flex items-center gap-3 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
-                  <input
-                    type="checkbox"
-                    id="sync-enabled"
-                    checked={githubSettings.github_sync_enabled}
-                    onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_enabled: e.target.checked })}
-                    className="w-4 h-4 text-primary-600 border-dark-border-subtle rounded focus:ring-2 focus:ring-primary-500"
-                  />
-                  <label htmlFor="sync-enabled" className="flex-1">
-                    <span className="font-medium text-dark-text-primary">Enable GitHub Sync</span>
-                    <p className="text-sm text-dark-text-secondary mt-0.5">Automatically sync tasks with GitHub issues</p>
-                  </label>
-                </div>
-
-                <Button type="submit" disabled={isSavingGitHub}>
-                  {isSavingGitHub ? 'Saving...' : 'Save GitHub Settings'}
-                </Button>
-              </form>
+                  <Button type="submit" disabled={isSavingGitHub}>
+                    {isSavingGitHub ? 'Saving...' : 'Save Settings'}
+                  </Button>
+                </form>
+              )}
 
               {/* Import Section — shown when owner + repo are configured */}
               {githubSettings.github_owner && githubSettings.github_repo_name && (

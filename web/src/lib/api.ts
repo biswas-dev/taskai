@@ -177,6 +177,17 @@ export interface ProjectGitHubSettings {
   github_sync_enabled: boolean
   github_last_sync: string | null
   github_token_set: boolean
+  github_login: string | null
+}
+
+export interface GitHubRepo {
+  id: number
+  full_name: string
+  name: string
+  owner: string
+  default_branch: string
+  private: boolean
+  html_url: string
 }
 
 export interface GitHubUserMatch {
@@ -705,6 +716,22 @@ class ApiClient {
     return this.request<GitHubPullResponse>(`/api/projects/${projectId}/github/sync`, {
       method: 'POST',
       body: JSON.stringify({ pull_sprints: true, pull_tags: true, pull_tasks: true, user_assignments: {} }),
+    })
+  }
+
+  async githubOAuthInit(projectId: number): Promise<{ auth_url: string }> {
+    return this.request<{ auth_url: string }>(`/api/projects/${projectId}/github/oauth-init`, {
+      method: 'POST',
+    })
+  }
+
+  async githubListRepos(projectId: number): Promise<GitHubRepo[]> {
+    return this.request<GitHubRepo[]>(`/api/projects/${projectId}/github/repos`)
+  }
+
+  async githubDisconnect(projectId: number): Promise<void> {
+    await this.request<void>(`/api/projects/${projectId}/github/token`, {
+      method: 'DELETE',
     })
   }
 
