@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { AuthProvider } from './state/AuthContext'
+import { AuthProvider, useAuth } from './state/AuthContext'
 import { SyncProvider } from './state/SyncContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Landing from './routes/Landing'
@@ -21,6 +21,12 @@ const Assets = lazy(() => import('./routes/Assets'))
 const AcceptTeamInvite = lazy(() => import('./routes/AcceptTeamInvite'))
 const Wiki = lazy(() => import('./routes/Wiki'))
 
+function HomeRoute() {
+  const { user } = useAuth()
+  if (user) return <Navigate to="/app" replace />
+  return <Landing />
+}
+
 function RouteSpinner() {
   return (
     <div className="flex items-center justify-center py-20">
@@ -37,7 +43,7 @@ function AppRoutes() {
     <Suspense fallback={<RouteSpinner />}>
       <Routes location={bgLocation || location}>
         {/* Public routes */}
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<HomeRoute />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/accept-invite" element={<AcceptTeamInvite />} />
