@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import Card from './ui/Card'
 import Button from './ui/Button'
 import FormError from './ui/FormError'
-import { apiClient, type Asset } from '../lib/api'
+import { apiClient, type Asset, type Project } from '../lib/api'
 
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -34,7 +34,10 @@ export default function MyAssets({ projectId }: { projectId: number }) {
   const [savingAlt, setSavingAlt] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [shareMenuId, setShareMenuId] = useState<number | null>(null)
+  const [otherProjects, setOtherProjects] = useState<Project[]>([])
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const shareMenuRef = useRef<HTMLDivElement>(null)
 
   const loadAssets = useCallback(async (q: string, type: FileTypeFilter) => {
     try {
@@ -56,6 +59,22 @@ export default function MyAssets({ projectId }: { projectId: number }) {
   useEffect(() => {
     loadAssets(searchQuery, fileTypeFilter)
   }, [fileTypeFilter, loadAssets]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    apiClient.getProjects().then(projects => {
+      setOtherProjects(projects.filter(p => p.id !== projectId))
+    }).catch(() => {})
+  }, [projectId])
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShareMenuId(null)
+      }
+    }
+    if (shareMenuId !== null) document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [shareMenuId])
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value)
@@ -89,6 +108,28 @@ export default function MyAssets({ projectId }: { projectId: number }) {
       setError(err instanceof Error ? err.message : 'Failed to update alt text')
     } finally {
       setSavingAlt(false)
+    }
+  }
+
+  const handleShareAsset = async (assetId: number, targetProjectId: number) => {
+    try {
+      await apiClient.shareAttachment(assetId, targetProjectId)
+      setShareMenuId(null)
+      setSuccess('Asset shared successfully')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to share asset')
+    }
+  }
+
+  const handleUnshareAsset = async (assetId: number) => {
+    try {
+      await apiClient.unshareAttachment(assetId, projectId)
+      setAssets(prev => prev.filter(a => a.id !== assetId))
+      setSuccess('Asset removed from this project')
+      setTimeout(() => setSuccess(''), 3000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove asset')
     }
   }
 
@@ -267,9 +308,14 @@ export default function MyAssets({ projectId }: { projectId: number }) {
                             <p className="text-xs text-dark-text-tertiary truncate" title={asset.filename}>{asset.filename}</p>
                           )}
                         </div>
-                        {!asset.is_owner && (
-                          <span className="flex-shrink-0 text-xs text-dark-text-tertiary bg-dark-bg-elevated px-2 py-0.5 rounded">View only</span>
-                        )}
+                        <div className="flex flex-col items-end gap-1">
+                          {asset.is_shared && (
+                            <span className="flex-shrink-0 text-xs text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">shared</span>
+                          )}
+                          {!asset.is_owner && !asset.is_shared && (
+                            <span className="flex-shrink-0 text-xs text-dark-text-tertiary bg-dark-bg-elevated px-2 py-0.5 rounded">View only</span>
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -286,42 +332,80 @@ export default function MyAssets({ projectId }: { projectId: number }) {
                       )}
                     </div>
 
-                    {/* Actions (owner only) */}
-                    {asset.is_owner && editingId !== asset.id && (
-                      <div className="flex gap-2 pt-1">
-                        <button
-                          onClick={() => handleStartEdit(asset)}
-                          className="text-xs text-dark-text-tertiary hover:text-teal-400 transition-colors"
-                          title="Edit alt text"
-                        >
-                          Edit
-                        </button>
-                        {confirmDeleteId === asset.id ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-danger-400">Delete?</span>
-                            <button
-                              onClick={() => handleDelete(asset.id)}
-                              disabled={deletingId === asset.id}
-                              className="text-xs text-danger-400 hover:text-danger-300 font-medium transition-colors disabled:opacity-50"
-                            >
-                              {deletingId === asset.id ? 'Deleting...' : 'Yes'}
-                            </button>
-                            <button
-                              onClick={() => setConfirmDeleteId(null)}
-                              className="text-xs text-dark-text-tertiary hover:text-dark-text-secondary transition-colors"
-                            >
-                              No
-                            </button>
-                          </div>
-                        ) : (
+                    {/* Actions */}
+                    {editingId !== asset.id && (
+                      <div className="flex gap-2 pt-1 items-center">
+                        {asset.is_shared ? (
                           <button
-                            onClick={() => setConfirmDeleteId(asset.id)}
-                            className="text-xs text-dark-text-tertiary hover:text-danger-400 transition-colors"
-                            title="Delete file"
+                            onClick={() => handleUnshareAsset(asset.id)}
+                            className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                            title="Remove from this project"
                           >
-                            Delete
+                            Remove
                           </button>
-                        )}
+                        ) : asset.is_owner ? (
+                          <>
+                            <button
+                              onClick={() => handleStartEdit(asset)}
+                              className="text-xs text-dark-text-tertiary hover:text-teal-400 transition-colors"
+                              title="Edit alt text"
+                            >
+                              Edit
+                            </button>
+                            <div className="relative" ref={shareMenuId === asset.id ? shareMenuRef : undefined}>
+                              <button
+                                onClick={() => setShareMenuId(shareMenuId === asset.id ? null : asset.id)}
+                                className="text-xs text-dark-text-tertiary hover:text-primary-400 transition-colors"
+                                title="Share to another project"
+                              >
+                                Share
+                              </button>
+                              {shareMenuId === asset.id && (
+                                <div className="absolute left-0 bottom-6 z-10 w-48 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg shadow-lg py-1">
+                                  {otherProjects.length === 0 ? (
+                                    <p className="px-3 py-2 text-xs text-dark-text-tertiary">No other projects</p>
+                                  ) : (
+                                    otherProjects.map(p => (
+                                      <button
+                                        key={p.id}
+                                        onClick={() => handleShareAsset(asset.id, p.id!)}
+                                        className="w-full text-left px-3 py-2 text-sm text-dark-text-primary hover:bg-dark-bg-tertiary transition-colors truncate"
+                                      >
+                                        {p.name}
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            {confirmDeleteId === asset.id ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-danger-400">Delete?</span>
+                                <button
+                                  onClick={() => handleDelete(asset.id)}
+                                  disabled={deletingId === asset.id}
+                                  className="text-xs text-danger-400 hover:text-danger-300 font-medium transition-colors disabled:opacity-50"
+                                >
+                                  {deletingId === asset.id ? 'Deleting...' : 'Yes'}
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="text-xs text-dark-text-tertiary hover:text-dark-text-secondary transition-colors"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDeleteId(asset.id)}
+                                className="text-xs text-dark-text-tertiary hover:text-danger-400 transition-colors"
+                                title="Delete file"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </>
+                        ) : null}
                       </div>
                     )}
                   </div>

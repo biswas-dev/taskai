@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   createTag: vi.fn(),
   updateTag: vi.fn(),
   deleteTag: vi.fn(),
+  getProjects: vi.fn().mockResolvedValue([]),
+  shareTag: vi.fn(),
+  unshareTag: vi.fn(),
 }))
 
 vi.mock('../lib/api', () => ({

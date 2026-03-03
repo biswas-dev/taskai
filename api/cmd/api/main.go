@@ -256,12 +256,16 @@ func main() {
 			r.Post("/projects/{id}/sprints", server.HandleCreateSprint)
 			r.Patch("/sprints/{id}", server.HandleUpdateSprint)
 			r.Delete("/sprints/{id}", server.HandleDeleteSprint)
+			r.Post("/sprints/{id}/share", server.HandleShareSprint)
+			r.Delete("/sprints/{id}/share/{projectId}", server.HandleUnshareSprint)
 
 			// Tag routes (project-scoped)
 			r.Get("/projects/{id}/tags", server.HandleListTags)
 			r.Post("/projects/{id}/tags", server.HandleCreateTag)
 			r.Patch("/tags/{id}", server.HandleUpdateTag)
 			r.Delete("/tags/{id}", server.HandleDeleteTag)
+			r.Post("/tags/{id}/share", server.HandleShareTag)
+			r.Delete("/tags/{id}/share/{projectId}", server.HandleUnshareTag)
 
 			// Project settings routes
 			r.Get("/projects/{id}/members", server.HandleGetProjectMembers)
@@ -337,9 +341,11 @@ func main() {
 			// Asset management
 			r.Get("/assets", server.HandleListAssets)
 
-			// Attachment update and delete
+			// Attachment update, delete, and cross-project sharing
 			r.Patch("/attachments/{id}", server.HandleUpdateAttachment)
 			r.Delete("/attachments/{id}", server.HandleDeleteAttachment)
+			r.Post("/attachments/{id}/share", server.HandleShareAttachment)
+			r.Delete("/attachments/{id}/share/{projectId}", server.HandleUnshareAttachment)
 
 			// Invite routes
 			r.Get("/invites", server.HandleListInvites)

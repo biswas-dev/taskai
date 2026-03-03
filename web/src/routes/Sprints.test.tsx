@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   createSprint: vi.fn(),
   updateSprint: vi.fn(),
   deleteSprint: vi.fn(),
+  getProjects: vi.fn().mockResolvedValue([]),
+  shareSprint: vi.fn(),
+  unshareSprint: vi.fn(),
 }))
 
 vi.mock('../lib/api', () => ({

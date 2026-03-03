@@ -141,7 +141,8 @@ type StorageUsage struct {
 
 type AssetResponse struct {
 	TaskAttachment
-	IsOwner bool `json:"is_owner"`
+	IsOwner  bool `json:"is_owner"`
+	IsShared bool `json:"is_shared,omitempty"`
 }
 
 // HandleGetCloudinaryCredential returns the current user's Cloudinary credentials
@@ -993,15 +994,17 @@ func (s *Server) HandleListAssets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build query — show all assets for the project, mark which ones the user owns
+	// Build query — show all assets for the project (owned + shared via refs)
 	baseQuery := `SELECT DISTINCT ta.id, ta.task_id, ta.project_id, ta.user_id, ta.filename, ta.alt_name,
 		ta.file_type, ta.content_type, ta.file_size,
 		ta.cloudinary_url, ta.cloudinary_public_id, ta.created_at,
 		COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.name) as user_name,
-		CASE WHEN ta.user_id = $1 THEN 1 ELSE 0 END as is_owner
+		CASE WHEN ta.user_id = $1 THEN 1 ELSE 0 END as is_owner,
+		CASE WHEN ta.project_id = $2 THEN 0 ELSE 1 END as is_shared
 	 FROM task_attachments ta
 	 LEFT JOIN users u ON ta.user_id = u.id
-	 WHERE ta.project_id = $2`
+	 WHERE (ta.project_id = $2
+	        OR ta.id IN (SELECT attachment_id FROM attachment_project_refs WHERE to_project_id = $2))`
 
 	args := []interface{}{userID, projectID}
 
@@ -1030,16 +1033,17 @@ func (s *Server) HandleListAssets(w http.ResponseWriter, r *http.Request) {
 	assets := []AssetResponse{}
 	for rows.Next() {
 		var a AssetResponse
-		var isOwnerInt int
+		var isOwnerInt, isSharedInt int
 		if err := rows.Scan(&a.ID, &a.TaskID, &a.ProjectID, &a.UserID,
 			&a.Filename, &a.AltName, &a.FileType, &a.ContentType, &a.FileSize,
 			&a.CloudinaryURL, &a.CloudinaryPublicID, &a.CreatedAt,
-			&a.UserName, &isOwnerInt); err != nil {
+			&a.UserName, &isOwnerInt, &isSharedInt); err != nil {
 			s.logger.Error("Failed to scan asset", zap.Error(err))
 			respondError(w, http.StatusInternalServerError, "failed to scan asset", "internal_error")
 			return
 		}
 		a.IsOwner = isOwnerInt == 1
+		a.IsShared = isSharedInt == 1
 		assets = append(assets, a)
 	}
 

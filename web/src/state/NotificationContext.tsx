@@ -57,12 +57,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
       ws.onmessage = (event) => {
         try {
-          const msg = JSON.parse(event.data as string) as { type: string }
+          const msg = JSON.parse(event.data as string) as { type: string; payload?: unknown }
           if (msg.type === 'project_invitation') {
             refreshInvitations()
           } else if (msg.type === 'project_membership') {
             window.dispatchEvent(new CustomEvent('project-membership-changed'))
             refreshInvitations()
+          } else if (msg.type === 'task_created' || msg.type === 'task_updated' || msg.type === 'task_deleted') {
+            window.dispatchEvent(new CustomEvent(msg.type, { detail: msg.payload }))
           }
         } catch {
           // ignore malformed messages

@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -54,6 +56,30 @@ func (s *Server) HandleUserWebSocket(w http.ResponseWriter, r *http.Request) {
 		zap.Int64("user_id", userID),
 		zap.String("room_id", roomID),
 	)
+}
+
+// broadcastToProjectMembers sends a real-time event to all members of a project.
+func (s *Server) broadcastToProjectMembers(projectID int64, eventType string, payload interface{}) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT user_id FROM project_members WHERE project_id = $1`, projectID,
+	)
+	if err != nil {
+		s.logger.Warn("broadcastToProjectMembers: query failed",
+			zap.Int64("project_id", projectID),
+			zap.Error(err),
+		)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err != nil {
+			continue
+		}
+		s.BroadcastToUser(uid, eventType, payload)
+	}
 }
 
 // BroadcastToUser sends a real-time event to a user's WebSocket room (if connected).

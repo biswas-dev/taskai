@@ -28,6 +28,7 @@ export interface Sprint {
   end_date?: string
   goal: string
   status: string
+  is_shared?: boolean
   created_at: string
   updated_at?: string
 }
@@ -37,6 +38,7 @@ export interface Tag {
   user_id: number
   name: string
   color: string
+  is_shared?: boolean
   created_at: string
 }
 
@@ -372,6 +374,7 @@ export interface Asset {
   created_at: string
   user_name?: string
   is_owner: boolean
+  is_shared?: boolean
 }
 
 // API Client Configuration
@@ -748,6 +751,46 @@ class ApiClient {
 
   async deleteTag(id: number): Promise<void> {
     return this.request<void>(`/api/tags/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // Cross-project sharing
+  async shareSprint(sprintId: number, projectId: number): Promise<void> {
+    return this.request<void>(`/api/sprints/${sprintId}/share`, {
+      method: 'POST',
+      body: JSON.stringify({ project_id: projectId }),
+    })
+  }
+
+  async unshareSprint(sprintId: number, projectId: number): Promise<void> {
+    return this.request<void>(`/api/sprints/${sprintId}/share/${projectId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async shareTag(tagId: number, projectId: number): Promise<void> {
+    return this.request<void>(`/api/tags/${tagId}/share`, {
+      method: 'POST',
+      body: JSON.stringify({ project_id: projectId }),
+    })
+  }
+
+  async unshareTag(tagId: number, projectId: number): Promise<void> {
+    return this.request<void>(`/api/tags/${tagId}/share/${projectId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async shareAttachment(attachmentId: number, projectId: number): Promise<void> {
+    return this.request<void>(`/api/attachments/${attachmentId}/share`, {
+      method: 'POST',
+      body: JSON.stringify({ project_id: projectId }),
+    })
+  }
+
+  async unshareAttachment(attachmentId: number, projectId: number): Promise<void> {
+    return this.request<void>(`/api/attachments/${attachmentId}/share/${projectId}`, {
       method: 'DELETE',
     })
   }

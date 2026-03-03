@@ -509,6 +509,7 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, t)
+	go s.broadcastToProjectMembers(t.ProjectID, "task_created", t)
 }
 
 // HandleUpdateTask updates an existing task
@@ -804,6 +805,7 @@ func (s *Server) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, t)
+	go s.broadcastToProjectMembers(t.ProjectID, "task_updated", t)
 }
 
 // HandleDeleteTask deletes a task
@@ -852,6 +854,10 @@ func (s *Server) HandleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	go s.broadcastToProjectMembers(taskEntity.ProjectID, "task_deleted", map[string]int64{
+		"id":         taskID,
+		"project_id": taskEntity.ProjectID,
+	})
 }
 
 // HandleGetTaskByNumber returns a single task by project-scoped task number

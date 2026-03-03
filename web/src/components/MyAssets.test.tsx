@@ -10,6 +10,9 @@ vi.mock('../lib/api', () => {
     getAssets: vi.fn(),
     updateAttachment: vi.fn(),
     deleteAttachment: vi.fn(),
+    getProjects: vi.fn().mockResolvedValue([]),
+    shareAttachment: vi.fn(),
+    unshareAttachment: vi.fn(),
   }
   return {
     apiClient: mockClient,

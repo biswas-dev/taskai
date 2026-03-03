@@ -22,6 +22,7 @@ type Sprint struct {
 	StartDate string    `json:"start_date,omitempty"`
 	EndDate   string    `json:"end_date,omitempty"`
 	Status    string    `json:"status"`
+	IsShared  bool      `json:"is_shared,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -32,6 +33,7 @@ type Tag struct {
 	UserID    int       `json:"user_id"`
 	Name      string    `json:"name"`
 	Color     string    `json:"color"`
+	IsShared  bool      `json:"is_shared,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -119,8 +121,13 @@ func (s *Server) HandleListSprints(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+sprintSelectCols+`
+		`SELECT `+sprintSelectCols+`, 0 as is_shared
 		 FROM sprints WHERE project_id = $1
+		 UNION
+		 SELECT `+sprintSelectCols+`, 1 as is_shared
+		 FROM sprints WHERE id IN (
+		     SELECT sprint_id FROM sprint_project_refs WHERE to_project_id = $1
+		 )
 		 ORDER BY start_date DESC, created_at DESC`,
 		projectID)
 	if err != nil {
@@ -131,11 +138,27 @@ func (s *Server) HandleListSprints(w http.ResponseWriter, r *http.Request) {
 
 	sprints := []Sprint{}
 	for rows.Next() {
-		sp, err := scanSprint(rows)
-		if err != nil {
+		var sp Sprint
+		var id, userID int64
+		var goal *string
+		var startDate, endDate *time.Time
+		var isSharedInt int
+		if err := rows.Scan(&id, &userID, &sp.Name, &goal, &startDate, &endDate, &sp.Status, &sp.CreatedAt, &sp.UpdatedAt, &isSharedInt); err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to scan sprint", "internal_error")
 			return
 		}
+		sp.ID = int(id)
+		sp.UserID = int(userID)
+		if goal != nil {
+			sp.Goal = *goal
+		}
+		if startDate != nil {
+			sp.StartDate = startDate.Format("2006-01-02")
+		}
+		if endDate != nil {
+			sp.EndDate = endDate.Format("2006-01-02")
+		}
+		sp.IsShared = isSharedInt == 1
 		sprints = append(sprints, sp)
 	}
 
@@ -417,8 +440,13 @@ func (s *Server) HandleListTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, user_id, name, color, created_at
+		`SELECT id, user_id, name, color, created_at, 0 as is_shared
 		 FROM tags WHERE project_id = $1
+		 UNION
+		 SELECT id, user_id, name, color, created_at, 1 as is_shared
+		 FROM tags WHERE id IN (
+		     SELECT tag_id FROM tag_project_refs WHERE to_project_id = $1
+		 )
 		 ORDER BY name ASC`,
 		projectID)
 	if err != nil {
@@ -431,12 +459,14 @@ func (s *Server) HandleListTags(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var t Tag
 		var id, userID int64
-		if err := rows.Scan(&id, &userID, &t.Name, &t.Color, &t.CreatedAt); err != nil {
+		var isSharedInt int
+		if err := rows.Scan(&id, &userID, &t.Name, &t.Color, &t.CreatedAt, &isSharedInt); err != nil {
 			respondError(w, http.StatusInternalServerError, "failed to scan tag", "internal_error")
 			return
 		}
 		t.ID = int(id)
 		t.UserID = int(userID)
+		t.IsShared = isSharedInt == 1
 		tags = append(tags, t)
 	}
 
