@@ -213,17 +213,24 @@ export default function ProjectSettings() {
     }
   }
 
-  const handleRepoSelect = (fullName: string) => {
+  const handleRepoSelect = async (fullName: string) => {
     setSelectedRepoFullName(fullName)
     const repo = githubRepos.find(r => r.full_name === fullName)
-    if (repo) {
-      setGithubSettings(prev => ({
-        ...prev,
-        github_owner: repo.owner,
-        github_repo_name: repo.name,
-        github_repo_url: repo.html_url,
-        github_branch: repo.default_branch || 'main',
-      }))
+    if (!repo) return
+
+    const updated = {
+      github_owner: repo.owner,
+      github_repo_name: repo.name,
+      github_repo_url: repo.html_url,
+      github_branch: repo.default_branch || 'main',
+    }
+    setGithubSettings(prev => ({ ...prev, ...updated }))
+
+    // Auto-save so backend has owner/repo for preview/import
+    try {
+      await apiClient.updateProjectGitHub(projectId, updated)
+    } catch {
+      // Non-fatal — user can still save manually
     }
   }
 
