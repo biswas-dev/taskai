@@ -933,6 +933,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
         <ImagePickerModal
           onSelect={insertImageMarkdown}
           onClose={() => setImagePickerTarget(null)}
+          projectId={Number(projectId)}
           taskId={task!.id!}
           onUploadComplete={loadAttachments}
         />

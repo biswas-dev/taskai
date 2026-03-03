@@ -576,66 +576,90 @@ func TestHandleGetStorageUsage(t *testing.T) {
 func TestHandleListImages(t *testing.T) {
 	tests := []struct {
 		name       string
-		query      string
+		extraQuery string
 		wantStatus int
 		wantCount  int
-		setupFunc  func(t *testing.T, ts *TestServer) int64
+		setupFunc  func(t *testing.T, ts *TestServer) (userID int64, projectID int64)
 	}{
 		{
-			name:       "returns only images",
+			name:       "returns only images for project",
 			wantStatus: http.StatusOK,
 			wantCount:  2,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
+				addProjectMember(t, ts, projectID, userID, userID, "admin")
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "photo1.jpg", "Photo 1")
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "photo2.jpg", "Photo 2")
 				createTestAttachment(t, ts, taskID, userID, projectID, "pdf", "doc.pdf", "Document")
-				createTestAttachment(t, ts, taskID, userID, projectID, "video", "clip.mp4", "Video")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
-			name:       "search filters images",
-			query:      "?q=sunset",
+			name:       "search filters images by alt_name",
+			extraQuery: "&q=sunset",
 			wantStatus: http.StatusOK,
 			wantCount:  1,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
+				addProjectMember(t, ts, projectID, userID, userID, "admin")
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "sunset.jpg", "Beautiful sunset")
 				createTestAttachment(t, ts, taskID, userID, projectID, "image", "mountain.jpg", "Mountain view")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
-			name:       "empty result when no images",
+			name:       "empty result when no images in project",
 			wantStatus: http.StatusOK,
 			wantCount:  0,
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
 				userID := ts.CreateTestUser(t, "user@example.com", "password123")
 				projectID := createTestProjectForCloudinary(t, ts, userID)
+				addProjectMember(t, ts, projectID, userID, userID, "admin")
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
 				createTestAttachment(t, ts, taskID, userID, projectID, "pdf", "doc.pdf", "Doc")
-				return userID
+				return userID, projectID
 			},
 		},
 		{
-			name:       "includes shared project members images",
+			name:       "returns 400 when project_id missing",
+			wantStatus: http.StatusBadRequest,
+			wantCount:  0,
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
+				userID := ts.CreateTestUser(t, "user@example.com", "password123")
+				return userID, 0 // 0 signals: don't include project_id param
+			},
+		},
+		{
+			name:       "returns 403 when user not project member",
+			wantStatus: http.StatusForbidden,
+			wantCount:  0,
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
+				ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
+				nonMemberID := ts.CreateTestUser(t, "other@example.com", "password123")
+				projectID := createTestProjectForCloudinary(t, ts, ownerID)
+				addProjectMember(t, ts, projectID, ownerID, ownerID, "admin")
+				return nonMemberID, projectID
+			},
+		},
+		{
+			name:       "does not return images from other projects",
 			wantStatus: http.StatusOK,
-			wantCount:  2, // 1 own + 1 shared
-			setupFunc: func(t *testing.T, ts *TestServer) int64 {
-				user1ID := ts.CreateTestUser(t, "user1@example.com", "password123")
-				user2ID := ts.CreateTestUser(t, "user2@example.com", "password123")
-				projectID := createTestProjectForCloudinary(t, ts, user1ID)
+			wantCount:  1, // only the image from the requested project
+			setupFunc: func(t *testing.T, ts *TestServer) (int64, int64) {
+				userID := ts.CreateTestUser(t, "user@example.com", "password123")
+				projectID := createTestProjectForCloudinary(t, ts, userID)
+				otherProjectID := createTestProjectForCloudinary(t, ts, userID)
+				addProjectMember(t, ts, projectID, userID, userID, "admin")
+				addProjectMember(t, ts, otherProjectID, userID, userID, "admin")
 				taskID := createTestTaskForCloudinary(t, ts, projectID)
-				addProjectMember(t, ts, projectID, user1ID, user1ID, "admin")
-				addProjectMember(t, ts, projectID, user2ID, user1ID, "editor")
-				createTestAttachment(t, ts, taskID, user1ID, projectID, "image", "user1.jpg", "User1 image")
-				createTestAttachment(t, ts, taskID, user2ID, projectID, "image", "user2.jpg", "User2 image")
-				return user1ID
+				otherTaskID := createTestTaskForCloudinary(t, ts, otherProjectID)
+				createTestAttachment(t, ts, taskID, userID, projectID, "image", "mine.jpg", "Mine")
+				createTestAttachment(t, ts, otherTaskID, userID, otherProjectID, "image", "other.jpg", "Other")
+				return userID, projectID
 			},
 		},
 	}
@@ -645,11 +669,13 @@ func TestHandleListImages(t *testing.T) {
 			ts := NewTestServer(t)
 			defer ts.Close()
 
-			userID := tt.setupFunc(t, ts)
+			userID, projectID := tt.setupFunc(t, ts)
 
-			path := "/api/images"
-			if tt.query != "" {
-				path += tt.query
+			var path string
+			if projectID == 0 {
+				path = "/api/images" // missing project_id — expect 400
+			} else {
+				path = fmt.Sprintf("/api/images?project_id=%d%s", projectID, tt.extraQuery)
 			}
 
 			rec, req := makeAuthRequest(t, http.MethodGet, path, nil, userID, nil)
@@ -657,17 +683,19 @@ func TestHandleListImages(t *testing.T) {
 
 			AssertStatusCode(t, rec.Code, tt.wantStatus)
 
-			var images []TaskAttachment
-			DecodeJSON(t, rec, &images)
+			if tt.wantStatus == http.StatusOK {
+				var images []TaskAttachment
+				DecodeJSON(t, rec, &images)
 
-			if len(images) != tt.wantCount {
-				t.Errorf("Expected %d images, got %d", tt.wantCount, len(images))
-			}
+				if len(images) != tt.wantCount {
+					t.Errorf("Expected %d images, got %d", tt.wantCount, len(images))
+				}
 
-			// Verify all returned are images
-			for _, img := range images {
-				if img.FileType != "image" {
-					t.Errorf("Expected file_type 'image', got %q", img.FileType)
+				// Verify all returned are images
+				for _, img := range images {
+					if img.FileType != "image" {
+						t.Errorf("Expected file_type 'image', got %q", img.FileType)
+					}
 				}
 			}
 		})

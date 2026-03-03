@@ -833,24 +833,25 @@ describe('ApiClient', () => {
   })
 
   describe('getImages', () => {
-    it('calls /api/images with no query', async () => {
+    it('calls /api/images with project_id', async () => {
       mockResponse([])
-      await apiClient.getImages()
+      await apiClient.getImages(42)
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/images'),
         expect.any(Object)
       )
       const url = mockFetch.mock.calls[0][0] as string
-      expect(url).not.toContain('?')
+      expect(url).toContain('project_id=42')
     })
 
-    it('passes search query', async () => {
+    it('passes search query alongside project_id', async () => {
       mockResponse([])
-      await apiClient.getImages('sunset')
+      await apiClient.getImages(42, 'sunset')
 
       const url = mockFetch.mock.calls[0][0] as string
-      expect(url).toContain('?q=sunset')
+      expect(url).toContain('project_id=42')
+      expect(url).toContain('q=sunset')
     })
   })
 

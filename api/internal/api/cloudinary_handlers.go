@@ -738,53 +738,80 @@ func (s *Server) HandleDeleteTaskAttachment(w http.ResponseWriter, r *http.Reque
 	respondJSON(w, http.StatusOK, map[string]string{"message": msgAttachmentDeleted})
 }
 
-// HandleListImages returns images accessible to the current user (own + shared project members)
+// HandleListImages returns images belonging to a specific project.
+// Requires ?project_id= query param. Only project members can access.
 func (s *Server) HandleListImages(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
 	userID := r.Context().Value(UserIDKey).(int64)
+
+	projectIDStr := r.URL.Query().Get("project_id")
+	if projectIDStr == "" {
+		respondError(w, http.StatusBadRequest, "project_id required", "bad_request")
+		return
+	}
+	projectID, err := strconv.ParseInt(projectIDStr, 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid project_id", "bad_request")
+		return
+	}
+
+	hasAccess, err := s.checkProjectAccess(ctx, userID, projectID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to check access", "internal_error")
+		return
+	}
+	if !hasAccess {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	query := r.URL.Query().Get("q")
 
 	var rows *sql.Rows
-	var err error
 
 	if query != "" {
 		searchPattern := "%" + query + "%"
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT DISTINCT ta.id, ta.task_id, ta.project_id, ta.user_id, ta.filename, ta.alt_name,
-			        ta.file_type, ta.content_type, ta.file_size,
-			        ta.cloudinary_url, ta.cloudinary_public_id, ta.created_at,
-			        COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.name) as user_name
-			 FROM task_attachments ta
-			 LEFT JOIN users u ON ta.user_id = u.id
-			 WHERE ta.file_type = 'image' AND (
-			   ta.user_id = $1 OR ta.user_id IN (
-			     SELECT DISTINCT pm2.user_id FROM project_members pm1
-			     JOIN project_members pm2 ON pm1.project_id = pm2.project_id
-			     WHERE pm1.user_id = $2 AND pm2.user_id != $3
-			   )
-			 ) AND (ta.alt_name LIKE $4 OR ta.filename LIKE $5)
-			 ORDER BY ta.created_at DESC
-			 LIMIT 50`, userID, userID, userID, searchPattern, searchPattern,
+			`SELECT id, task_id, project_id, user_id, filename, alt_name,
+			        file_type, content_type, file_size,
+			        cloudinary_url, cloudinary_public_id, created_at,
+			        '' as user_name
+			 FROM task_attachments
+			 WHERE file_type = 'image' AND project_id = $1
+			   AND (alt_name LIKE $2 OR filename LIKE $3)
+			 UNION ALL
+			 SELECT id, 0, project_id, user_id, filename, alt_name,
+			        file_type, content_type, file_size,
+			        cloudinary_url, cloudinary_public_id, created_at,
+			        '' as user_name
+			 FROM wiki_page_attachments
+			 WHERE file_type = 'image' AND project_id = $4
+			   AND (alt_name LIKE $5 OR filename LIKE $6)
+			 ORDER BY created_at DESC
+			 LIMIT 50`,
+			projectID, searchPattern, searchPattern,
+			projectID, searchPattern, searchPattern,
 		)
 	} else {
 		rows, err = s.db.QueryContext(ctx,
-			`SELECT DISTINCT ta.id, ta.task_id, ta.project_id, ta.user_id, ta.filename, ta.alt_name,
-			        ta.file_type, ta.content_type, ta.file_size,
-			        ta.cloudinary_url, ta.cloudinary_public_id, ta.created_at,
-			        COALESCE(NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), ''), u.name) as user_name
-			 FROM task_attachments ta
-			 LEFT JOIN users u ON ta.user_id = u.id
-			 WHERE ta.file_type = 'image' AND (
-			   ta.user_id = $1 OR ta.user_id IN (
-			     SELECT DISTINCT pm2.user_id FROM project_members pm1
-			     JOIN project_members pm2 ON pm1.project_id = pm2.project_id
-			     WHERE pm1.user_id = $2 AND pm2.user_id != $3
-			   )
-			 )
-			 ORDER BY ta.created_at DESC
-			 LIMIT 50`, userID, userID, userID,
+			`SELECT id, task_id, project_id, user_id, filename, alt_name,
+			        file_type, content_type, file_size,
+			        cloudinary_url, cloudinary_public_id, created_at,
+			        '' as user_name
+			 FROM task_attachments
+			 WHERE file_type = 'image' AND project_id = $1
+			 UNION ALL
+			 SELECT id, 0, project_id, user_id, filename, alt_name,
+			        file_type, content_type, file_size,
+			        cloudinary_url, cloudinary_public_id, created_at,
+			        '' as user_name
+			 FROM wiki_page_attachments
+			 WHERE file_type = 'image' AND project_id = $2
+			 ORDER BY created_at DESC
+			 LIMIT 50`,
+			projectID, projectID,
 		)
 	}
 

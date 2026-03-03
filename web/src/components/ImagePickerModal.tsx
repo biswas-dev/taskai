@@ -4,12 +4,13 @@ import { apiClient, type Attachment } from '../lib/api'
 interface ImagePickerModalProps {
   onSelect: (alt: string, url: string, caption?: string, size?: string) => void
   onClose: () => void
+  projectId: number
   taskId?: number
   wikiPageId?: number
   onUploadComplete: () => void
 }
 
-export default function ImagePickerModal({ onSelect, onClose, taskId, wikiPageId, onUploadComplete }: Readonly<ImagePickerModalProps>) {
+export default function ImagePickerModal({ onSelect, onClose, projectId, taskId, wikiPageId, onUploadComplete }: Readonly<ImagePickerModalProps>) {
   const [images, setImages] = useState<Attachment[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -31,7 +32,7 @@ export default function ImagePickerModal({ onSelect, onClose, taskId, wikiPageId
   const loadImages = async (query?: string) => {
     try {
       setLoading(true)
-      const result = await apiClient.getImages(query)
+      const result = await apiClient.getImages(projectId, query)
       setImages(result)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load images')

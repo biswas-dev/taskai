@@ -108,6 +108,14 @@ export interface ProjectInvitation {
   can_resend: boolean
 }
 
+export interface ProjectDrawing {
+  id: number
+  project_id: number
+  draw_id: string
+  created_by: number
+  created_at: string
+}
+
 export interface WikiPage {
   id: number
   project_id: number
@@ -912,10 +920,23 @@ class ApiClient {
     return this.request<StorageUsageItem[]>(`/api/projects/${projectId}/storage`)
   }
 
-  // Image library
-  async getImages(query?: string): Promise<Attachment[]> {
-    const params = query ? `?q=${encodeURIComponent(query)}` : ''
-    return this.request<Attachment[]>(`/api/images${params}`)
+  // Image library — scoped to a project
+  async getImages(projectId: number, query?: string): Promise<Attachment[]> {
+    const params = new URLSearchParams({ project_id: String(projectId) })
+    if (query) params.set('q', query)
+    return this.request<Attachment[]>(`/api/images?${params.toString()}`)
+  }
+
+  // Project drawings (go-draw isolation)
+  async getProjectDrawings(projectId: number): Promise<ProjectDrawing[]> {
+    return this.request<ProjectDrawing[]>(`/api/projects/${projectId}/drawings`)
+  }
+
+  async registerProjectDrawing(projectId: number, drawId: string): Promise<void> {
+    return this.request<void>(`/api/projects/${projectId}/drawings`, {
+      method: 'POST',
+      body: JSON.stringify({ draw_id: drawId }),
+    })
   }
 
   // Update attachment

@@ -330,6 +330,10 @@ func main() {
 			// Image library
 			r.Get("/images", server.HandleListImages)
 
+			// Project drawings (go-draw isolation)
+			r.Get("/projects/{id}/drawings", server.HandleListProjectDrawings)
+			r.Post("/projects/{id}/drawings", server.HandleRegisterProjectDrawing)
+
 			// Asset management
 			r.Get("/assets", server.HandleListAssets)
 

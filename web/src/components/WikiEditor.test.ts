@@ -704,30 +704,31 @@ describe('WikiEditor helpers', () => {
       globalThis.fetch = originalFetch
     })
 
-    it('returns drawings from API', async () => {
-      const drawings = [{ id: 'abc', title: 'Test', updated_at: '2024-01-01' }]
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        json: () => Promise.resolve({ drawings }),
-      })
+    it('returns drawings filtered to registered project IDs', async () => {
+      const registered = [{ draw_id: 'abc' }]
+      const allDrawings = [
+        { id: 'abc', title: 'Test', updated_at: '2024-01-01' },
+        { id: 'other', title: 'Other', updated_at: '2024-01-02' },
+      ]
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(registered) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ drawings: allDrawings }) })
 
-      const result = await fetchDrawings()
-      expect(result).toEqual(drawings)
-      expect(globalThis.fetch).toHaveBeenCalledWith('/draw/api/list')
+      const result = await fetchDrawings(1)
+      expect(result).toEqual([{ id: 'abc', title: 'Test', updated_at: '2024-01-01' }])
     })
 
-    it('returns empty array when API returns no drawings field', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        json: () => Promise.resolve({}),
-      })
+    it('returns empty array when no drawings registered for project', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) })
 
-      const result = await fetchDrawings()
+      const result = await fetchDrawings(1)
       expect(result).toEqual([])
     })
 
     it('returns empty array on fetch error', async () => {
       globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
 
-      const result = await fetchDrawings()
+      const result = await fetchDrawings(1)
       expect(result).toEqual([])
     })
   })
@@ -746,21 +747,21 @@ describe('WikiEditor helpers', () => {
     })
 
     it('creates a drawing and opens edit URL', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        json: () => Promise.resolve({ id: 'new123', edit_url: '/draw/new123/edit' }),
-      })
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce({ json: () => Promise.resolve({ id: 'new123', edit_url: '/draw/new123/edit' }) })
+        .mockResolvedValueOnce({ ok: true })
 
-      const result = await createDrawing()
+      const result = await createDrawing(1)
       expect(result).toBe('new123')
       expect(globalThis.open).toHaveBeenCalledWith('/draw/new123/edit', '_blank')
     })
 
     it('falls back to default edit URL when edit_url not provided', async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        json: () => Promise.resolve({ id: 'xyz' }),
-      })
+      globalThis.fetch = vi.fn()
+        .mockResolvedValueOnce({ json: () => Promise.resolve({ id: 'xyz' }) })
+        .mockResolvedValueOnce({ ok: true })
 
-      const result = await createDrawing()
+      const result = await createDrawing(1)
       expect(result).toBe('xyz')
       expect(globalThis.open).toHaveBeenCalledWith('/draw/xyz/edit', '_blank')
     })
@@ -768,7 +769,7 @@ describe('WikiEditor helpers', () => {
     it('returns null on fetch error', async () => {
       globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error'))
 
-      const result = await createDrawing()
+      const result = await createDrawing(1)
       expect(result).toBeNull()
     })
 
@@ -777,7 +778,7 @@ describe('WikiEditor helpers', () => {
         json: () => Promise.resolve({}),
       })
 
-      const result = await createDrawing()
+      const result = await createDrawing(1)
       expect(result).toBeNull()
     })
   })

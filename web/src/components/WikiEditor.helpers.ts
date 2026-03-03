@@ -248,21 +248,44 @@ export interface DrawItem {
   updated_at: string
 }
 
-export async function fetchDrawings(): Promise<DrawItem[]> {
+export async function fetchDrawings(projectId: number): Promise<DrawItem[]> {
   try {
-    const res = await fetch('/draw/api/list')
-    const data = await res.json()
-    return data.drawings || []
+    const token = localStorage.getItem('auth_token')
+    // Get draw IDs registered to this project
+    const regRes = await fetch(`/api/projects/${projectId}/drawings`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!regRes.ok) return []
+    const registered: { draw_id: string }[] = await regRes.json()
+    if (registered.length === 0) return []
+
+    // Fetch full drawing list from go-draw and filter to registered IDs
+    const listRes = await fetch('/draw/api/list')
+    if (!listRes.ok) return []
+    const data = await listRes.json()
+    const allDrawings: DrawItem[] = data.drawings || []
+    const registeredIds = new Set(registered.map(r => r.draw_id))
+    return allDrawings.filter(d => registeredIds.has(d.id))
   } catch {
     return []
   }
 }
 
-export async function createDrawing(): Promise<string | null> {
+export async function createDrawing(projectId: number): Promise<string | null> {
   try {
     const res = await fetch('/draw/api/new', { method: 'POST' })
     const data = await res.json()
     if (data?.id) {
+      // Register the new drawing with this project
+      const token = localStorage.getItem('auth_token')
+      await fetch(`/api/projects/${projectId}/drawings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ draw_id: data.id }),
+      })
       const editUrl = data.edit_url || `/draw/${data.id}/edit`
       window.open(editUrl, '_blank')
       return data.id

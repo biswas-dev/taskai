@@ -534,10 +534,11 @@ interface ContentOpts {
   isFullscreen: boolean
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
   fsTextareaRef: React.RefObject<HTMLTextAreaElement | null>
+  projectId: number
 }
 
 function useDrawBrowser(opts: ContentOpts) {
-  const { content, setContent, syncToYjs, isDirtyRef, isFullscreen, textareaRef, fsTextareaRef } = opts
+  const { content, setContent, syncToYjs, isDirtyRef, isFullscreen, textareaRef, fsTextareaRef, projectId } = opts
 
   const [showDrawBrowser, setShowDrawBrowser] = useState(false)
   const [drawList, setDrawList] = useState<DrawItem[]>([])
@@ -549,10 +550,10 @@ function useDrawBrowser(opts: ContentOpts) {
 
   const loadDrawings = useCallback(async () => {
     setDrawLoading(true)
-    const drawings = await fetchDrawings()
+    const drawings = await fetchDrawings(projectId)
     setDrawList(drawings)
     setDrawLoading(false)
-  }, [])
+  }, [projectId])
 
   const handleDraw = useCallback(() => {
     setShowDrawBrowser(true)
@@ -584,9 +585,9 @@ function useDrawBrowser(opts: ContentOpts) {
   }, [])
 
   const handleDrawNew = useCallback(async () => {
-    const created = await createDrawing()
+    const created = await createDrawing(projectId)
     if (created) loadDrawings()
-  }, [loadDrawings])
+  }, [loadDrawings, projectId])
 
   const handleDrawDeleteUnused = useCallback(async (unusedIds: string[]) => {
     await deleteDrawings(unusedIds)
@@ -1106,7 +1107,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
     handleDraw, handleDrawInsert, handleDrawRename, handleDrawDelete,
     handleDrawNew, handleDrawDeleteUnused, handleEditDraw, selectDrawForEdit, saveEditDraw,
     setEditDrawSize, setEditDrawZoom, closeDrawBrowser, closeEditDraw,
-  } = useDrawBrowser({ content, setContent, syncToYjs, isDirtyRef, isFullscreen, textareaRef, fsTextareaRef })
+  } = useDrawBrowser({ content, setContent, syncToYjs, isDirtyRef, isFullscreen, textareaRef, fsTextareaRef, projectId: page.project_id })
 
   // ── Toolbar JSX ──────────────────────────────────────────────
 
@@ -1439,6 +1440,7 @@ export default function WikiEditor({ page }: Readonly<WikiEditorProps>) {
         <ImagePickerModal
           onSelect={insertImageMarkdown}
           onClose={() => setShowImagePicker(false)}
+          projectId={page.project_id}
           wikiPageId={page.id}
           onUploadComplete={() => {}}
         />
