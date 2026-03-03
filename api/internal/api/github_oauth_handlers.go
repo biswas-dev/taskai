@@ -105,12 +105,20 @@ func (s *Server) HandleGitHubOAuthInit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	callbackURL := s.config.AppURL + "/api/auth/github/callback"
+	// login=<username> forces GitHub to always show the full consent screen including
+	// org grant buttons — without it, GitHub silently reuses the cached authorization.
+	var ghLogin string
+	_ = s.db.QueryRowContext(r.Context(), `SELECT COALESCE(github_login,'') FROM projects WHERE id = $1`, projectID).Scan(&ghLogin)
+
 	authURL := fmt.Sprintf(
-		"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=repo%%2Cread%%3Auser&state=%s",
+		"https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s&scope=repo%%2Cread%%3Auser%%2Cread%%3Aorg&state=%s",
 		url.QueryEscape(s.config.GitHubClientID),
 		url.QueryEscape(callbackURL),
 		url.QueryEscape(state),
 	)
+	if ghLogin != "" {
+		authURL += "&login=" + url.QueryEscape(ghLogin)
+	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"auth_url": authURL})
 }
