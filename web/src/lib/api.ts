@@ -198,8 +198,11 @@ export interface GitHubUserMatch {
   matched_name: string
 }
 
-export interface GitHubColumnMatch {
-  name: string
+export interface GitHubStatusMatch {
+  key: string
+  label: string
+  source: 'issue_state' | 'project_column'
+  issue_count: number
   matched_lane_id: number | null
   matched_name: string
 }
@@ -209,9 +212,7 @@ export interface GitHubPreviewResponse {
   label_count: number
   issue_count: number
   github_users: GitHubUserMatch[]
-  project_columns: GitHubColumnMatch[]
-  default_open_lane_id: number
-  default_closed_lane_id: number
+  statuses: GitHubStatusMatch[]
 }
 
 export interface GitHubPullRequest {
@@ -221,9 +222,7 @@ export interface GitHubPullRequest {
   pull_tasks: boolean
   pull_comments: boolean
   user_assignments: Record<string, number>
-  column_assignments: Record<string, number>
-  open_lane_id: number
-  closed_lane_id: number
+  status_assignments: Record<string, number>
 }
 
 export interface GitHubPullResponse {
@@ -727,7 +726,7 @@ class ApiClient {
     })
   }
 
-  async githubSync(projectId: number, options?: { openLaneId?: number; closedLaneId?: number; columnAssignments?: Record<string, number> }): Promise<GitHubPullResponse> {
+  async githubSync(projectId: number, statusAssignments?: Record<string, number>): Promise<GitHubPullResponse> {
     return this.request<GitHubPullResponse>(`/api/projects/${projectId}/github/sync`, {
       method: 'POST',
       body: JSON.stringify({
@@ -736,9 +735,7 @@ class ApiClient {
         pull_tasks: true,
         pull_comments: true,
         user_assignments: {},
-        column_assignments: options?.columnAssignments ?? {},
-        open_lane_id: options?.openLaneId ?? 0,
-        closed_lane_id: options?.closedLaneId ?? 0,
+        status_assignments: statusAssignments ?? {},
       }),
     })
   }

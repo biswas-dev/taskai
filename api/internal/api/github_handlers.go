@@ -40,6 +40,7 @@ type ghIssue struct {
 	Title       string       `json:"title"`
 	Body        string       `json:"body"`
 	State       string       `json:"state"`
+	StateReason *string      `json:"state_reason"` // "completed", "not_planned", "reopened", or nil
 	Assignee    *ghUser      `json:"assignee"`
 	Assignees   []ghUser     `json:"assignees"`
 	Labels      []ghLabel    `json:"labels"`
@@ -123,22 +124,23 @@ type GitHubUserMatch struct {
 	MatchedName   string  `json:"matched_name"`
 }
 
-// GitHubColumnMatch represents a GitHub Projects V2 status column with optional swim lane mapping.
-type GitHubColumnMatch struct {
-	Name          string `json:"name"`
-	MatchedLaneID *int64 `json:"matched_lane_id"`
+// GitHubStatusMatch represents a discovered GitHub issue status with optional swim lane mapping.
+type GitHubStatusMatch struct {
+	Key           string `json:"key"`            // canonical key: "open", "closed", "closed:not_planned", or a Projects V2 column name
+	Label         string `json:"label"`          // human-readable display name
+	Source        string `json:"source"`         // "issue_state" or "project_column"
+	IssueCount    int    `json:"issue_count"`    // number of issues with this status (0 for project_column in preview)
+	MatchedLaneID *int64 `json:"matched_lane_id"` // auto-matched swim lane
 	MatchedName   string `json:"matched_name"`
 }
 
 // GitHubPreviewResponse is returned by HandleGitHubPreview.
 type GitHubPreviewResponse struct {
-	MilestoneCount      int                 `json:"milestone_count"`
-	LabelCount          int                 `json:"label_count"`
-	IssueCount          int                 `json:"issue_count"`
-	GitHubUsers         []GitHubUserMatch   `json:"github_users"`
-	ProjectColumns      []GitHubColumnMatch `json:"project_columns"` // GitHub Projects V2 status columns
-	DefaultOpenLaneID   int64               `json:"default_open_lane_id"`
-	DefaultClosedLaneID int64               `json:"default_closed_lane_id"`
+	MilestoneCount int                 `json:"milestone_count"`
+	LabelCount     int                 `json:"label_count"`
+	IssueCount     int                 `json:"issue_count"`
+	GitHubUsers    []GitHubUserMatch   `json:"github_users"`
+	Statuses       []GitHubStatusMatch `json:"statuses"` // all unique statuses found: Projects V2 columns + issue states
 }
 
 // GitHubPullRequest is the body for HandleGitHubPull / HandleGitHubSync.
@@ -149,9 +151,7 @@ type GitHubPullRequest struct {
 	PullTasks         bool             `json:"pull_tasks"`
 	PullComments      bool             `json:"pull_comments"`
 	UserAssignments   map[string]int64 `json:"user_assignments"`   // login → TaskAI user_id (0 = unassigned)
-	ColumnAssignments map[string]int64 `json:"column_assignments"` // GitHub column name → TaskAI swim_lane_id (0 = use default)
-	OpenLaneID        int64            `json:"open_lane_id"`       // explicit swim lane for open issues (0 = use category fallback)
-	ClosedLaneID      int64            `json:"closed_lane_id"`     // explicit swim lane for closed issues (0 = use category fallback)
+	StatusAssignments map[string]int64 `json:"status_assignments"` // status key → swim_lane_id (0 = use category fallback)
 }
 
 // GitHubPullResponse is returned by HandleGitHubPull / HandleGitHubSync.
@@ -399,6 +399,52 @@ func fuzzyMatchColumn(columnName string, lanes []swimLaneInfo) (int64, string) {
 	return 0, ""
 }
 
+// issueStatusKey returns a canonical status key from a GitHub issue's state and state_reason.
+// "open" for open issues, "closed:not_planned" for won't-fix, "closed" for everything else closed.
+func issueStatusKey(state string, stateReason *string) string {
+	if state == "open" {
+		return "open"
+	}
+	if stateReason != nil && *stateReason == "not_planned" {
+		return "closed:not_planned"
+	}
+	return "closed"
+}
+
+// statusLabelForKey returns a human-readable label for a status key.
+func statusLabelForKey(key string) string {
+	switch key {
+	case "open":
+		return "Open"
+	case "closed":
+		return "Closed"
+	case "closed:not_planned":
+		return "Closed (won't fix)"
+	default:
+		return key
+	}
+}
+
+// autoMatchStatusToLane finds the best swim lane for a status key:
+// "open" → first todo lane, "closed*" → first done lane, otherwise fuzzy match.
+func autoMatchStatusToLane(key string, lanes []swimLaneInfo) (int64, string) {
+	switch key {
+	case "open":
+		for _, l := range lanes {
+			if l.StatusCategory == "todo" {
+				return l.ID, l.Name
+			}
+		}
+	case "closed", "closed:not_planned":
+		for _, l := range lanes {
+			if l.StatusCategory == "done" {
+				return l.ID, l.Name
+			}
+		}
+	}
+	return fuzzyMatchColumn(key, lanes)
+}
+
 type swimLaneInfo struct {
 	ID             int64
 	Name           string
@@ -584,41 +630,77 @@ func (s *Server) HandleGitHubPreview(w http.ResponseWriter, r *http.Request) {
 		ghUsers = append(ghUsers, match)
 	}
 
-	// Load swim lanes for column matching and default lane IDs
+	// Load swim lanes for auto-matching
 	lanes, _ := s.loadSwimLaneInfos(ctx, projectID)
 
-	// Fetch GitHub Projects V2 status columns and fuzzy-match to swim lanes
-	var projectColumns []GitHubColumnMatch
+	// Try to fetch GitHub Projects V2 column names (best-effort, ordered)
+	var projColNames []string
 	if projInfo, err := fetchProjectStatusColumns(ctx, token, owner, repo); err == nil && projInfo != nil {
 		for _, opt := range projInfo.Options {
-			col := GitHubColumnMatch{Name: opt.Name}
-			if laneID, laneName := fuzzyMatchColumn(opt.Name, lanes); laneID != 0 {
-				col.MatchedLaneID = &laneID
-				col.MatchedName = laneName
-			}
-			projectColumns = append(projectColumns, col)
+			projColNames = append(projColNames, opt.Name)
 		}
 	}
 
-	// Determine default open/closed lane IDs from swim lane categories
-	var defaultOpenLaneID, defaultClosedLaneID int64
-	for _, l := range lanes {
-		if defaultOpenLaneID == 0 && l.StatusCategory == "todo" {
-			defaultOpenLaneID = l.ID
+	// Count issues per canonical state key (skip PRs)
+	issueStateCounts := map[string]int{}
+	for _, issue := range allIssues {
+		if issue.PullRequest != nil {
+			continue
 		}
-		if defaultClosedLaneID == 0 && l.StatusCategory == "done" {
-			defaultClosedLaneID = l.ID
+		key := issueStatusKey(issue.State, issue.StateReason)
+		issueStateCounts[key]++
+	}
+
+	// Build unified statuses list: Projects V2 columns first, then issue state keys
+	seen := map[string]bool{}
+	var statuses []GitHubStatusMatch
+
+	for _, name := range projColNames {
+		if seen[name] {
+			continue
 		}
+		seen[name] = true
+		st := GitHubStatusMatch{Key: name, Label: name, Source: "project_column"}
+		if laneID, laneName := autoMatchStatusToLane(name, lanes); laneID != 0 {
+			st.MatchedLaneID = &laneID
+			st.MatchedName = laneName
+		}
+		statuses = append(statuses, st)
+	}
+
+	// Add issue state keys in a stable order
+	for _, key := range []string{"open", "closed", "closed:not_planned"} {
+		count, exists := issueStateCounts[key]
+		if !exists || seen[key] {
+			continue
+		}
+		seen[key] = true
+		st := GitHubStatusMatch{Key: key, Label: statusLabelForKey(key), Source: "issue_state", IssueCount: count}
+		if laneID, laneName := autoMatchStatusToLane(key, lanes); laneID != 0 {
+			st.MatchedLaneID = &laneID
+			st.MatchedName = laneName
+		}
+		statuses = append(statuses, st)
+	}
+	// Any remaining unexpected state keys
+	for key, count := range issueStateCounts {
+		if seen[key] {
+			continue
+		}
+		st := GitHubStatusMatch{Key: key, Label: statusLabelForKey(key), Source: "issue_state", IssueCount: count}
+		if laneID, laneName := autoMatchStatusToLane(key, lanes); laneID != 0 {
+			st.MatchedLaneID = &laneID
+			st.MatchedName = laneName
+		}
+		statuses = append(statuses, st)
 	}
 
 	respondJSON(w, http.StatusOK, GitHubPreviewResponse{
-		MilestoneCount:      len(milestones),
-		LabelCount:          len(labels),
-		IssueCount:          len(allIssues),
-		GitHubUsers:         ghUsers,
-		ProjectColumns:      projectColumns,
-		DefaultOpenLaneID:   defaultOpenLaneID,
-		DefaultClosedLaneID: defaultClosedLaneID,
+		MilestoneCount: len(milestones),
+		LabelCount:     len(labels),
+		IssueCount:     len(allIssues),
+		GitHubUsers:    ghUsers,
+		Statuses:       statuses,
 	})
 }
 
@@ -930,25 +1012,20 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 
 			description := issue.Body
 
-			// Resolve swim lane: prefer GitHub Projects V2 column mapping, then explicit open/closed lane, fall back to status_category
+			// Determine the effective status key for this issue:
+			// Projects V2 column name takes priority, then canonical state key
 			var swimLaneID *int64
 			ghItemID := ""
+			effectiveKey := issueStatusKey(issue.State, issue.StateReason)
 			if itemStatus, ok := issueColumnMap[issue.Number]; ok {
 				ghItemID = itemStatus.ItemID
 				if itemStatus.StatusName != "" {
-					if laneID := req.ColumnAssignments[itemStatus.StatusName]; laneID != 0 {
-						swimLaneID = &laneID
-					}
+					effectiveKey = itemStatus.StatusName
 				}
 			}
-			if swimLaneID == nil {
-				if issue.State == "open" && req.OpenLaneID != 0 {
-					lid := req.OpenLaneID
-					swimLaneID = &lid
-				} else if issue.State == "closed" && req.ClosedLaneID != 0 {
-					lid := req.ClosedLaneID
-					swimLaneID = &lid
-				}
+			// Resolve swim lane from StatusAssignments, fall back to swimLaneByCategory
+			if laneID, ok := req.StatusAssignments[effectiveKey]; ok && laneID > 0 {
+				swimLaneID = &laneID
 			}
 			if swimLaneID == nil {
 				if slID, ok := swimLaneByCategory[taskStatus]; ok {
