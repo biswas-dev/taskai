@@ -702,13 +702,13 @@ class ApiClient {
     })
   }
 
-  // Sprint endpoints
-  async getSprints(): Promise<Sprint[]> {
-    return this.request<Sprint[]>('/api/sprints')
+  // Sprint endpoints (project-scoped)
+  async getSprints(projectId: number): Promise<Sprint[]> {
+    return this.request<Sprint[]>(`/api/projects/${projectId}/sprints`)
   }
 
-  async createSprint(data: Partial<Sprint>): Promise<Sprint> {
-    return this.request<Sprint>('/api/sprints', {
+  async createSprint(projectId: number, data: Partial<Sprint>): Promise<Sprint> {
+    return this.request<Sprint>(`/api/projects/${projectId}/sprints`, {
       method: 'POST',
       body: JSON.stringify(data),
     })
@@ -727,13 +727,13 @@ class ApiClient {
     })
   }
 
-  // Tag endpoints
-  async getTags(): Promise<Tag[]> {
-    return this.request<Tag[]>('/api/tags')
+  // Tag endpoints (project-scoped)
+  async getTags(projectId: number): Promise<Tag[]> {
+    return this.request<Tag[]>(`/api/projects/${projectId}/tags`)
   }
 
-  async createTag(data: Partial<Tag>): Promise<Tag> {
-    return this.request<Tag>('/api/tags', {
+  async createTag(projectId: number, data: Partial<Tag>): Promise<Tag> {
+    return this.request<Tag>(`/api/projects/${projectId}/tags`, {
       method: 'POST',
       body: JSON.stringify(data),
     })

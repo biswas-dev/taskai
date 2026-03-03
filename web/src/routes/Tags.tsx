@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
@@ -15,6 +15,8 @@ interface Tag {
 
 export default function Tags() {
   const navigate = useNavigate()
+  const { projectId } = useParams<{ projectId: string }>()
+  const projectIdNum = Number(projectId)
   const [tags, setTags] = useState<Tag[]>([])
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState({
@@ -26,12 +28,12 @@ export default function Tags() {
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
-    loadTags()
-  }, [])
+    if (projectIdNum) loadTags()
+  }, [projectIdNum]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTags = async () => {
     try {
-      const data = await apiClient.getTags()
+      const data = await apiClient.getTags(projectIdNum)
       setTags(data)
     } catch (error: unknown) {
       console.error('Failed to load tags:', error)
@@ -53,7 +55,7 @@ export default function Tags() {
         await apiClient.updateTag(editingId, formData)
         setSuccess('Tag updated successfully')
       } else {
-        await apiClient.createTag(formData)
+        await apiClient.createTag(projectIdNum, formData)
         setSuccess('Tag created successfully')
       }
 
@@ -98,7 +100,7 @@ export default function Tags() {
               <h1 className="text-3xl font-bold text-dark-text-primary">Tags</h1>
               <p className="text-dark-text-secondary mt-1">Label and categorize your tasks</p>
             </div>
-            <Button onClick={() => navigate('/app')} variant="secondary">
+            <Button onClick={() => navigate(projectId ? `/app/projects/${projectId}` : '/app')} variant="secondary">
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>

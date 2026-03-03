@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
@@ -19,6 +19,8 @@ interface Sprint {
 
 export default function Sprints() {
   const navigate = useNavigate()
+  const { projectId } = useParams<{ projectId: string }>()
+  const projectIdNum = Number(projectId)
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState<{
@@ -39,12 +41,12 @@ export default function Sprints() {
   const [success, setSuccess] = useState('')
 
   useEffect(() => {
-    loadSprints()
-  }, [])
+    if (projectIdNum) loadSprints()
+  }, [projectIdNum]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSprints = async () => {
     try {
-      const data = await apiClient.getSprints()
+      const data = await apiClient.getSprints(projectIdNum)
       setSprints(data)
     } catch (error: unknown) {
       console.error('Failed to load sprints:', error)
@@ -66,7 +68,7 @@ export default function Sprints() {
         await apiClient.updateSprint(editingId, formData)
         setSuccess('Sprint updated successfully')
       } else {
-        await apiClient.createSprint(formData)
+        await apiClient.createSprint(projectIdNum, formData)
         setSuccess('Sprint created successfully')
       }
 
@@ -127,7 +129,7 @@ export default function Sprints() {
               <h1 className="text-3xl font-bold text-dark-text-primary">Sprints</h1>
               <p className="text-dark-text-secondary mt-1">Organize tasks into time-boxed iterations</p>
             </div>
-            <Button onClick={() => navigate('/app')} variant="secondary">
+            <Button onClick={() => navigate(projectId ? `/app/projects/${projectId}` : '/app')} variant="secondary">
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
               </svg>

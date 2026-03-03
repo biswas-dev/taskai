@@ -251,15 +251,15 @@ func main() {
 			r.Get("/tasks/{taskId}/comments", server.HandleListTaskComments)
 			r.Post("/tasks/{taskId}/comments", server.HandleCreateTaskComment)
 
-			// Sprint routes
-			r.Get("/sprints", server.HandleListSprints)
-			r.Post("/sprints", server.HandleCreateSprint)
+			// Sprint routes (project-scoped)
+			r.Get("/projects/{id}/sprints", server.HandleListSprints)
+			r.Post("/projects/{id}/sprints", server.HandleCreateSprint)
 			r.Patch("/sprints/{id}", server.HandleUpdateSprint)
 			r.Delete("/sprints/{id}", server.HandleDeleteSprint)
 
-			// Tag routes
-			r.Get("/tags", server.HandleListTags)
-			r.Post("/tags", server.HandleCreateTag)
+			// Tag routes (project-scoped)
+			r.Get("/projects/{id}/tags", server.HandleListTags)
+			r.Post("/projects/{id}/tags", server.HandleCreateTag)
 			r.Patch("/tags/{id}", server.HandleUpdateTag)
 			r.Delete("/tags/{id}", server.HandleDeleteTag)
 

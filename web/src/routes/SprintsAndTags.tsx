@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
@@ -26,6 +26,8 @@ interface Tag {
 
 export default function SprintsAndTags() {
   const navigate = useNavigate()
+  const { projectId } = useParams<{ projectId: string }>()
+  const projectIdNum = Number(projectId)
 
   // Sprints state
   const [sprints, setSprints] = useState<Sprint[]>([])
@@ -59,13 +61,15 @@ export default function SprintsAndTags() {
   const [tagSuccess, setTagSuccess] = useState('')
 
   useEffect(() => {
-    loadSprints()
-    loadTags()
-  }, [])
+    if (projectIdNum) {
+      loadSprints()
+      loadTags()
+    }
+  }, [projectIdNum]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadSprints = async () => {
     try {
-      const data = await apiClient.getSprints()
+      const data = await apiClient.getSprints(projectIdNum)
       setSprints(data)
     } catch (error: unknown) {
       console.error('Failed to load data:', error)
@@ -74,7 +78,7 @@ export default function SprintsAndTags() {
 
   const loadTags = async () => {
     try {
-      const data = await apiClient.getTags()
+      const data = await apiClient.getTags(projectIdNum)
       setTags(data)
     } catch (error: unknown) {
       console.error('Failed to load data:', error)
@@ -96,7 +100,7 @@ export default function SprintsAndTags() {
         await apiClient.updateSprint(editingSprintId, sprintFormData)
         setSprintSuccess('Sprint updated successfully')
       } else {
-        await apiClient.createSprint(sprintFormData)
+        await apiClient.createSprint(projectIdNum, sprintFormData)
         setSprintSuccess('Sprint created successfully')
       }
 
@@ -150,7 +154,7 @@ export default function SprintsAndTags() {
         await apiClient.updateTag(editingTagId, tagFormData)
         setTagSuccess('Tag updated successfully')
       } else {
-        await apiClient.createTag(tagFormData)
+        await apiClient.createTag(projectIdNum, tagFormData)
         setTagSuccess('Tag created successfully')
       }
 

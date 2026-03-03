@@ -264,22 +264,22 @@ describe('ApiClient', () => {
 
   // --- Sprints ---
   describe('getSprints', () => {
-    it('sends GET to /api/sprints', async () => {
+    it('sends GET to /api/projects/:id/sprints', async () => {
       mockResponse([])
-      await apiClient.getSprints()
+      await apiClient.getSprints(42)
 
       const url = mockFetch.mock.calls[0][0] as string
-      expect(url).toContain('/api/sprints')
+      expect(url).toContain('/api/projects/42/sprints')
     })
   })
 
   describe('createSprint', () => {
     it('sends POST with sprint data', async () => {
       mockResponse({ id: 1, name: 'Sprint 1' })
-      await apiClient.createSprint({ name: 'Sprint 1', status: 'active' })
+      await apiClient.createSprint(42, { name: 'Sprint 1', status: 'active' })
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/sprints'),
+        expect.stringContaining('/api/projects/42/sprints'),
         expect.objectContaining({ method: 'POST' })
       )
     })
@@ -311,22 +311,22 @@ describe('ApiClient', () => {
 
   // --- Tags ---
   describe('getTags', () => {
-    it('sends GET to /api/tags', async () => {
+    it('sends GET to /api/projects/:id/tags', async () => {
       mockResponse([])
-      await apiClient.getTags()
+      await apiClient.getTags(42)
 
       const url = mockFetch.mock.calls[0][0] as string
-      expect(url).toContain('/api/tags')
+      expect(url).toContain('/api/projects/42/tags')
     })
   })
 
   describe('createTag', () => {
     it('sends POST with tag data', async () => {
       mockResponse({ id: 1, name: 'bug', color: '#FF0000' })
-      await apiClient.createTag({ name: 'bug', color: '#FF0000' })
+      await apiClient.createTag(42, { name: 'bug', color: '#FF0000' })
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/tags'),
+        expect.stringContaining('/api/projects/42/tags'),
         expect.objectContaining({ method: 'POST' })
       )
     })

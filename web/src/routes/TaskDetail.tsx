@@ -89,7 +89,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
   }
 
   const loadSprints = async () => {
-    try { setSprints(await apiClient.getSprints()) } catch { /* ignore */ }
+    try { setSprints(await apiClient.getSprints(Number(projectId))) } catch { /* ignore */ }
   }
 
   const loadSwimLanes = async () => {

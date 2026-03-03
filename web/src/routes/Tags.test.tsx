@@ -6,6 +6,7 @@ import Tags from './Tags'
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
+  useParams: () => ({ projectId: '1' }),
 }))
 
 vi.mock('../components/ui/FormError', () => ({
@@ -106,6 +107,7 @@ describe('Tags', () => {
 
     await waitFor(() => {
       expect(mocks.createTag).toHaveBeenCalledWith(
+        1,
         expect.objectContaining({ name: 'urgent' })
       )
     })
@@ -184,7 +186,7 @@ describe('Tags', () => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
     await user.click(screen.getByText('Back'))
-    expect(mockNavigate).toHaveBeenCalledWith('/app')
+    expect(mockNavigate).toHaveBeenCalledWith('/app/projects/1')
   })
 
   it('cancel button hides the form', async () => {

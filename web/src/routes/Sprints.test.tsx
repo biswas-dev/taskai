@@ -6,6 +6,7 @@ import Sprints from './Sprints'
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
+  useParams: () => ({ projectId: '1' }),
 }))
 
 vi.mock('../components/ui/FormError', () => ({
@@ -142,6 +143,7 @@ describe('Sprints', () => {
 
     await waitFor(() => {
       expect(mocks.createSprint).toHaveBeenCalledWith(
+        1,
         expect.objectContaining({ name: 'Sprint 3' })
       )
     })
@@ -235,7 +237,7 @@ describe('Sprints', () => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
     await user.click(screen.getByText('Back'))
-    expect(mockNavigate).toHaveBeenCalledWith('/app')
+    expect(mockNavigate).toHaveBeenCalledWith('/app/projects/1')
   })
 
   it('cancel button hides the form', async () => {

@@ -6,6 +6,7 @@ import SprintsAndTags from './SprintsAndTags'
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
+  useParams: () => ({ projectId: '1' }),
 }))
 
 vi.mock('../components/ui/FormError', () => ({
@@ -100,6 +101,7 @@ describe('SprintsAndTags', () => {
 
     await waitFor(() => {
       expect(mocks.createSprint).toHaveBeenCalledWith(
+        1,
         expect.objectContaining({ name: 'Sprint Beta' })
       )
     })
@@ -122,6 +124,7 @@ describe('SprintsAndTags', () => {
 
     await waitFor(() => {
       expect(mocks.createTag).toHaveBeenCalledWith(
+        1,
         expect.objectContaining({ name: 'low-priority' })
       )
     })
