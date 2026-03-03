@@ -406,7 +406,7 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 			COALESCE(github_repo_name, ''),
 			COALESCE(github_branch, 'main'),
 			github_sync_enabled,
-			COALESCE(github_push_enabled, 0),
+			github_push_enabled,
 			github_last_sync,
 			github_token,
 			github_login
