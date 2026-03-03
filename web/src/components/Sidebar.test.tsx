@@ -36,6 +36,8 @@ describe('Sidebar', () => {
     onCreateProject: vi.fn(),
     isOpen: false,
     onClose: vi.fn(),
+    isPinned: true, // render static sidebar so tests can see content
+    onTogglePin: vi.fn(),
   }
 
   beforeEach(() => {

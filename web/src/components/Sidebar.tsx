@@ -7,9 +7,11 @@ interface SidebarProps {
   onCreateProject: () => void
   isOpen?: boolean
   onClose?: () => void
+  isPinned?: boolean
+  onTogglePin?: () => void
 }
 
-export default function Sidebar({ onCreateProject, isOpen, onClose }: SidebarProps) {
+export default function Sidebar({ onCreateProject, isOpen, onClose, isPinned, onTogglePin }: SidebarProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -20,6 +22,13 @@ export default function Sidebar({ onCreateProject, isOpen, onClose }: SidebarPro
 
   useEffect(() => {
     loadProjects()
+  }, [])
+
+  // Reload projects when a project membership changes (invitation accepted)
+  useEffect(() => {
+    const handler = () => loadProjects()
+    window.addEventListener('project-membership-changed', handler)
+    return () => window.removeEventListener('project-membership-changed', handler)
   }, [])
 
   const loadProjects = async () => {
@@ -46,7 +55,7 @@ export default function Sidebar({ onCreateProject, isOpen, onClose }: SidebarPro
     setProjects([project, ...projects])
   }
 
-  // Expose addProject method to parent via callback
+  // Expose addProject method to parent via window callback
   useEffect(() => {
     const w = window as Window & { __addProject?: (project: Project) => void }
     w.__addProject = addProject
@@ -95,36 +104,47 @@ export default function Sidebar({ onCreateProject, isOpen, onClose }: SidebarPro
     },
   ]
 
-  if (loading) {
-    return (
-      <div className="hidden md:block w-64 bg-dark-bg-primary border-r border-dark-border-subtle p-4">
-        <div className="animate-pulse space-y-3">
-          <div className="h-9 bg-dark-bg-tertiary/40 rounded-md"></div>
-          <div className="h-8 bg-dark-bg-tertiary/30 rounded-md"></div>
-          <div className="h-8 bg-dark-bg-tertiary/30 rounded-md"></div>
-          <div className="h-8 bg-dark-bg-tertiary/30 rounded-md"></div>
-        </div>
-      </div>
-    )
-  }
-
   const sidebarContent = (
     <div className="w-64 bg-dark-bg-primary border-r border-dark-border-subtle flex flex-col h-full">
-      {/* Close button - mobile only */}
-      {isOpen && (
-        <div className="md:hidden flex items-center justify-between px-4 pt-3 pb-1">
-          <span className="text-xs font-semibold text-dark-text-tertiary uppercase tracking-wider">Menu</span>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary rounded-md transition-colors"
-            aria-label="Close sidebar"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+      {/* Header row: close/pin buttons */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-1">
+        <span className="text-[10px] font-semibold text-dark-text-quaternary uppercase tracking-wider">Menu</span>
+        <div className="flex items-center gap-1">
+          {/* Pin/unpin button */}
+          {onTogglePin && (
+            <button
+              onClick={onTogglePin}
+              className="p-1.5 text-dark-text-quaternary hover:text-dark-text-primary hover:bg-dark-bg-tertiary rounded-md transition-colors"
+              aria-label={isPinned ? 'Unpin sidebar' : 'Pin sidebar'}
+              title={isPinned ? 'Unpin sidebar' : 'Pin sidebar'}
+            >
+              {isPinned ? (
+                // Filled pin icon — currently pinned
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
+                </svg>
+              ) : (
+                // Outline pin icon — not pinned
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+              )}
+            </button>
+          )}
+          {/* Close button — only shown in overlay mode */}
+          {!isPinned && (
+            <button
+              onClick={onClose}
+              className="p-1.5 text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary rounded-md transition-colors"
+              aria-label="Close sidebar"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
       {/* New Project Button */}
       <div className="p-4 border-b border-dark-border-subtle">
@@ -184,13 +204,21 @@ export default function Sidebar({ onCreateProject, isOpen, onClose }: SidebarPro
       <div className="flex-1 overflow-y-auto p-4">
         <p className="text-[10px] uppercase tracking-wider text-dark-text-quaternary mb-2 px-3 font-medium">Projects</p>
 
+        {loading && (
+          <div className="animate-pulse space-y-2 px-1">
+            <div className="h-7 bg-dark-bg-tertiary/40 rounded-md"></div>
+            <div className="h-7 bg-dark-bg-tertiary/30 rounded-md"></div>
+            <div className="h-7 bg-dark-bg-tertiary/30 rounded-md"></div>
+          </div>
+        )}
+
         {error && (
           <div className="bg-danger-500/10 border border-danger-500/20 text-danger-400 px-3 py-2 rounded-md text-xs">
             {error}
           </div>
         )}
 
-        {projects.length === 0 && !error && (
+        {!loading && projects.length === 0 && !error && (
           <div className="text-center py-8">
             <svg
               className="mx-auto h-8 w-8 text-dark-text-quaternary"
@@ -212,49 +240,53 @@ export default function Sidebar({ onCreateProject, isOpen, onClose }: SidebarPro
           </div>
         )}
 
-        <div className="space-y-0.5">
-          {projects.map((project) => {
-            const isSelected = selectedProjectId === String(project.id)
-            return (
-              <button
-                key={project.id}
-                onClick={() => handleProjectClick(project.id)}
-                className={`w-full text-left py-2 px-3 rounded-md transition-all duration-150 ${
-                  isSelected
-                    ? 'bg-dark-bg-tertiary text-dark-text-primary'
-                    : 'text-dark-text-tertiary hover:bg-dark-bg-secondary hover:text-dark-text-primary'
-                }`}
-              >
-                <h3
-                  className={`font-medium text-xs truncate ${
-                    isSelected ? 'text-dark-text-primary' : ''
+        {!loading && (
+          <div className="space-y-0.5">
+            {projects.map((project) => {
+              const isSelected = selectedProjectId === String(project.id)
+              return (
+                <button
+                  key={project.id}
+                  onClick={() => handleProjectClick(project.id)}
+                  className={`w-full text-left py-2 px-3 rounded-md transition-all duration-150 ${
+                    isSelected
+                      ? 'bg-dark-bg-tertiary text-dark-text-primary'
+                      : 'text-dark-text-tertiary hover:bg-dark-bg-secondary hover:text-dark-text-primary'
                   }`}
                 >
-                  {project.name}
-                </h3>
-                {project.description && (
-                  <p className="text-xs text-dark-text-quaternary truncate mt-0.5">
-                    {project.description}
-                  </p>
-                )}
-              </button>
-            )
-          })}
-        </div>
+                  <h3
+                    className={`font-medium text-xs truncate ${
+                      isSelected ? 'text-dark-text-primary' : ''
+                    }`}
+                  >
+                    {project.name}
+                  </h3>
+                  {project.description && (
+                    <p className="text-xs text-dark-text-quaternary truncate mt-0.5">
+                      {project.description}
+                    </p>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
 
   return (
     <>
-      {/* Desktop sidebar - always visible */}
-      <div className="hidden md:flex md:flex-shrink-0">
-        {sidebarContent}
-      </div>
+      {/* Static sidebar — always visible when pinned */}
+      {isPinned && (
+        <div className="flex-shrink-0">
+          {sidebarContent}
+        </div>
+      )}
 
-      {/* Mobile sidebar - overlay */}
-      {isOpen && (
-        <div className="md:hidden fixed inset-0 z-40">
+      {/* Overlay sidebar — shown when open and not pinned (all screen sizes) */}
+      {!isPinned && isOpen && (
+        <div className="fixed inset-0 z-40">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm"

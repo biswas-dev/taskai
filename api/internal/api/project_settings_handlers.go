@@ -671,6 +671,12 @@ func (s *Server) HandleInviteProjectMember(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	// Notify invitee via WebSocket if they're connected
+	s.BroadcastToUser(int64(req.UserID), "project_invitation", map[string]interface{}{
+		"invitation_id": invID,
+		"project_name":  projectName,
+	})
+
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
 		"message":       "Invitation sent",
 		"invitation_id": invID,
@@ -822,6 +828,11 @@ func (s *Server) HandleAcceptProjectInvitation(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+
+	// Notify the user via WebSocket — triggers sidebar refresh on the client
+	s.BroadcastToUser(userID, "project_membership", map[string]interface{}{
+		"project_id": projectID,
+	})
 
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Invitation accepted"})
 }

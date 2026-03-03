@@ -190,6 +190,9 @@ func main() {
 			r.Get("/team/invitations/by-token", server.HandleGetInvitationByToken)
 		})
 
+		// User notification WebSocket — auth via ?token= query param
+		r.Get("/ws/user", server.HandleUserWebSocket)
+
 		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(server.JWTAuth)
