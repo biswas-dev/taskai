@@ -858,18 +858,25 @@ func TestTeamProjectAccess(t *testing.T) {
 	}
 	projectID := int64(project["id"].(float64))
 
-	// User1 invites user2 to their team
+	// User1 invites user2 to their team — user2 already exists so they are auto-accepted
 	inviteBody := map[string]string{"email": user2Email}
 	inviteResp, err := ts.DoRequest("POST", "/api/team/invitations", inviteBody, user1Token)
 	if err != nil {
 		t.Fatalf("Invite failed: %v", err)
 	}
+	invRespBody, _ := io.ReadAll(inviteResp.Body)
 	if inviteResp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(inviteResp.Body)
-		t.Fatalf("Expected status 201, got %d: %s", inviteResp.StatusCode, string(body))
+		t.Fatalf("Expected status 201, got %d: %s", inviteResp.StatusCode, string(invRespBody))
+	}
+	var invResp map[string]interface{}
+	if err := json.Unmarshal(invRespBody, &invResp); err != nil {
+		t.Fatalf("Decode invite response failed: %v", err)
+	}
+	if invResp["status"] != "accepted" {
+		t.Errorf("Expected invitation status 'accepted' for existing user, got %v", invResp["status"])
 	}
 
-	// User2 gets their invitations
+	// User2 should have no pending invitations (they were auto-added)
 	listInvResp, err := ts.DoRequest("GET", "/api/team/invitations", nil, user2Token)
 	if err != nil {
 		t.Fatalf("List invitations failed: %v", err)
@@ -878,20 +885,8 @@ func TestTeamProjectAccess(t *testing.T) {
 	if err := json.NewDecoder(listInvResp.Body).Decode(&invitations); err != nil {
 		t.Fatalf("Decode invitations failed: %v", err)
 	}
-	if len(invitations) == 0 {
-		t.Fatalf("Expected at least one invitation, got 0")
-	}
-	invitationID := int(invitations[0]["id"].(float64))
-
-	// User2 accepts the invitation
-	acceptPath := fmt.Sprintf("/api/team/invitations/%d/accept", invitationID)
-	acceptResp, err := ts.DoRequest("POST", acceptPath, nil, user2Token)
-	if err != nil {
-		t.Fatalf("Accept invitation failed: %v", err)
-	}
-	if acceptResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(acceptResp.Body)
-		t.Fatalf("Expected status 200, got %d: %s", acceptResp.StatusCode, string(body))
+	if len(invitations) != 0 {
+		t.Errorf("Expected 0 pending invitations (user was auto-accepted), got %d", len(invitations))
 	}
 
 	// User2 should NOT see the project yet — team membership alone grants no project access

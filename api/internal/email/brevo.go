@@ -146,6 +146,22 @@ func (s *BrevoService) SendProjectInvitationNewUser(ctx context.Context, toEmail
 }
 
 // SendProjectMemberInvitation sends a notification to an existing user that they've been invited to a project
+// SendTeamMemberAdded notifies a user that they have been added directly to a team.
+func (s *BrevoService) SendTeamMemberAdded(ctx context.Context, toEmail, inviterName, teamName, appURL string) error {
+	dashboardURL := appURL + "/app"
+	subject := fmt.Sprintf("%s added you to \"%s\"", inviterName, teamName)
+
+	html := buildEmailTemplate(
+		fmt.Sprintf("You've joined \"%s\"", teamName),
+		fmt.Sprintf("<strong>%s</strong> has added you to <strong>%s</strong> in TaskAI. You can start collaborating right away.", inviterName, teamName),
+		dashboardURL,
+		"Go to Dashboard",
+		"You are now an active member of this team.",
+	)
+
+	return s.SendEmail(ctx, toEmail, subject, html)
+}
+
 func (s *BrevoService) SendProjectMemberInvitation(ctx context.Context, toEmail, inviterName, projectName, appURL string) error {
 	settingsURL := appURL + "/app/settings"
 	subject := fmt.Sprintf("%s invited you to join \"%s\"", inviterName, projectName)

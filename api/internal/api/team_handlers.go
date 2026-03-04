@@ -245,7 +245,7 @@ func (s *Server) HandleInviteTeamMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Generate acceptance token for one-click email acceptance
+	// Generate acceptance token (needed for both paths)
 	acceptanceToken, tokenErr := generateInviteCode()
 	if tokenErr != nil {
 		s.logger.Error("Failed to generate acceptance token", zap.Error(tokenErr))
@@ -253,13 +253,93 @@ func (s *Server) HandleInviteTeamMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Create invitation with acceptance token (expires in 7 days)
-	tokenExpires := time.Now().Add(7 * 24 * time.Hour)
+	now := time.Now()
+
+	if inviteeID != nil {
+		// Existing user — auto-accept immediately: create accepted invitation + add to team
+		tx, err := s.db.Client.Tx(ctx)
+		if err != nil {
+			s.logger.Error("Failed to begin transaction", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to process invitation", "internal_error")
+			return
+		}
+		defer tx.Rollback()
+
+		newInv, err := tx.TeamInvitation.Create().
+			SetTeamID(teamID).
+			SetInviterID(userID).
+			SetInviteeEmail(req.Email).
+			SetInviteeID(*inviteeID).
+			SetStatus("accepted").
+			SetAcceptanceToken(acceptanceToken).
+			SetRespondedAt(now).
+			Save(ctx)
+		if err != nil {
+			s.logger.Error("Failed to create invitation", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to create invitation", "internal_error")
+			return
+		}
+
+		_, err = tx.TeamMember.Create().
+			SetTeamID(teamID).
+			SetUserID(*inviteeID).
+			SetRole("member").
+			SetStatus("active").
+			Save(ctx)
+		if err != nil {
+			s.logger.Error("Failed to add team member", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to add team member", "internal_error")
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			s.logger.Error("Failed to commit transaction", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to process invitation", "internal_error")
+			return
+		}
+
+		s.logger.Info("Team member auto-added",
+			zap.Int64("invitation_id", newInv.ID),
+			zap.Int64("team_id", teamID),
+			zap.Int64("invitee_id", *inviteeID),
+			zap.String("invitee_email", req.Email),
+		)
+
+		if emailSvc := s.GetEmailService(); emailSvc != nil {
+			inviter, err := s.db.Client.User.Get(ctx, userID)
+			inviterName := ""
+			if err == nil {
+				inviterName = userDisplayName(inviter)
+			}
+			teamEntity, err := s.db.Client.Team.Get(ctx, teamID)
+			teamName := ""
+			if err == nil {
+				teamName = teamEntity.Name
+			}
+			if err := emailSvc.SendTeamMemberAdded(ctx, req.Email, inviterName, teamName, s.getAppURL()); err != nil {
+				s.logger.Warn("Failed to send team member added email",
+					zap.String("to", req.Email),
+					zap.Error(err),
+				)
+			}
+		}
+
+		invitation, err := s.getInvitation(ctx, newInv.ID)
+		if err != nil {
+			s.logger.Error("Failed to fetch created invitation", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to fetch invitation", "internal_error")
+			return
+		}
+		respondJSON(w, http.StatusCreated, invitation)
+		return
+	}
+
+	// New user — create pending invitation and send signup link
+	tokenExpires := now.Add(7 * 24 * time.Hour)
 	newInv, err := s.db.Client.TeamInvitation.Create().
 		SetTeamID(teamID).
 		SetInviterID(userID).
 		SetInviteeEmail(req.Email).
-		SetNillableInviteeID(inviteeID).
 		SetStatus("pending").
 		SetAcceptanceToken(acceptanceToken).
 		SetTokenExpiresAt(tokenExpires).
@@ -272,74 +352,53 @@ func (s *Server) HandleInviteTeamMember(w http.ResponseWriter, r *http.Request) 
 
 	invitationID := newInv.ID
 
-	// Fetch created invitation with edges
-	invitation, err := s.getInvitation(ctx, invitationID)
-	if err != nil {
-		s.logger.Error("Failed to fetch created invitation", zap.Error(err))
-		respondError(w, http.StatusInternalServerError, "failed to fetch invitation", "internal_error")
-		return
-	}
-
 	s.logger.Info("Team invitation created",
 		zap.Int64("invitation_id", invitationID),
 		zap.Int64("team_id", teamID),
 		zap.String("invitee_email", req.Email),
 	)
 
-	// Send email notification if email service is available
 	if emailSvc := s.GetEmailService(); emailSvc != nil {
-		// Get inviter name
 		inviter, err := s.db.Client.User.Get(ctx, userID)
 		inviterName := ""
 		if err == nil {
 			inviterName = userDisplayName(inviter)
 		}
-
-		// Get team name
 		teamEntity, err := s.db.Client.Team.Get(ctx, teamID)
 		teamName := ""
 		if err == nil {
 			teamName = teamEntity.Name
 		}
-
 		appURL := s.getAppURL()
 
-		if inviteeID != nil {
-			// Existing user — send project invitation with accept link
-			if err := emailSvc.SendProjectInvitation(ctx, req.Email, inviterName, teamName, acceptanceToken, appURL); err != nil {
-				s.logger.Warn("Failed to send team invitation email",
-					zap.String("to", req.Email),
-					zap.Error(err),
-				)
-			}
-		} else {
-			// New user — auto-generate invite code and send signup link with accept token
-			inviteCode, codeErr := generateTeamInviteCode()
-			if codeErr == nil {
-				// Create a platform invite for this user
-				expireTime := time.Now().Add(7 * 24 * time.Hour)
-				_, err := s.db.Client.Invite.Create().
-					SetCode(inviteCode).
-					SetInviterID(userID).
-					SetExpiresAt(expireTime).
+		inviteCode, codeErr := generateTeamInviteCode()
+		if codeErr == nil {
+			expireTime := now.Add(7 * 24 * time.Hour)
+			_, err := s.db.Client.Invite.Create().
+				SetCode(inviteCode).
+				SetInviterID(userID).
+				SetExpiresAt(expireTime).
+				Save(ctx)
+			if err == nil {
+				_, _ = s.db.Client.TeamInvitation.UpdateOneID(invitationID).
+					SetInviteCode(inviteCode).
 					Save(ctx)
-				if err == nil {
-					// Store invite code on the team invitation for retrieval during acceptance
-					_, _ = s.db.Client.TeamInvitation.UpdateOneID(invitationID).
-						SetInviteCode(inviteCode).
-						Save(ctx)
-
-					if err := emailSvc.SendProjectInvitationNewUser(ctx, req.Email, inviterName, teamName, acceptanceToken, appURL); err != nil {
-						s.logger.Warn("Failed to send team invitation email to new user",
-							zap.String("to", req.Email),
-							zap.Error(err),
-						)
-					}
+				if err := emailSvc.SendProjectInvitationNewUser(ctx, req.Email, inviterName, teamName, acceptanceToken, appURL); err != nil {
+					s.logger.Warn("Failed to send team invitation email to new user",
+						zap.String("to", req.Email),
+						zap.Error(err),
+					)
 				}
 			}
 		}
 	}
 
+	invitation, err := s.getInvitation(ctx, invitationID)
+	if err != nil {
+		s.logger.Error("Failed to fetch created invitation", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to fetch invitation", "internal_error")
+		return
+	}
 	respondJSON(w, http.StatusCreated, invitation)
 }
 

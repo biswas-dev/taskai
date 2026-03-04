@@ -10,6 +10,8 @@ github.com/anchoo2kewl/go-draw v0.6.0 h1:jaD8f72qSkOKTT0Xahy55RFdg1v2vBi58JseVSm
 github.com/anchoo2kewl/go-draw v0.6.0/go.mod h1:h2kv0Lf5piPFn28Me2HA3o1uocEmu7775N8KUxML0xE=
 github.com/anchoo2kewl/go-login v0.1.0 h1:bFt+/sQhYB15eJt+V9VWoohI+UR83xz+Y3ls9/u/Kqo=
 github.com/anchoo2kewl/go-login v0.1.0/go.mod h1:EyE+DCIMUFTm95JcDtlgqYBOypCBmok/0gO15fCvHvY=
+github.com/anchoo2kewl/go-login v0.2.0 h1:olRxEfpw17ZpPT2YYB3TJAidZ6yUgAkjBj3BitqvwuM=
+github.com/anchoo2kewl/go-login v0.2.0/go.mod h1:EyE+DCIMUFTm95JcDtlgqYBOypCBmok/0gO15fCvHvY=
 github.com/anchoo2kewl/go-wiki v0.1.1-0.20260301204914-2289a94adc98 h1:MRuv2Z8nwVasglZswvI7HgXhsagh6Mvto3HqhUz4Ljk=
 github.com/anchoo2kewl/go-wiki v0.1.1-0.20260301204914-2289a94adc98/go.mod h1:SdNfnXOnrAfDdswO14eYvIb12gA5eacOtz+cz3lAnQw=
 github.com/apparentlymart/go-textseg/v15 v15.0.0 h1:uYvfpb3DyLSCGWnctWKGj857c6ew1u1fNQOlOtuGxQY=

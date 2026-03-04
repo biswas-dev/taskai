@@ -252,6 +252,35 @@ func (s *OAuthStore) ValidateInviteCode(ctx context.Context, code string) (*golo
 	return info, nil
 }
 
+// LinkOAuthProvider links a new OAuth provider to an existing user account.
+// It is idempotent: if the provider is already linked, it updates the provider_user_id
+// and returns the user. This enables users to sign in with any provider whose
+// email matches their account.
+func (s *OAuthStore) LinkOAuthProvider(ctx context.Context, userID int64, provider, providerUserID string) (*gologin.User, error) {
+	// Upsert: insert or update so the provider_user_id is always current.
+	_, err := s.db.ExecContext(ctx,
+		s.db.Rebind(`INSERT INTO oauth_providers (user_id, provider, provider_user_id)
+			VALUES (?, ?, ?)
+			ON CONFLICT(user_id, provider) DO UPDATE SET provider_user_id = excluded.provider_user_id`),
+		userID, provider, providerUserID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("oauth_store: LinkOAuthProvider: upsert provider: %w", err)
+	}
+
+	entUser, err := s.db.Client.User.Get(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("oauth_store: LinkOAuthProvider: fetch user: %w", err)
+	}
+
+	s.logger.Info("OAuth provider linked",
+		zap.Int64("user_id", userID),
+		zap.String("provider", provider),
+	)
+
+	return &gologin.User{ID: entUser.ID, Email: entUser.Email}, nil
+}
+
 // randomPlaceholderHash generates a random bcrypt hash to use as a placeholder
 // password for OAuth-only users (satisfies NOT NULL constraint; never usable).
 func randomPlaceholderHash() (string, error) {

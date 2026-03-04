@@ -938,10 +938,10 @@ func TestHandleInviteTeamMember_EmailSendingExistingUser(t *testing.T) {
 	defer ts.Close()
 
 	ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
-	createTestTeam(t, ts, ownerID, "Test Team")
-	ts.CreateTestUser(t, "existing@example.com", "password123")
+	teamID := createTestTeam(t, ts, ownerID, "Test Team")
+	existingID := ts.CreateTestUser(t, "existing@example.com", "password123")
 
-	// Invite existing user — no email service, should still work
+	// Invite existing user — should be auto-accepted, no email service configured
 	body := InviteTeamMemberRequest{Email: "existing@example.com"}
 	rec, req := ts.MakeAuthRequest(t, http.MethodPost, "/api/team/invite", body, ownerID, nil)
 	ts.HandleInviteTeamMember(rec, req)
@@ -955,6 +955,22 @@ func TestHandleInviteTeamMember_EmailSendingExistingUser(t *testing.T) {
 	}
 	if inv.InviteeID == nil {
 		t.Error("Expected invitee_id to be set for existing user")
+	}
+	if inv.Status != "accepted" {
+		t.Errorf("Expected invitation status 'accepted' for existing user, got %q", inv.Status)
+	}
+
+	// Verify user was added to the team as an active member
+	var memberCount int
+	err := ts.DB.QueryRow(
+		`SELECT COUNT(*) FROM team_members WHERE team_id = ? AND user_id = ? AND status = 'active'`,
+		teamID, existingID,
+	).Scan(&memberCount)
+	if err != nil {
+		t.Fatalf("Failed to query team members: %v", err)
+	}
+	if memberCount != 1 {
+		t.Errorf("Expected existing user to be added as active team member, got count=%d", memberCount)
 	}
 }
 

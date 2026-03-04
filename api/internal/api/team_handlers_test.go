@@ -227,12 +227,13 @@ func TestHandleGetTeamMembersNoTeam(t *testing.T) {
 
 func TestHandleInviteTeamMember(t *testing.T) {
 	tests := []struct {
-		name          string
-		setup         func(t *testing.T, ts *TestServer) (inviterID int64)
-		email         string
-		wantStatus    int
-		wantError     string
-		wantErrorCode string
+		name           string
+		setup          func(t *testing.T, ts *TestServer) (inviterID int64)
+		email          string
+		wantStatus     int
+		wantInvStatus  string // expected invitation status field; defaults to "pending"
+		wantError      string
+		wantErrorCode  string
 	}{
 		{
 			name: "happy path - invite new user",
@@ -241,8 +242,9 @@ func TestHandleInviteTeamMember(t *testing.T) {
 				createTestTeam(t, ts, ownerID, "Test Team")
 				return ownerID
 			},
-			email:      "newmember@example.com",
-			wantStatus: http.StatusCreated,
+			email:         "newmember@example.com",
+			wantStatus:    http.StatusCreated,
+			wantInvStatus: "pending",
 		},
 		{
 			name: "invite existing user",
@@ -253,8 +255,9 @@ func TestHandleInviteTeamMember(t *testing.T) {
 				ts.CreateTestUser(t, "existing@example.com", "password123")
 				return ownerID
 			},
-			email:      "existing@example.com",
-			wantStatus: http.StatusCreated,
+			email:         "existing@example.com",
+			wantStatus:    http.StatusCreated,
+			wantInvStatus: "accepted",
 		},
 		{
 			name: "invalid email",
@@ -321,8 +324,12 @@ func TestHandleInviteTeamMember(t *testing.T) {
 				if inv.InviteeEmail != tt.email {
 					t.Errorf("Expected invitee email %q, got %q", tt.email, inv.InviteeEmail)
 				}
-				if inv.Status != "pending" {
-					t.Errorf("Expected status 'pending', got %q", inv.Status)
+				wantInvStatus := tt.wantInvStatus
+				if wantInvStatus == "" {
+					wantInvStatus = "pending"
+				}
+				if inv.Status != wantInvStatus {
+					t.Errorf("Expected invitation status %q, got %q", wantInvStatus, inv.Status)
 				}
 			}
 		})
