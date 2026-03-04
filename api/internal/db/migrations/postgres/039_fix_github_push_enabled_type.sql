@@ -1,5 +1,3 @@
--- Fix github_push_enabled column type from INTEGER to BOOLEAN
--- (migration 038 incorrectly used INTEGER; this corrects existing deployments)
-ALTER TABLE projects ALTER COLUMN github_push_enabled DROP DEFAULT;
-ALTER TABLE projects ALTER COLUMN github_push_enabled TYPE BOOLEAN USING (github_push_enabled != 0);
-ALTER TABLE projects ALTER COLUMN github_push_enabled SET DEFAULT false;
+-- PostgreSQL: no-op. Migration 038 already defined github_push_enabled as BOOLEAN.
+-- The INTEGER->BOOLEAN fix in 039 is only needed for SQLite deployments.
+SELECT 1;
