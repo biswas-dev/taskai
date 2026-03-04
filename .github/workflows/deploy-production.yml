@@ -75,6 +75,8 @@ jobs:
           LOGIN_GH_CLIENT_ID: ${{ secrets.PRODUCTION_LOGIN_GITHUB_CLIENT_ID }}
           LOGIN_GH_CLIENT_SECRET: ${{ secrets.PRODUCTION_LOGIN_GITHUB_CLIENT_SECRET }}
           OAUTH_STATE_SECRET: ${{ secrets.PRODUCTION_OAUTH_STATE_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PRODUCTION_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PRODUCTION_GOOGLE_CLIENT_SECRET }}
           APP_URL: https://taskai.cc
         run: |
           mkdir -p ~/.ssh
@@ -110,6 +112,8 @@ jobs:
             export LOGIN_GITHUB_CLIENT_ID="$LOGIN_GH_CLIENT_ID"
             export LOGIN_GITHUB_CLIENT_SECRET="$LOGIN_GH_CLIENT_SECRET"
             export OAUTH_STATE_SECRET="$OAUTH_STATE_SECRET"
+            export GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID"
+            export GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET"
             export APP_URL="$APP_URL"
             export OAUTH_SUCCESS_URL="https://taskai.cc/oauth/callback"
             export OAUTH_ERROR_URL="https://taskai.cc/login"
