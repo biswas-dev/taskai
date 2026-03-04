@@ -351,6 +351,40 @@ export default function ProjectSettings() {
     }
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Restore saved GitHub import settings (status mappings + filters) for this project
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`taskai_gh_status_${projectId}`)
+      if (saved) setStatusAssignments(JSON.parse(saved))
+    } catch { /* ignore */ }
+    try {
+      const saved = localStorage.getItem(`taskai_gh_filter_${projectId}`)
+      if (saved) {
+        const f = JSON.parse(saved)
+        if (f.milestone !== undefined) setFilterMilestone(f.milestone)
+        if (f.assignee !== undefined) setFilterAssignee(f.assignee)
+        if (f.labels !== undefined) setFilterLabels(f.labels)
+        if (f.state !== undefined) setFilterState(f.state)
+      }
+    } catch { /* ignore */ }
+  }, [projectId])
+
+  // Persist status assignments whenever they change
+  useEffect(() => {
+    if (Object.keys(statusAssignments).length === 0) return
+    localStorage.setItem(`taskai_gh_status_${projectId}`, JSON.stringify(statusAssignments))
+  }, [statusAssignments, projectId])
+
+  // Persist import filters whenever they change
+  useEffect(() => {
+    localStorage.setItem(`taskai_gh_filter_${projectId}`, JSON.stringify({
+      milestone: filterMilestone,
+      assignee: filterAssignee,
+      labels: filterLabels,
+      state: filterState,
+    }))
+  }, [projectId, filterMilestone, filterAssignee, filterLabels, filterState])
+
   const loadProject = async () => {
     try {
       const proj = await apiClient.getProject(projectId)
@@ -474,11 +508,16 @@ export default function ProjectSettings() {
         assignments[u.login] = u.matched_user_id ?? 0
       }
       setUserAssignments(assignments)
-      // Initialize status assignments from auto-matched statuses
+      // Initialize status assignments from auto-matched statuses,
+      // then overlay any previously saved user assignments
       const statusInit: Record<string, number> = {}
       for (const s of (preview.statuses ?? [])) {
         statusInit[s.key] = s.matched_lane_id ?? 0
       }
+      try {
+        const saved = localStorage.getItem(`taskai_gh_status_${projectId}`)
+        if (saved) Object.assign(statusInit, JSON.parse(saved))
+      } catch { /* ignore */ }
       setStatusAssignments(statusInit)
     } catch (error: unknown) {
       setImportError(error instanceof Error ? error.message : 'Failed to fetch GitHub preview')

@@ -125,6 +125,18 @@ func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return h.Hijack()
 }
 
+// Flush implements http.Flusher so SSE (Server-Sent Events) works through this wrapper.
+func (rw *responseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Unwrap returns the underlying ResponseWriter for http.NewResponseController compatibility.
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
 // GetUserID extracts user ID from request context
 func GetUserID(r *http.Request) (int64, bool) {
 	userID, ok := r.Context().Value(UserIDKey).(int64)
