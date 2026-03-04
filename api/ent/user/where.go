@@ -953,6 +953,29 @@ func HasTasksAssignedWith(preds ...predicate.Task) predicate.User {
 	})
 }
 
+// HasTaskAssignees applies the HasEdge predicate on the "task_assignees" edge.
+func HasTaskAssignees() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, TaskAssigneesTable, TaskAssigneesColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTaskAssigneesWith applies the HasEdge predicate on the "task_assignees" edge with a given conditions (other predicates).
+func HasTaskAssigneesWith(preds ...predicate.TaskAssignee) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newTaskAssigneesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasSprints applies the HasEdge predicate on the "sprints" edge.
 func HasSprints() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

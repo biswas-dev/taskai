@@ -12,6 +12,7 @@ import (
 	"taskai/ent/sprint"
 	"taskai/ent/swimlane"
 	"taskai/ent/task"
+	"taskai/ent/taskassignee"
 	"taskai/ent/taskattachment"
 	"taskai/ent/taskcomment"
 	"taskai/ent/tasktag"
@@ -26,17 +27,18 @@ import (
 // TaskQuery is the builder for querying Task entities.
 type TaskQuery struct {
 	config
-	ctx             *QueryContext
-	order           []task.OrderOption
-	inters          []Interceptor
-	predicates      []predicate.Task
-	withProject     *ProjectQuery
-	withSwimLane    *SwimLaneQuery
-	withSprint      *SprintQuery
-	withAssignee    *UserQuery
-	withComments    *TaskCommentQuery
-	withAttachments *TaskAttachmentQuery
-	withTaskTags    *TaskTagQuery
+	ctx               *QueryContext
+	order             []task.OrderOption
+	inters            []Interceptor
+	predicates        []predicate.Task
+	withProject       *ProjectQuery
+	withSwimLane      *SwimLaneQuery
+	withSprint        *SprintQuery
+	withAssignee      *UserQuery
+	withComments      *TaskCommentQuery
+	withAttachments   *TaskAttachmentQuery
+	withTaskTags      *TaskTagQuery
+	withTaskAssignees *TaskAssigneeQuery
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -220,6 +222,28 @@ func (_q *TaskQuery) QueryTaskTags() *TaskTagQuery {
 			sqlgraph.From(task.Table, task.FieldID, selector),
 			sqlgraph.To(tasktag.Table, tasktag.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, task.TaskTagsTable, task.TaskTagsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryTaskAssignees chains the current query on the "task_assignees" edge.
+func (_q *TaskQuery) QueryTaskAssignees() *TaskAssigneeQuery {
+	query := (&TaskAssigneeClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(task.Table, task.FieldID, selector),
+			sqlgraph.To(taskassignee.Table, taskassignee.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, task.TaskAssigneesTable, task.TaskAssigneesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -414,18 +438,19 @@ func (_q *TaskQuery) Clone() *TaskQuery {
 		return nil
 	}
 	return &TaskQuery{
-		config:          _q.config,
-		ctx:             _q.ctx.Clone(),
-		order:           append([]task.OrderOption{}, _q.order...),
-		inters:          append([]Interceptor{}, _q.inters...),
-		predicates:      append([]predicate.Task{}, _q.predicates...),
-		withProject:     _q.withProject.Clone(),
-		withSwimLane:    _q.withSwimLane.Clone(),
-		withSprint:      _q.withSprint.Clone(),
-		withAssignee:    _q.withAssignee.Clone(),
-		withComments:    _q.withComments.Clone(),
-		withAttachments: _q.withAttachments.Clone(),
-		withTaskTags:    _q.withTaskTags.Clone(),
+		config:            _q.config,
+		ctx:               _q.ctx.Clone(),
+		order:             append([]task.OrderOption{}, _q.order...),
+		inters:            append([]Interceptor{}, _q.inters...),
+		predicates:        append([]predicate.Task{}, _q.predicates...),
+		withProject:       _q.withProject.Clone(),
+		withSwimLane:      _q.withSwimLane.Clone(),
+		withSprint:        _q.withSprint.Clone(),
+		withAssignee:      _q.withAssignee.Clone(),
+		withComments:      _q.withComments.Clone(),
+		withAttachments:   _q.withAttachments.Clone(),
+		withTaskTags:      _q.withTaskTags.Clone(),
+		withTaskAssignees: _q.withTaskAssignees.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -509,6 +534,17 @@ func (_q *TaskQuery) WithTaskTags(opts ...func(*TaskTagQuery)) *TaskQuery {
 	return _q
 }
 
+// WithTaskAssignees tells the query-builder to eager-load the nodes that are connected to
+// the "task_assignees" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *TaskQuery) WithTaskAssignees(opts ...func(*TaskAssigneeQuery)) *TaskQuery {
+	query := (&TaskAssigneeClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withTaskAssignees = query
+	return _q
+}
+
 // GroupBy is used to group vertices by one or more fields/columns.
 // It is often used with aggregate functions, like: count, max, mean, min, sum.
 //
@@ -587,7 +623,7 @@ func (_q *TaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Task, e
 	var (
 		nodes       = []*Task{}
 		_spec       = _q.querySpec()
-		loadedTypes = [7]bool{
+		loadedTypes = [8]bool{
 			_q.withProject != nil,
 			_q.withSwimLane != nil,
 			_q.withSprint != nil,
@@ -595,6 +631,7 @@ func (_q *TaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Task, e
 			_q.withComments != nil,
 			_q.withAttachments != nil,
 			_q.withTaskTags != nil,
+			_q.withTaskAssignees != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -657,6 +694,13 @@ func (_q *TaskQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Task, e
 		if err := _q.loadTaskTags(ctx, query, nodes,
 			func(n *Task) { n.Edges.TaskTags = []*TaskTag{} },
 			func(n *Task, e *TaskTag) { n.Edges.TaskTags = append(n.Edges.TaskTags, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withTaskAssignees; query != nil {
+		if err := _q.loadTaskAssignees(ctx, query, nodes,
+			func(n *Task) { n.Edges.TaskAssignees = []*TaskAssignee{} },
+			func(n *Task, e *TaskAssignee) { n.Edges.TaskAssignees = append(n.Edges.TaskAssignees, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -863,6 +907,36 @@ func (_q *TaskQuery) loadTaskTags(ctx context.Context, query *TaskTagQuery, node
 	}
 	query.Where(predicate.TaskTag(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(task.TaskTagsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.TaskID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "task_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *TaskQuery) loadTaskAssignees(ctx context.Context, query *TaskAssigneeQuery, nodes []*Task, init func(*Task), assign func(*Task, *TaskAssignee)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Task)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(taskassignee.FieldTaskID)
+	}
+	query.Where(predicate.TaskAssignee(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(task.TaskAssigneesColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

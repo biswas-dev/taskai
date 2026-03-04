@@ -503,6 +503,50 @@ var (
 			},
 		},
 	}
+	// TaskAssigneesColumns holds the columns for the "task_assignees" table.
+	TaskAssigneesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "task_id", Type: field.TypeInt64},
+		{Name: "user_id", Type: field.TypeInt64},
+	}
+	// TaskAssigneesTable holds the schema information for the "task_assignees" table.
+	TaskAssigneesTable = &schema.Table{
+		Name:       "task_assignees",
+		Columns:    TaskAssigneesColumns,
+		PrimaryKey: []*schema.Column{TaskAssigneesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "task_assignees_tasks_task_assignees",
+				Columns:    []*schema.Column{TaskAssigneesColumns[2]},
+				RefColumns: []*schema.Column{TasksColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+			{
+				Symbol:     "task_assignees_users_task_assignees",
+				Columns:    []*schema.Column{TaskAssigneesColumns[3]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "taskassignee_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{TaskAssigneesColumns[2]},
+			},
+			{
+				Name:    "taskassignee_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{TaskAssigneesColumns[3]},
+			},
+			{
+				Name:    "taskassignee_task_id_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{TaskAssigneesColumns[2], TaskAssigneesColumns[3]},
+			},
+		},
+	}
 	// TaskAttachmentsColumns holds the columns for the "task_attachments" table.
 	TaskAttachmentsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -987,6 +1031,7 @@ var (
 		SwimLanesTable,
 		TagsTable,
 		TasksTable,
+		TaskAssigneesTable,
 		TaskAttachmentsTable,
 		TaskCommentsTable,
 		TaskTagsTable,
@@ -1021,6 +1066,8 @@ func init() {
 	TasksTable.ForeignKeys[1].RefTable = SprintsTable
 	TasksTable.ForeignKeys[2].RefTable = SwimLanesTable
 	TasksTable.ForeignKeys[3].RefTable = UsersTable
+	TaskAssigneesTable.ForeignKeys[0].RefTable = TasksTable
+	TaskAssigneesTable.ForeignKeys[1].RefTable = UsersTable
 	TaskAttachmentsTable.ForeignKeys[0].RefTable = ProjectsTable
 	TaskAttachmentsTable.ForeignKeys[1].RefTable = TasksTable
 	TaskAttachmentsTable.ForeignKeys[2].RefTable = UsersTable

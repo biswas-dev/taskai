@@ -56,6 +56,8 @@ const (
 	EdgeAttachments = "attachments"
 	// EdgeTaskTags holds the string denoting the task_tags edge name in mutations.
 	EdgeTaskTags = "task_tags"
+	// EdgeTaskAssignees holds the string denoting the task_assignees edge name in mutations.
+	EdgeTaskAssignees = "task_assignees"
 	// Table holds the table name of the task in the database.
 	Table = "tasks"
 	// ProjectTable is the table that holds the project relation/edge.
@@ -107,6 +109,13 @@ const (
 	TaskTagsInverseTable = "task_tags"
 	// TaskTagsColumn is the table column denoting the task_tags relation/edge.
 	TaskTagsColumn = "task_id"
+	// TaskAssigneesTable is the table that holds the task_assignees relation/edge.
+	TaskAssigneesTable = "task_assignees"
+	// TaskAssigneesInverseTable is the table name for the TaskAssignee entity.
+	// It exists in this package in order to avoid circular dependency with the "taskassignee" package.
+	TaskAssigneesInverseTable = "task_assignees"
+	// TaskAssigneesColumn is the table column denoting the task_assignees relation/edge.
+	TaskAssigneesColumn = "task_id"
 )
 
 // Columns holds all SQL columns for task fields.
@@ -300,6 +309,20 @@ func ByTaskTags(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newTaskTagsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByTaskAssigneesCount orders the results by task_assignees count.
+func ByTaskAssigneesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newTaskAssigneesStep(), opts...)
+	}
+}
+
+// ByTaskAssignees orders the results by task_assignees terms.
+func ByTaskAssignees(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTaskAssigneesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newProjectStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -347,5 +370,12 @@ func newTaskTagsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(TaskTagsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, TaskTagsTable, TaskTagsColumn),
+	)
+}
+func newTaskAssigneesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TaskAssigneesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, TaskAssigneesTable, TaskAssigneesColumn),
 	)
 }

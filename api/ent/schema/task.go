@@ -45,6 +45,7 @@ func (Task) Edges() []ent.Edge {
 		edge.To("comments", TaskComment.Type),
 		edge.To("attachments", TaskAttachment.Type),
 		edge.To("task_tags", TaskTag.Type),
+		edge.To("task_assignees", TaskAssignee.Type),
 	}
 }
 

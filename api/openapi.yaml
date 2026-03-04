@@ -2494,6 +2494,16 @@ components:
         assignee_name:
           type: ["string", "null"]
           example: "Anshuman Biswas"
+        assignees:
+          type: array
+          items:
+            type: object
+            properties:
+              user_id:
+                type: integer
+                format: int64
+              user_name:
+                type: string
         estimated_hours:
           type: ["number", "null"]
           format: float

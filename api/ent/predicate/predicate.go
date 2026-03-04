@@ -39,6 +39,9 @@ type Tag func(*sql.Selector)
 // Task is the predicate function for task builders.
 type Task func(*sql.Selector)
 
+// TaskAssignee is the predicate function for taskassignee builders.
+type TaskAssignee func(*sql.Selector)
+
 // TaskAttachment is the predicate function for taskattachment builders.
 type TaskAttachment func(*sql.Selector)
 

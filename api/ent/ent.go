@@ -19,6 +19,7 @@ import (
 	"taskai/ent/swimlane"
 	"taskai/ent/tag"
 	"taskai/ent/task"
+	"taskai/ent/taskassignee"
 	"taskai/ent/taskattachment"
 	"taskai/ent/taskcomment"
 	"taskai/ent/tasktag"
@@ -105,6 +106,7 @@ func checkColumn(t, c string) error {
 			swimlane.Table:             swimlane.ValidColumn,
 			tag.Table:                  tag.ValidColumn,
 			task.Table:                 task.ValidColumn,
+			taskassignee.Table:         taskassignee.ValidColumn,
 			taskattachment.Table:       taskattachment.ValidColumn,
 			taskcomment.Table:          taskcomment.ValidColumn,
 			tasktag.Table:              tasktag.ValidColumn,

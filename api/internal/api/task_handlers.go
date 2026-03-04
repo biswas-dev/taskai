@@ -16,30 +16,37 @@ import (
 	"taskai/ent/swimlane"
 	"taskai/ent/tag"
 	"taskai/ent/task"
+	"taskai/ent/taskassignee"
 	"taskai/ent/tasktag"
 )
 
+type TaskAssigneeInfo struct {
+	UserID   int64  `json:"user_id"`
+	UserName string `json:"user_name"`
+}
+
 type Task struct {
-	ID                  int64     `json:"id"`
-	ProjectID           int64     `json:"project_id"`
-	TaskNumber          int64     `json:"task_number"`
-	Title               string    `json:"title"`
-	Description         *string   `json:"description,omitempty"`
-	Status              string    `json:"status"`
-	SwimLaneID          *int64    `json:"swim_lane_id,omitempty"`
-	SwimLaneName        *string   `json:"swim_lane_name,omitempty"`
-	DueDate             *string   `json:"due_date,omitempty"`
-	SprintID            *int64    `json:"sprint_id,omitempty"`
-	SprintName          *string   `json:"sprint_name,omitempty"`
-	Priority            string    `json:"priority"`
-	AssigneeID          *int64    `json:"assignee_id,omitempty"`
-	AssigneeName        *string   `json:"assignee_name,omitempty"`
-	EstimatedHours      *float64  `json:"estimated_hours,omitempty"`
-	ActualHours         *float64  `json:"actual_hours,omitempty"`
-	Tags                []Tag     `json:"tags,omitempty"`
-	GithubIssueNumber   *int64    `json:"github_issue_number,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                  int64              `json:"id"`
+	ProjectID           int64              `json:"project_id"`
+	TaskNumber          int64              `json:"task_number"`
+	Title               string             `json:"title"`
+	Description         *string            `json:"description,omitempty"`
+	Status              string             `json:"status"`
+	SwimLaneID          *int64             `json:"swim_lane_id,omitempty"`
+	SwimLaneName        *string            `json:"swim_lane_name,omitempty"`
+	DueDate             *string            `json:"due_date,omitempty"`
+	SprintID            *int64             `json:"sprint_id,omitempty"`
+	SprintName          *string            `json:"sprint_name,omitempty"`
+	Priority            string             `json:"priority"`
+	AssigneeID          *int64             `json:"assignee_id,omitempty"`
+	AssigneeName        *string            `json:"assignee_name,omitempty"`
+	Assignees           []TaskAssigneeInfo `json:"assignees,omitempty"`
+	EstimatedHours      *float64           `json:"estimated_hours,omitempty"`
+	ActualHours         *float64           `json:"actual_hours,omitempty"`
+	Tags                []Tag              `json:"tags,omitempty"`
+	GithubIssueNumber   *int64             `json:"github_issue_number,omitempty"`
+	CreatedAt           time.Time          `json:"created_at"`
+	UpdatedAt           time.Time          `json:"updated_at"`
 }
 
 type CreateTaskRequest struct {
@@ -51,6 +58,7 @@ type CreateTaskRequest struct {
 	SprintID       *int64   `json:"sprint_id,omitempty"`
 	Priority       *string  `json:"priority,omitempty"`
 	AssigneeID     *int64   `json:"assignee_id,omitempty"`
+	AssigneeIDs    []int64  `json:"assignee_ids,omitempty"`
 	EstimatedHours *float64 `json:"estimated_hours,omitempty"`
 	ActualHours    *float64 `json:"actual_hours,omitempty"`
 	TagIDs         []int64  `json:"tag_ids,omitempty"`
@@ -65,6 +73,7 @@ type UpdateTaskRequest struct {
 	SprintID       *int64   `json:"sprint_id,omitempty"`
 	Priority       *string  `json:"priority,omitempty"`
 	AssigneeID     *int64   `json:"assignee_id,omitempty"`
+	AssigneeIDs    *[]int64 `json:"assignee_ids,omitempty"`
 	EstimatedHours *float64 `json:"estimated_hours,omitempty"`
 	ActualHours    *float64 `json:"actual_hours,omitempty"`
 	TagIDs         *[]int64 `json:"tag_ids,omitempty"`
@@ -201,6 +210,13 @@ func (s *Server) HandleListTasks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Load task_assignees for all tasks
+	taskIDs := make([]int64, len(entTasks))
+	for i, t := range entTasks {
+		taskIDs[i] = t.ID
+	}
+	assigneesMap := s.loadTaskAssigneesMap(ctx, taskIDs)
+
 	// Convert Ent tasks to API tasks
 	tasks := make([]Task, 0, len(entTasks))
 	for _, et := range entTasks {
@@ -233,6 +249,11 @@ func (s *Server) HandleListTasks(w http.ResponseWriter, r *http.Request) {
 		if et.Edges.Assignee != nil {
 			t.AssigneeID = &et.Edges.Assignee.ID
 			t.AssigneeName = userDisplayNamePtr(et.Edges.Assignee)
+		}
+
+		// Add multi-assignees
+		if assignees, ok := assigneesMap[et.ID]; ok {
+			t.Assignees = assignees
 		}
 
 		// Add sprint info if present
@@ -423,6 +444,15 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Add multi-assignees if provided
+	if len(req.AssigneeIDs) > 0 {
+		for _, uid := range req.AssigneeIDs {
+			if _, err := entTx.TaskAssignee.Create().SetTaskID(newTask.ID).SetUserID(uid).Save(ctx); err != nil {
+				continue // best-effort
+			}
+		}
+	}
+
 	// Commit transaction
 	if err := entTx.Commit(); err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to commit task creation", "internal_error")
@@ -480,6 +510,11 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if createdTask.Edges.Assignee != nil {
 		t.AssigneeID = &createdTask.Edges.Assignee.ID
 		t.AssigneeName = userDisplayNamePtr(createdTask.Edges.Assignee)
+	}
+
+	// Add multi-assignees
+	if assignees, ok := s.loadTaskAssigneesMap(ctx, []int64{createdTask.ID})[createdTask.ID]; ok {
+		t.Assignees = assignees
 	}
 
 	// Add sprint info if present
@@ -707,6 +742,14 @@ func (s *Server) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Handle assignee_ids updates if provided
+	if req.AssigneeIDs != nil {
+		if err := s.replaceTaskAssignees(ctx, taskID, *req.AssigneeIDs); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to update assignees", "internal_error")
+			return
+		}
+	}
+
 	// Fetch the updated task with all related entities
 	updatedTask, err := s.db.Client.Task.Query().
 		Where(task.ID(taskID)).
@@ -781,6 +824,11 @@ func (s *Server) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if updatedTask.Edges.Assignee != nil {
 		t.AssigneeID = &updatedTask.Edges.Assignee.ID
 		t.AssigneeName = userDisplayNamePtr(updatedTask.Edges.Assignee)
+	}
+
+	// Add multi-assignees
+	if assignees, ok := s.loadTaskAssigneesMap(ctx, []int64{taskID})[taskID]; ok {
+		t.Assignees = assignees
 	}
 
 	// Add sprint info
@@ -977,6 +1025,11 @@ func (s *Server) HandleGetTaskByNumber(w http.ResponseWriter, r *http.Request) {
 		t.AssigneeName = userDisplayNamePtr(taskEntity.Edges.Assignee)
 	}
 
+	// Add multi-assignees
+	if assignees, ok := s.loadTaskAssigneesMap(ctx, []int64{taskEntity.ID})[taskEntity.ID]; ok {
+		t.Assignees = assignees
+	}
+
 	// Add sprint info
 	if taskEntity.Edges.Sprint != nil {
 		t.SprintID = &taskEntity.Edges.Sprint.ID
@@ -1013,6 +1066,43 @@ func (s *Server) HandleGetTaskByNumber(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, t)
+}
+
+// loadTaskAssigneesMap loads task_assignees for a set of task IDs and returns a map[taskID][]TaskAssigneeInfo.
+func (s *Server) loadTaskAssigneesMap(ctx context.Context, taskIDs []int64) map[int64][]TaskAssigneeInfo {
+	result := make(map[int64][]TaskAssigneeInfo)
+	if len(taskIDs) == 0 {
+		return result
+	}
+	rows, err := s.db.Client.TaskAssignee.Query().
+		Where(taskassignee.TaskIDIn(taskIDs...)).
+		WithUser().
+		All(ctx)
+	if err != nil {
+		return result
+	}
+	for _, row := range rows {
+		if row.Edges.User != nil {
+			result[row.TaskID] = append(result[row.TaskID], TaskAssigneeInfo{
+				UserID:   row.Edges.User.ID,
+				UserName: userDisplayName(row.Edges.User),
+			})
+		}
+	}
+	return result
+}
+
+// replaceTaskAssignees atomically replaces all assignees for a task.
+func (s *Server) replaceTaskAssignees(ctx context.Context, taskID int64, userIDs []int64) error {
+	if _, err := s.db.Client.TaskAssignee.Delete().Where(taskassignee.TaskID(taskID)).Exec(ctx); err != nil {
+		return err
+	}
+	for _, uid := range userIDs {
+		if _, err := s.db.Client.TaskAssignee.Create().SetTaskID(taskID).SetUserID(uid).Save(ctx); err != nil {
+			continue // best-effort
+		}
+	}
+	return nil
 }
 
 // checkProjectAccess verifies that a user has access to a project via project_members table

@@ -11,6 +11,7 @@ import (
 	"taskai/ent/sprint"
 	"taskai/ent/swimlane"
 	"taskai/ent/task"
+	"taskai/ent/taskassignee"
 	"taskai/ent/taskattachment"
 	"taskai/ent/taskcomment"
 	"taskai/ent/tasktag"
@@ -343,6 +344,21 @@ func (_u *TaskUpdate) AddTaskTags(v ...*TaskTag) *TaskUpdate {
 	return _u.AddTaskTagIDs(ids...)
 }
 
+// AddTaskAssigneeIDs adds the "task_assignees" edge to the TaskAssignee entity by IDs.
+func (_u *TaskUpdate) AddTaskAssigneeIDs(ids ...int) *TaskUpdate {
+	_u.mutation.AddTaskAssigneeIDs(ids...)
+	return _u
+}
+
+// AddTaskAssignees adds the "task_assignees" edges to the TaskAssignee entity.
+func (_u *TaskUpdate) AddTaskAssignees(v ...*TaskAssignee) *TaskUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddTaskAssigneeIDs(ids...)
+}
+
 // Mutation returns the TaskMutation object of the builder.
 func (_u *TaskUpdate) Mutation() *TaskMutation {
 	return _u.mutation
@@ -433,6 +449,27 @@ func (_u *TaskUpdate) RemoveTaskTags(v ...*TaskTag) *TaskUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveTaskTagIDs(ids...)
+}
+
+// ClearTaskAssignees clears all "task_assignees" edges to the TaskAssignee entity.
+func (_u *TaskUpdate) ClearTaskAssignees() *TaskUpdate {
+	_u.mutation.ClearTaskAssignees()
+	return _u
+}
+
+// RemoveTaskAssigneeIDs removes the "task_assignees" edge to TaskAssignee entities by IDs.
+func (_u *TaskUpdate) RemoveTaskAssigneeIDs(ids ...int) *TaskUpdate {
+	_u.mutation.RemoveTaskAssigneeIDs(ids...)
+	return _u
+}
+
+// RemoveTaskAssignees removes "task_assignees" edges to TaskAssignee entities.
+func (_u *TaskUpdate) RemoveTaskAssignees(v ...*TaskAssignee) *TaskUpdate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveTaskAssigneeIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -798,6 +835,51 @@ func (_u *TaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.TaskAssigneesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.TaskAssigneesTable,
+			Columns: []string{task.TaskAssigneesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskassignee.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedTaskAssigneesIDs(); len(nodes) > 0 && !_u.mutation.TaskAssigneesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.TaskAssigneesTable,
+			Columns: []string{task.TaskAssigneesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskassignee.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TaskAssigneesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.TaskAssigneesTable,
+			Columns: []string{task.TaskAssigneesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskassignee.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{task.Label}
@@ -1126,6 +1208,21 @@ func (_u *TaskUpdateOne) AddTaskTags(v ...*TaskTag) *TaskUpdateOne {
 	return _u.AddTaskTagIDs(ids...)
 }
 
+// AddTaskAssigneeIDs adds the "task_assignees" edge to the TaskAssignee entity by IDs.
+func (_u *TaskUpdateOne) AddTaskAssigneeIDs(ids ...int) *TaskUpdateOne {
+	_u.mutation.AddTaskAssigneeIDs(ids...)
+	return _u
+}
+
+// AddTaskAssignees adds the "task_assignees" edges to the TaskAssignee entity.
+func (_u *TaskUpdateOne) AddTaskAssignees(v ...*TaskAssignee) *TaskUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddTaskAssigneeIDs(ids...)
+}
+
 // Mutation returns the TaskMutation object of the builder.
 func (_u *TaskUpdateOne) Mutation() *TaskMutation {
 	return _u.mutation
@@ -1216,6 +1313,27 @@ func (_u *TaskUpdateOne) RemoveTaskTags(v ...*TaskTag) *TaskUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveTaskTagIDs(ids...)
+}
+
+// ClearTaskAssignees clears all "task_assignees" edges to the TaskAssignee entity.
+func (_u *TaskUpdateOne) ClearTaskAssignees() *TaskUpdateOne {
+	_u.mutation.ClearTaskAssignees()
+	return _u
+}
+
+// RemoveTaskAssigneeIDs removes the "task_assignees" edge to TaskAssignee entities by IDs.
+func (_u *TaskUpdateOne) RemoveTaskAssigneeIDs(ids ...int) *TaskUpdateOne {
+	_u.mutation.RemoveTaskAssigneeIDs(ids...)
+	return _u
+}
+
+// RemoveTaskAssignees removes "task_assignees" edges to TaskAssignee entities.
+func (_u *TaskUpdateOne) RemoveTaskAssignees(v ...*TaskAssignee) *TaskUpdateOne {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveTaskAssigneeIDs(ids...)
 }
 
 // Where appends a list predicates to the TaskUpdate builder.
@@ -1604,6 +1722,51 @@ func (_u *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(tasktag.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TaskAssigneesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.TaskAssigneesTable,
+			Columns: []string{task.TaskAssigneesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskassignee.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedTaskAssigneesIDs(); len(nodes) > 0 && !_u.mutation.TaskAssigneesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.TaskAssigneesTable,
+			Columns: []string{task.TaskAssigneesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskassignee.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TaskAssigneesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   task.TaskAssigneesTable,
+			Columns: []string{task.TaskAssigneesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(taskassignee.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

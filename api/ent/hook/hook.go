@@ -140,6 +140,18 @@ func (f TaskFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error)
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaskMutation", m)
 }
 
+// The TaskAssigneeFunc type is an adapter to allow the use of ordinary
+// function as TaskAssignee mutator.
+type TaskAssigneeFunc func(context.Context, *ent.TaskAssigneeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f TaskAssigneeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.TaskAssigneeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.TaskAssigneeMutation", m)
+}
+
 // The TaskAttachmentFunc type is an adapter to allow the use of ordinary
 // function as TaskAttachment mutator.
 type TaskAttachmentFunc func(context.Context, *ent.TaskAttachmentMutation) (ent.Value, error)

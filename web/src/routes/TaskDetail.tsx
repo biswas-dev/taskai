@@ -4,8 +4,9 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Button from '../components/ui/Button'
 import SearchSelect from '../components/ui/SearchSelect'
+import MultiSelectDropdown from '../components/ui/MultiSelectDropdown'
 import ImagePickerModal from '../components/ImagePickerModal'
-import { apiClient, Task, type UpdateTaskRequest, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment, type GitHubPushTaskResponse } from '../lib/api'
+import { apiClient, Task, type UpdateTaskRequest, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment, type GitHubPushTaskResponse, type Tag } from '../lib/api'
 
 interface TaskDetailProps {
   isModal?: boolean
@@ -31,6 +32,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [swimLanes, setSwimLanes] = useState<SwimLane[]>([])
   const [members, setMembers] = useState<ProjectMember[]>([])
+  const [projectTags, setProjectTags] = useState<Tag[]>([])
 
   // Attachments
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -60,6 +62,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
     loadSprints()
     loadSwimLanes()
     loadMembers()
+    loadProjectTags()
   }, [projectId, taskNumber]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -128,6 +131,30 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
 
   const loadMembers = async () => {
     try { setMembers(await apiClient.getProjectMembers(Number(projectId))) } catch { /* ignore */ }
+  }
+
+  const loadProjectTags = async () => {
+    try { setProjectTags(await apiClient.getTags(Number(projectId))) } catch { /* ignore */ }
+  }
+
+  const saveTagIds = async (tagIds: number[]) => {
+    if (!task?.id) return
+    try {
+      await apiClient.updateTask(task.id, { tag_ids: tagIds })
+      await loadTask()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update tags')
+    }
+  }
+
+  const saveAssigneeIds = async (userIds: number[]) => {
+    if (!task?.id) return
+    try {
+      await apiClient.updateTask(task.id, { assignee_ids: userIds })
+      await loadTask()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update assignees')
+    }
   }
 
   const loadAttachments = async (id?: number) => {
@@ -805,30 +832,20 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                 />
               </SidebarField>
 
-              {/* Assignee */}
-              <SidebarField label="Assignee">
-                {members.length > 0 ? (
-                  <SearchSelect
-                    variant="inline"
-                    value={task.assignee_id?.toString() || ''}
-                    onChange={(v) => saveField('assignee_id', v)}
-                    options={[
-                      { value: '', label: 'Unassigned' },
-                      ...members.map(m => ({ value: String(m.user_id || m.id), label: m.user_name || m.email || `User ${m.user_id || m.id}`, description: m.email || undefined })),
-                    ]}
-                  />
-                ) : (
-                  <div className="flex items-center gap-2 px-3 py-1.5">
-                    <div className="w-5 h-5 rounded-full bg-primary-500/10 flex items-center justify-center flex-shrink-0">
-                      <svg className="w-3 h-3 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                    </div>
-                    <span className="text-sm text-dark-text-primary">
-                      {task.assignee_name || (task.assignee_id ? `User ${task.assignee_id}` : 'Unassigned')}
-                    </span>
-                  </div>
-                )}
+              {/* Assignees (multi-select) */}
+              <SidebarField label="Assignees">
+                <MultiSelectDropdown
+                  values={(task.assignees ?? []).map((a) => String(a.user_id))}
+                  onChange={(vals) => saveAssigneeIds(vals.map(Number))}
+                  options={members.map((m) => ({
+                    value: String(m.user_id || m.id),
+                    label: m.user_name || m.email || `User ${m.user_id || m.id}`,
+                    description: m.email || undefined,
+                  }))}
+                  title="Select assignees"
+                  placeholder="Unassigned"
+                  filterPlaceholder="Filter members…"
+                />
               </SidebarField>
 
               {/* Due Date */}
@@ -900,20 +917,16 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
               </SidebarField>
 
               {/* Tags */}
-              {task.tags && task.tags.length > 0 && (
+              {projectTags.length > 0 && (
                 <SidebarField label="Tags">
-                  <div className="flex flex-wrap gap-1.5 px-3 py-1.5">
-                    {task.tags.map((tag) => (
-                      <span
-                        key={tag.id}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-md border border-dark-border-subtle"
-                        style={{ backgroundColor: tag.color + '20', color: tag.color }}
-                      >
-                        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
-                        {tag.name}
-                      </span>
-                    ))}
-                  </div>
+                  <MultiSelectDropdown
+                    values={(task.tags ?? []).map((t) => String(t.id))}
+                    onChange={(vals) => saveTagIds(vals.map(Number))}
+                    options={projectTags.map((t) => ({ value: String(t.id), label: t.name, color: t.color }))}
+                    title="Select tags"
+                    placeholder="No tags"
+                    filterPlaceholder="Filter tags…"
+                  />
                 </SidebarField>
               )}
             </div>

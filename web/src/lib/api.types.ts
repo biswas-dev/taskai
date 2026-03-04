@@ -1212,6 +1212,11 @@ export interface components {
             assignee_id?: number | null;
             /** @example Anshuman Biswas */
             assignee_name?: string | null;
+            assignees?: {
+                /** Format: int64 */
+                user_id?: number;
+                user_name?: string;
+            }[];
             /** Format: float */
             estimated_hours?: number | null;
             /** Format: float */

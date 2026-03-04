@@ -16,6 +16,7 @@ import (
 	"taskai/ent/sprint"
 	"taskai/ent/tag"
 	"taskai/ent/task"
+	"taskai/ent/taskassignee"
 	"taskai/ent/taskattachment"
 	"taskai/ent/taskcomment"
 	"taskai/ent/team"
@@ -45,6 +46,7 @@ type UserQuery struct {
 	withProjectMemberships        *ProjectMemberQuery
 	withProjectMembershipsGranted *ProjectMemberQuery
 	withTasksAssigned             *TaskQuery
+	withTaskAssignees             *TaskAssigneeQuery
 	withSprints                   *SprintQuery
 	withTags                      *TagQuery
 	withAPIKeys                   *APIKeyQuery
@@ -219,6 +221,28 @@ func (_q *UserQuery) QueryTasksAssigned() *TaskQuery {
 			sqlgraph.From(user.Table, user.FieldID, selector),
 			sqlgraph.To(task.Table, task.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, user.TasksAssignedTable, user.TasksAssignedColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryTaskAssignees chains the current query on the "task_assignees" edge.
+func (_q *UserQuery) QueryTaskAssignees() *TaskAssigneeQuery {
+	query := (&TaskAssigneeClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(taskassignee.Table, taskassignee.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TaskAssigneesTable, user.TaskAssigneesColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -710,6 +734,7 @@ func (_q *UserQuery) Clone() *UserQuery {
 		withProjectMemberships:        _q.withProjectMemberships.Clone(),
 		withProjectMembershipsGranted: _q.withProjectMembershipsGranted.Clone(),
 		withTasksAssigned:             _q.withTasksAssigned.Clone(),
+		withTaskAssignees:             _q.withTaskAssignees.Clone(),
 		withSprints:                   _q.withSprints.Clone(),
 		withTags:                      _q.withTags.Clone(),
 		withAPIKeys:                   _q.withAPIKeys.Clone(),
@@ -792,6 +817,17 @@ func (_q *UserQuery) WithTasksAssigned(opts ...func(*TaskQuery)) *UserQuery {
 		opt(query)
 	}
 	_q.withTasksAssigned = query
+	return _q
+}
+
+// WithTaskAssignees tells the query-builder to eager-load the nodes that are connected to
+// the "task_assignees" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithTaskAssignees(opts ...func(*TaskAssigneeQuery)) *UserQuery {
+	query := (&TaskAssigneeClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withTaskAssignees = query
 	return _q
 }
 
@@ -1016,13 +1052,14 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [19]bool{
+		loadedTypes = [20]bool{
 			_q.withOwnedProjects != nil,
 			_q.withOwnedTeams != nil,
 			_q.withTeamMemberships != nil,
 			_q.withProjectMemberships != nil,
 			_q.withProjectMembershipsGranted != nil,
 			_q.withTasksAssigned != nil,
+			_q.withTaskAssignees != nil,
 			_q.withSprints != nil,
 			_q.withTags != nil,
 			_q.withAPIKeys != nil,
@@ -1097,6 +1134,13 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := _q.loadTasksAssigned(ctx, query, nodes,
 			func(n *User) { n.Edges.TasksAssigned = []*Task{} },
 			func(n *User, e *Task) { n.Edges.TasksAssigned = append(n.Edges.TasksAssigned, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withTaskAssignees; query != nil {
+		if err := _q.loadTaskAssignees(ctx, query, nodes,
+			func(n *User) { n.Edges.TaskAssignees = []*TaskAssignee{} },
+			func(n *User, e *TaskAssignee) { n.Edges.TaskAssignees = append(n.Edges.TaskAssignees, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -1376,6 +1420,36 @@ func (_q *UserQuery) loadTasksAssigned(ctx context.Context, query *TaskQuery, no
 		node, ok := nodeids[*fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "assignee_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadTaskAssignees(ctx context.Context, query *TaskAssigneeQuery, nodes []*User, init func(*User), assign func(*User, *TaskAssignee)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(taskassignee.FieldUserID)
+	}
+	query.Where(predicate.TaskAssignee(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.TaskAssigneesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
 		}
 		assign(node, n)
 	}

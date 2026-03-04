@@ -71,9 +71,11 @@ type TaskEdges struct {
 	Attachments []*TaskAttachment `json:"attachments,omitempty"`
 	// TaskTags holds the value of the task_tags edge.
 	TaskTags []*TaskTag `json:"task_tags,omitempty"`
+	// TaskAssignees holds the value of the task_assignees edge.
+	TaskAssignees []*TaskAssignee `json:"task_assignees,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [7]bool
+	loadedTypes [8]bool
 }
 
 // ProjectOrErr returns the Project value or an error if the edge
@@ -145,6 +147,15 @@ func (e TaskEdges) TaskTagsOrErr() ([]*TaskTag, error) {
 		return e.TaskTags, nil
 	}
 	return nil, &NotLoadedError{edge: "task_tags"}
+}
+
+// TaskAssigneesOrErr returns the TaskAssignees value or an error if the edge
+// was not loaded in eager-loading.
+func (e TaskEdges) TaskAssigneesOrErr() ([]*TaskAssignee, error) {
+	if e.loadedTypes[7] {
+		return e.TaskAssignees, nil
+	}
+	return nil, &NotLoadedError{edge: "task_assignees"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -319,6 +330,11 @@ func (_m *Task) QueryAttachments() *TaskAttachmentQuery {
 // QueryTaskTags queries the "task_tags" edge of the Task entity.
 func (_m *Task) QueryTaskTags() *TaskTagQuery {
 	return NewTaskClient(_m.config).QueryTaskTags(_m)
+}
+
+// QueryTaskAssignees queries the "task_assignees" edge of the Task entity.
+func (_m *Task) QueryTaskAssignees() *TaskAssigneeQuery {
+	return NewTaskClient(_m.config).QueryTaskAssignees(_m)
 }
 
 // Update returns a builder for updating this Task.

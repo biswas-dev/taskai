@@ -34,6 +34,8 @@ type Tx struct {
 	Tag *TagClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
+	// TaskAssignee is the client for interacting with the TaskAssignee builders.
+	TaskAssignee *TaskAssigneeClient
 	// TaskAttachment is the client for interacting with the TaskAttachment builders.
 	TaskAttachment *TaskAttachmentClient
 	// TaskComment is the client for interacting with the TaskComment builders.
@@ -198,6 +200,7 @@ func (tx *Tx) init() {
 	tx.SwimLane = NewSwimLaneClient(tx.config)
 	tx.Tag = NewTagClient(tx.config)
 	tx.Task = NewTaskClient(tx.config)
+	tx.TaskAssignee = NewTaskAssigneeClient(tx.config)
 	tx.TaskAttachment = NewTaskAttachmentClient(tx.config)
 	tx.TaskComment = NewTaskCommentClient(tx.config)
 	tx.TaskTag = NewTaskTagClient(tx.config)

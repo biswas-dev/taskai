@@ -386,6 +386,7 @@ export interface UpdateTaskRequest {
   sprint_id?: number | null
   priority?: 'low' | 'medium' | 'high' | 'urgent'
   assignee_id?: number | null
+  assignee_ids?: number[]
   estimated_hours?: number | null
   actual_hours?: number | null
   tag_ids?: number[]

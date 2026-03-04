@@ -22,6 +22,7 @@ import (
 	"taskai/ent/swimlane"
 	"taskai/ent/tag"
 	"taskai/ent/task"
+	"taskai/ent/taskassignee"
 	"taskai/ent/taskattachment"
 	"taskai/ent/taskcomment"
 	"taskai/ent/tasktag"
@@ -67,6 +68,8 @@ type Client struct {
 	Tag *TagClient
 	// Task is the client for interacting with the Task builders.
 	Task *TaskClient
+	// TaskAssignee is the client for interacting with the TaskAssignee builders.
+	TaskAssignee *TaskAssigneeClient
 	// TaskAttachment is the client for interacting with the TaskAttachment builders.
 	TaskAttachment *TaskAttachmentClient
 	// TaskComment is the client for interacting with the TaskComment builders.
@@ -111,6 +114,7 @@ func (c *Client) init() {
 	c.SwimLane = NewSwimLaneClient(c.config)
 	c.Tag = NewTagClient(c.config)
 	c.Task = NewTaskClient(c.config)
+	c.TaskAssignee = NewTaskAssigneeClient(c.config)
 	c.TaskAttachment = NewTaskAttachmentClient(c.config)
 	c.TaskComment = NewTaskCommentClient(c.config)
 	c.TaskTag = NewTaskTagClient(c.config)
@@ -225,6 +229,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SwimLane:             NewSwimLaneClient(cfg),
 		Tag:                  NewTagClient(cfg),
 		Task:                 NewTaskClient(cfg),
+		TaskAssignee:         NewTaskAssigneeClient(cfg),
 		TaskAttachment:       NewTaskAttachmentClient(cfg),
 		TaskComment:          NewTaskCommentClient(cfg),
 		TaskTag:              NewTaskTagClient(cfg),
@@ -266,6 +271,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SwimLane:             NewSwimLaneClient(cfg),
 		Tag:                  NewTagClient(cfg),
 		Task:                 NewTaskClient(cfg),
+		TaskAssignee:         NewTaskAssigneeClient(cfg),
 		TaskAttachment:       NewTaskAttachmentClient(cfg),
 		TaskComment:          NewTaskCommentClient(cfg),
 		TaskTag:              NewTaskTagClient(cfg),
@@ -308,8 +314,9 @@ func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.CloudinaryCredential, c.EmailProvider, c.Invite, c.PageVersion,
 		c.Project, c.ProjectMember, c.Sprint, c.SwimLane, c.Tag, c.Task,
-		c.TaskAttachment, c.TaskComment, c.TaskTag, c.Team, c.TeamInvitation,
-		c.TeamMember, c.User, c.UserActivity, c.WikiBlock, c.WikiPage, c.YjsUpdate,
+		c.TaskAssignee, c.TaskAttachment, c.TaskComment, c.TaskTag, c.Team,
+		c.TeamInvitation, c.TeamMember, c.User, c.UserActivity, c.WikiBlock,
+		c.WikiPage, c.YjsUpdate,
 	} {
 		n.Use(hooks...)
 	}
@@ -321,8 +328,9 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.CloudinaryCredential, c.EmailProvider, c.Invite, c.PageVersion,
 		c.Project, c.ProjectMember, c.Sprint, c.SwimLane, c.Tag, c.Task,
-		c.TaskAttachment, c.TaskComment, c.TaskTag, c.Team, c.TeamInvitation,
-		c.TeamMember, c.User, c.UserActivity, c.WikiBlock, c.WikiPage, c.YjsUpdate,
+		c.TaskAssignee, c.TaskAttachment, c.TaskComment, c.TaskTag, c.Team,
+		c.TeamInvitation, c.TeamMember, c.User, c.UserActivity, c.WikiBlock,
+		c.WikiPage, c.YjsUpdate,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -353,6 +361,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Tag.mutate(ctx, m)
 	case *TaskMutation:
 		return c.Task.mutate(ctx, m)
+	case *TaskAssigneeMutation:
+		return c.TaskAssignee.mutate(ctx, m)
 	case *TaskAttachmentMutation:
 		return c.TaskAttachment.mutate(ctx, m)
 	case *TaskCommentMutation:
@@ -2298,6 +2308,22 @@ func (c *TaskClient) QueryTaskTags(_m *Task) *TaskTagQuery {
 	return query
 }
 
+// QueryTaskAssignees queries the task_assignees edge of a Task.
+func (c *TaskClient) QueryTaskAssignees(_m *Task) *TaskAssigneeQuery {
+	query := (&TaskAssigneeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(task.Table, task.FieldID, id),
+			sqlgraph.To(taskassignee.Table, taskassignee.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, task.TaskAssigneesTable, task.TaskAssigneesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *TaskClient) Hooks() []Hook {
 	return c.hooks.Task
@@ -2320,6 +2346,171 @@ func (c *TaskClient) mutate(ctx context.Context, m *TaskMutation) (Value, error)
 		return (&TaskDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown Task mutation op: %q", m.Op())
+	}
+}
+
+// TaskAssigneeClient is a client for the TaskAssignee schema.
+type TaskAssigneeClient struct {
+	config
+}
+
+// NewTaskAssigneeClient returns a client for the TaskAssignee from the given config.
+func NewTaskAssigneeClient(c config) *TaskAssigneeClient {
+	return &TaskAssigneeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `taskassignee.Hooks(f(g(h())))`.
+func (c *TaskAssigneeClient) Use(hooks ...Hook) {
+	c.hooks.TaskAssignee = append(c.hooks.TaskAssignee, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `taskassignee.Intercept(f(g(h())))`.
+func (c *TaskAssigneeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.TaskAssignee = append(c.inters.TaskAssignee, interceptors...)
+}
+
+// Create returns a builder for creating a TaskAssignee entity.
+func (c *TaskAssigneeClient) Create() *TaskAssigneeCreate {
+	mutation := newTaskAssigneeMutation(c.config, OpCreate)
+	return &TaskAssigneeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of TaskAssignee entities.
+func (c *TaskAssigneeClient) CreateBulk(builders ...*TaskAssigneeCreate) *TaskAssigneeCreateBulk {
+	return &TaskAssigneeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *TaskAssigneeClient) MapCreateBulk(slice any, setFunc func(*TaskAssigneeCreate, int)) *TaskAssigneeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &TaskAssigneeCreateBulk{err: fmt.Errorf("calling to TaskAssigneeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*TaskAssigneeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &TaskAssigneeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for TaskAssignee.
+func (c *TaskAssigneeClient) Update() *TaskAssigneeUpdate {
+	mutation := newTaskAssigneeMutation(c.config, OpUpdate)
+	return &TaskAssigneeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *TaskAssigneeClient) UpdateOne(_m *TaskAssignee) *TaskAssigneeUpdateOne {
+	mutation := newTaskAssigneeMutation(c.config, OpUpdateOne, withTaskAssignee(_m))
+	return &TaskAssigneeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *TaskAssigneeClient) UpdateOneID(id int) *TaskAssigneeUpdateOne {
+	mutation := newTaskAssigneeMutation(c.config, OpUpdateOne, withTaskAssigneeID(id))
+	return &TaskAssigneeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for TaskAssignee.
+func (c *TaskAssigneeClient) Delete() *TaskAssigneeDelete {
+	mutation := newTaskAssigneeMutation(c.config, OpDelete)
+	return &TaskAssigneeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *TaskAssigneeClient) DeleteOne(_m *TaskAssignee) *TaskAssigneeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *TaskAssigneeClient) DeleteOneID(id int) *TaskAssigneeDeleteOne {
+	builder := c.Delete().Where(taskassignee.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &TaskAssigneeDeleteOne{builder}
+}
+
+// Query returns a query builder for TaskAssignee.
+func (c *TaskAssigneeClient) Query() *TaskAssigneeQuery {
+	return &TaskAssigneeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeTaskAssignee},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a TaskAssignee entity by its id.
+func (c *TaskAssigneeClient) Get(ctx context.Context, id int) (*TaskAssignee, error) {
+	return c.Query().Where(taskassignee.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *TaskAssigneeClient) GetX(ctx context.Context, id int) *TaskAssignee {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTask queries the task edge of a TaskAssignee.
+func (c *TaskAssigneeClient) QueryTask(_m *TaskAssignee) *TaskQuery {
+	query := (&TaskClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(taskassignee.Table, taskassignee.FieldID, id),
+			sqlgraph.To(task.Table, task.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, taskassignee.TaskTable, taskassignee.TaskColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a TaskAssignee.
+func (c *TaskAssigneeClient) QueryUser(_m *TaskAssignee) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(taskassignee.Table, taskassignee.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, taskassignee.UserTable, taskassignee.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *TaskAssigneeClient) Hooks() []Hook {
+	return c.hooks.TaskAssignee
+}
+
+// Interceptors returns the client interceptors.
+func (c *TaskAssigneeClient) Interceptors() []Interceptor {
+	return c.inters.TaskAssignee
+}
+
+func (c *TaskAssigneeClient) mutate(ctx context.Context, m *TaskAssigneeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&TaskAssigneeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&TaskAssigneeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&TaskAssigneeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&TaskAssigneeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown TaskAssignee mutation op: %q", m.Op())
 	}
 }
 
@@ -3613,6 +3804,22 @@ func (c *UserClient) QueryTasksAssigned(_m *User) *TaskQuery {
 	return query
 }
 
+// QueryTaskAssignees queries the task_assignees edge of a User.
+func (c *UserClient) QueryTaskAssignees(_m *User) *TaskAssigneeQuery {
+	query := (&TaskAssigneeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(taskassignee.Table, taskassignee.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.TaskAssigneesTable, user.TaskAssigneesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QuerySprints queries the sprints edge of a User.
 func (c *UserClient) QuerySprints(_m *User) *SprintQuery {
 	query := (&SprintClient{config: c.config}).Query()
@@ -4526,14 +4733,14 @@ func (c *YjsUpdateClient) mutate(ctx context.Context, m *YjsUpdateMutation) (Val
 type (
 	hooks struct {
 		APIKey, CloudinaryCredential, EmailProvider, Invite, PageVersion, Project,
-		ProjectMember, Sprint, SwimLane, Tag, Task, TaskAttachment, TaskComment,
-		TaskTag, Team, TeamInvitation, TeamMember, User, UserActivity, WikiBlock,
-		WikiPage, YjsUpdate []ent.Hook
+		ProjectMember, Sprint, SwimLane, Tag, Task, TaskAssignee, TaskAttachment,
+		TaskComment, TaskTag, Team, TeamInvitation, TeamMember, User, UserActivity,
+		WikiBlock, WikiPage, YjsUpdate []ent.Hook
 	}
 	inters struct {
 		APIKey, CloudinaryCredential, EmailProvider, Invite, PageVersion, Project,
-		ProjectMember, Sprint, SwimLane, Tag, Task, TaskAttachment, TaskComment,
-		TaskTag, Team, TeamInvitation, TeamMember, User, UserActivity, WikiBlock,
-		WikiPage, YjsUpdate []ent.Interceptor
+		ProjectMember, Sprint, SwimLane, Tag, Task, TaskAssignee, TaskAttachment,
+		TaskComment, TaskTag, Team, TeamInvitation, TeamMember, User, UserActivity,
+		WikiBlock, WikiPage, YjsUpdate []ent.Interceptor
 	}
 )

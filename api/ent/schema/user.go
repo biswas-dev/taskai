@@ -43,6 +43,7 @@ func (User) Edges() []ent.Edge {
 		edge.To("project_memberships", ProjectMember.Type),
 		edge.To("project_memberships_granted", ProjectMember.Type),
 		edge.To("tasks_assigned", Task.Type),
+		edge.To("task_assignees", TaskAssignee.Type),
 		edge.To("sprints", Sprint.Type),
 		edge.To("tags", Tag.Type),
 		edge.To("api_keys", APIKey.Type),

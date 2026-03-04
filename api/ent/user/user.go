@@ -52,6 +52,8 @@ const (
 	EdgeProjectMembershipsGranted = "project_memberships_granted"
 	// EdgeTasksAssigned holds the string denoting the tasks_assigned edge name in mutations.
 	EdgeTasksAssigned = "tasks_assigned"
+	// EdgeTaskAssignees holds the string denoting the task_assignees edge name in mutations.
+	EdgeTaskAssignees = "task_assignees"
 	// EdgeSprints holds the string denoting the sprints edge name in mutations.
 	EdgeSprints = "sprints"
 	// EdgeTags holds the string denoting the tags edge name in mutations.
@@ -122,6 +124,13 @@ const (
 	TasksAssignedInverseTable = "tasks"
 	// TasksAssignedColumn is the table column denoting the tasks_assigned relation/edge.
 	TasksAssignedColumn = "assignee_id"
+	// TaskAssigneesTable is the table that holds the task_assignees relation/edge.
+	TaskAssigneesTable = "task_assignees"
+	// TaskAssigneesInverseTable is the table name for the TaskAssignee entity.
+	// It exists in this package in order to avoid circular dependency with the "taskassignee" package.
+	TaskAssigneesInverseTable = "task_assignees"
+	// TaskAssigneesColumn is the table column denoting the task_assignees relation/edge.
+	TaskAssigneesColumn = "user_id"
 	// SprintsTable is the table that holds the sprints relation/edge.
 	SprintsTable = "sprints"
 	// SprintsInverseTable is the table name for the Sprint entity.
@@ -419,6 +428,20 @@ func ByTasksAssigned(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByTaskAssigneesCount orders the results by task_assignees count.
+func ByTaskAssigneesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newTaskAssigneesStep(), opts...)
+	}
+}
+
+// ByTaskAssignees orders the results by task_assignees terms.
+func ByTaskAssignees(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTaskAssigneesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // BySprintsCount orders the results by sprints count.
 func BySprintsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -640,6 +663,13 @@ func newTasksAssignedStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(TasksAssignedInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, TasksAssignedTable, TasksAssignedColumn),
+	)
+}
+func newTaskAssigneesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TaskAssigneesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, TaskAssigneesTable, TaskAssigneesColumn),
 	)
 }
 func newSprintsStep() *sqlgraph.Step {

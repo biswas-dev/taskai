@@ -15,6 +15,7 @@ import (
 	"taskai/ent/swimlane"
 	"taskai/ent/tag"
 	"taskai/ent/task"
+	"taskai/ent/taskassignee"
 	"taskai/ent/taskattachment"
 	"taskai/ent/taskcomment"
 	"taskai/ent/tasktag"
@@ -267,6 +268,12 @@ func init() {
 	task.DefaultUpdatedAt = taskDescUpdatedAt.Default.(func() time.Time)
 	// task.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	task.UpdateDefaultUpdatedAt = taskDescUpdatedAt.UpdateDefault.(func() time.Time)
+	taskassigneeFields := schema.TaskAssignee{}.Fields()
+	_ = taskassigneeFields
+	// taskassigneeDescCreatedAt is the schema descriptor for created_at field.
+	taskassigneeDescCreatedAt := taskassigneeFields[2].Descriptor()
+	// taskassignee.DefaultCreatedAt holds the default value on creation for the created_at field.
+	taskassignee.DefaultCreatedAt = taskassigneeDescCreatedAt.Default.(func() time.Time)
 	taskattachmentFields := schema.TaskAttachment{}.Fields()
 	_ = taskattachmentFields
 	// taskattachmentDescFilename is the schema descriptor for filename field.

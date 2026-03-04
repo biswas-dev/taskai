@@ -63,6 +63,8 @@ type UserEdges struct {
 	ProjectMembershipsGranted []*ProjectMember `json:"project_memberships_granted,omitempty"`
 	// TasksAssigned holds the value of the tasks_assigned edge.
 	TasksAssigned []*Task `json:"tasks_assigned,omitempty"`
+	// TaskAssignees holds the value of the task_assignees edge.
+	TaskAssignees []*TaskAssignee `json:"task_assignees,omitempty"`
 	// Sprints holds the value of the sprints edge.
 	Sprints []*Sprint `json:"sprints,omitempty"`
 	// Tags holds the value of the tags edge.
@@ -91,7 +93,7 @@ type UserEdges struct {
 	YjsUpdates []*YjsUpdate `json:"yjs_updates,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [19]bool
+	loadedTypes [20]bool
 }
 
 // OwnedProjectsOrErr returns the OwnedProjects value or an error if the edge
@@ -148,10 +150,19 @@ func (e UserEdges) TasksAssignedOrErr() ([]*Task, error) {
 	return nil, &NotLoadedError{edge: "tasks_assigned"}
 }
 
+// TaskAssigneesOrErr returns the TaskAssignees value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) TaskAssigneesOrErr() ([]*TaskAssignee, error) {
+	if e.loadedTypes[6] {
+		return e.TaskAssignees, nil
+	}
+	return nil, &NotLoadedError{edge: "task_assignees"}
+}
+
 // SprintsOrErr returns the Sprints value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) SprintsOrErr() ([]*Sprint, error) {
-	if e.loadedTypes[6] {
+	if e.loadedTypes[7] {
 		return e.Sprints, nil
 	}
 	return nil, &NotLoadedError{edge: "sprints"}
@@ -160,7 +171,7 @@ func (e UserEdges) SprintsOrErr() ([]*Sprint, error) {
 // TagsOrErr returns the Tags value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) TagsOrErr() ([]*Tag, error) {
-	if e.loadedTypes[7] {
+	if e.loadedTypes[8] {
 		return e.Tags, nil
 	}
 	return nil, &NotLoadedError{edge: "tags"}
@@ -169,7 +180,7 @@ func (e UserEdges) TagsOrErr() ([]*Tag, error) {
 // APIKeysOrErr returns the APIKeys value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) APIKeysOrErr() ([]*APIKey, error) {
-	if e.loadedTypes[8] {
+	if e.loadedTypes[9] {
 		return e.APIKeys, nil
 	}
 	return nil, &NotLoadedError{edge: "api_keys"}
@@ -178,7 +189,7 @@ func (e UserEdges) APIKeysOrErr() ([]*APIKey, error) {
 // UserActivitiesOrErr returns the UserActivities value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserActivitiesOrErr() ([]*UserActivity, error) {
-	if e.loadedTypes[9] {
+	if e.loadedTypes[10] {
 		return e.UserActivities, nil
 	}
 	return nil, &NotLoadedError{edge: "user_activities"}
@@ -187,7 +198,7 @@ func (e UserEdges) UserActivitiesOrErr() ([]*UserActivity, error) {
 // TaskCommentsOrErr returns the TaskComments value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) TaskCommentsOrErr() ([]*TaskComment, error) {
-	if e.loadedTypes[10] {
+	if e.loadedTypes[11] {
 		return e.TaskComments, nil
 	}
 	return nil, &NotLoadedError{edge: "task_comments"}
@@ -196,7 +207,7 @@ func (e UserEdges) TaskCommentsOrErr() ([]*TaskComment, error) {
 // InvitesSentOrErr returns the InvitesSent value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) InvitesSentOrErr() ([]*Invite, error) {
-	if e.loadedTypes[11] {
+	if e.loadedTypes[12] {
 		return e.InvitesSent, nil
 	}
 	return nil, &NotLoadedError{edge: "invites_sent"}
@@ -205,7 +216,7 @@ func (e UserEdges) InvitesSentOrErr() ([]*Invite, error) {
 // InvitesReceivedOrErr returns the InvitesReceived value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) InvitesReceivedOrErr() ([]*Invite, error) {
-	if e.loadedTypes[12] {
+	if e.loadedTypes[13] {
 		return e.InvitesReceived, nil
 	}
 	return nil, &NotLoadedError{edge: "invites_received"}
@@ -214,7 +225,7 @@ func (e UserEdges) InvitesReceivedOrErr() ([]*Invite, error) {
 // TeamInvitationsSentOrErr returns the TeamInvitationsSent value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) TeamInvitationsSentOrErr() ([]*TeamInvitation, error) {
-	if e.loadedTypes[13] {
+	if e.loadedTypes[14] {
 		return e.TeamInvitationsSent, nil
 	}
 	return nil, &NotLoadedError{edge: "team_invitations_sent"}
@@ -223,7 +234,7 @@ func (e UserEdges) TeamInvitationsSentOrErr() ([]*TeamInvitation, error) {
 // TeamInvitationsReceivedOrErr returns the TeamInvitationsReceived value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) TeamInvitationsReceivedOrErr() ([]*TeamInvitation, error) {
-	if e.loadedTypes[14] {
+	if e.loadedTypes[15] {
 		return e.TeamInvitationsReceived, nil
 	}
 	return nil, &NotLoadedError{edge: "team_invitations_received"}
@@ -232,7 +243,7 @@ func (e UserEdges) TeamInvitationsReceivedOrErr() ([]*TeamInvitation, error) {
 // CloudinaryCredentialsOrErr returns the CloudinaryCredentials value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) CloudinaryCredentialsOrErr() ([]*CloudinaryCredential, error) {
-	if e.loadedTypes[15] {
+	if e.loadedTypes[16] {
 		return e.CloudinaryCredentials, nil
 	}
 	return nil, &NotLoadedError{edge: "cloudinary_credentials"}
@@ -241,7 +252,7 @@ func (e UserEdges) CloudinaryCredentialsOrErr() ([]*CloudinaryCredential, error)
 // TaskAttachmentsOrErr returns the TaskAttachments value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) TaskAttachmentsOrErr() ([]*TaskAttachment, error) {
-	if e.loadedTypes[16] {
+	if e.loadedTypes[17] {
 		return e.TaskAttachments, nil
 	}
 	return nil, &NotLoadedError{edge: "task_attachments"}
@@ -250,7 +261,7 @@ func (e UserEdges) TaskAttachmentsOrErr() ([]*TaskAttachment, error) {
 // WikiPagesCreatedOrErr returns the WikiPagesCreated value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) WikiPagesCreatedOrErr() ([]*WikiPage, error) {
-	if e.loadedTypes[17] {
+	if e.loadedTypes[18] {
 		return e.WikiPagesCreated, nil
 	}
 	return nil, &NotLoadedError{edge: "wiki_pages_created"}
@@ -259,7 +270,7 @@ func (e UserEdges) WikiPagesCreatedOrErr() ([]*WikiPage, error) {
 // YjsUpdatesOrErr returns the YjsUpdates value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) YjsUpdatesOrErr() ([]*YjsUpdate, error) {
-	if e.loadedTypes[18] {
+	if e.loadedTypes[19] {
 		return e.YjsUpdates, nil
 	}
 	return nil, &NotLoadedError{edge: "yjs_updates"}
@@ -424,6 +435,11 @@ func (_m *User) QueryProjectMembershipsGranted() *ProjectMemberQuery {
 // QueryTasksAssigned queries the "tasks_assigned" edge of the User entity.
 func (_m *User) QueryTasksAssigned() *TaskQuery {
 	return NewUserClient(_m.config).QueryTasksAssigned(_m)
+}
+
+// QueryTaskAssignees queries the "task_assignees" edge of the User entity.
+func (_m *User) QueryTaskAssignees() *TaskAssigneeQuery {
+	return NewUserClient(_m.config).QueryTaskAssignees(_m)
 }
 
 // QuerySprints queries the "sprints" edge of the User entity.
