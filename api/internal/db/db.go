@@ -312,6 +312,23 @@ func (db *DB) HealthCheck(ctx context.Context) error {
 	return db.PingContext(ctx)
 }
 
+// IsUserDeleted returns true when the user does not exist or has been soft-deleted.
+// Used by JWTAuth middleware to invalidate tokens for deleted accounts.
+func (db *DB) IsUserDeleted(ctx context.Context, userID int64) (bool, error) {
+	var deletedAt *time.Time
+	err := db.QueryRowContext(ctx,
+		db.Rebind(`SELECT deleted_at FROM users WHERE id = ? LIMIT 1`),
+		userID,
+	).Scan(&deletedAt)
+	if err == sql.ErrNoRows {
+		return false, nil // user doesn't exist — let the handler return 404
+	}
+	if err != nil {
+		return false, err
+	}
+	return deletedAt != nil, nil
+}
+
 // GetMigrationVersion returns the count of applied migrations
 func (db *DB) GetMigrationVersion(ctx context.Context) (int, error) {
 	var count int

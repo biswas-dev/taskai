@@ -15,7 +15,6 @@ import (
 
 	"taskai/ent"
 	"taskai/ent/invite"
-	"taskai/ent/user"
 )
 
 // OAuthStore implements gologin.UserStore using the Ent ORM and raw SQL for
@@ -35,7 +34,10 @@ func NewOAuthStore(db *DB) *OAuthStore {
 func (s *OAuthStore) FindUserByProviderID(ctx context.Context, provider, providerUserID string) (*gologin.User, error) {
 	var userID int64
 	err := s.db.QueryRowContext(ctx,
-		s.db.Rebind(`SELECT user_id FROM oauth_providers WHERE provider = ? AND provider_user_id = ? LIMIT 1`),
+		s.db.Rebind(`SELECT op.user_id FROM oauth_providers op
+			JOIN users u ON u.id = op.user_id
+			WHERE op.provider = ? AND op.provider_user_id = ?
+			AND u.deleted_at IS NULL LIMIT 1`),
 		provider, providerUserID,
 	).Scan(&userID)
 	if err == sql.ErrNoRows {
@@ -58,16 +60,20 @@ func (s *OAuthStore) FindUserByProviderID(ctx context.Context, provider, provide
 // FindUserByEmail looks up a user by email address.
 // Returns (nil, nil) if no match is found.
 func (s *OAuthStore) FindUserByEmail(ctx context.Context, email string) (*gologin.User, error) {
-	entUser, err := s.db.Client.User.Query().
-		Where(user.Email(email)).
-		Only(ctx)
+	// Use raw SQL to exclude soft-deleted users (deleted_at not in ent schema)
+	var userID int64
+	var userEmail string
+	err := s.db.QueryRowContext(ctx,
+		s.db.Rebind(`SELECT id, email FROM users WHERE email = ? AND deleted_at IS NULL LIMIT 1`),
+		email,
+	).Scan(&userID, &userEmail)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, nil
-		}
 		return nil, fmt.Errorf("oauth_store: FindUserByEmail: %w", err)
 	}
-	return &gologin.User{ID: entUser.ID, Email: entUser.Email}, nil
+	return &gologin.User{ID: userID, Email: userEmail}, nil
 }
 
 // GetUserAuthProvider returns the auth_provider column value for the user.

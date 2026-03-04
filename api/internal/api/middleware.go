@@ -61,6 +61,12 @@ func (s *Server) JWTAuth(next http.Handler) http.Handler {
 			userID = claims.UserID
 			email = claims.Email
 
+			// Reject tokens for soft-deleted users
+			if deleted, _ := s.db.IsUserDeleted(r.Context(), userID); deleted {
+				respondError(w, http.StatusUnauthorized, "invalid or expired token", "unauthorized")
+				return
+			}
+
 		case "ApiKey":
 			// API key authentication
 			userID, email, err = s.db.GetUserByAPIKey(r.Context(), credential)
