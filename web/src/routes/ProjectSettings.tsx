@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../state/AuthContext'
 import Card from '../components/ui/Card'
@@ -6,7 +6,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
-import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubPreviewResponse, type GitHubUserMatch, type GitHubRepo, type GitHubStatusMatch, type GitHubProgressEvent } from '../lib/api'
+import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubPreviewResponse, type GitHubUserMatch, type GitHubRepo, type GitHubStatusMatch, type GitHubProgressEvent, type GitHubMilestone, type GitHubLabel } from '../lib/api'
 
 interface ProjectMember {
   id: number
@@ -37,6 +37,217 @@ interface GitHubSettings {
   github_token_set: boolean
   github_login: string | null
 }
+
+// ── GitHub-style filter bar ───────────────────────────────────────────────────
+type FilterCategory = 'milestone' | 'assignee' | 'label' | 'state'
+
+interface GitHubFilterBarProps {
+  milestones: GitHubMilestone[]
+  assignees: GitHubUserMatch[]
+  labels: GitHubLabel[]
+  filterMilestone: number | undefined
+  filterAssignee: string
+  filterLabels: string[]
+  filterState: 'all' | 'open' | 'closed'
+  onChange: (patch: {
+    milestone?: number | undefined
+    assignee?: string
+    labels?: string[]
+    state?: 'all' | 'open' | 'closed'
+  }) => void
+}
+
+function GitHubFilterBar({
+  milestones, assignees, labels,
+  filterMilestone, filterAssignee, filterLabels, filterState,
+  onChange,
+}: GitHubFilterBarProps) {
+  const [open, setOpen] = useState(false)
+  const [category, setCategory] = useState<FilterCategory | null>(null)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false); setCategory(null); setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const CATEGORIES: { id: FilterCategory; label: string; icon: React.ReactNode }[] = [
+    {
+      id: 'milestone', label: 'Milestone',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3l9 9m0 0l9-9M12 12v9M3 3v6h6" /></svg>,
+    },
+    {
+      id: 'assignee', label: 'Assignee',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
+    },
+    {
+      id: 'label', label: 'Label',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" /></svg>,
+    },
+    {
+      id: 'state', label: 'State',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="9" strokeWidth={1.5} /><path strokeLinecap="round" strokeWidth={1.5} d="M12 8v4m0 4h.01" /></svg>,
+    },
+  ]
+
+  // Active filter chips
+  const chips: { key: FilterCategory; label: string }[] = []
+  if (filterMilestone) chips.push({ key: 'milestone', label: `milestone:"${milestones.find(m => m.number === filterMilestone)?.title ?? filterMilestone}"` })
+  if (filterAssignee) chips.push({ key: 'assignee', label: filterAssignee === 'none' ? 'no assignee' : `assignee:"${filterAssignee}"` })
+  if (filterLabels.length > 0) chips.push({ key: 'label', label: `label:"${filterLabels[0]}"` })
+  if (filterState !== 'all') chips.push({ key: 'state', label: `is:${filterState}` })
+
+  const removeChip = (key: FilterCategory) => {
+    if (key === 'milestone') onChange({ milestone: undefined })
+    if (key === 'assignee') onChange({ assignee: '' })
+    if (key === 'label') onChange({ labels: [] })
+    if (key === 'state') onChange({ state: 'all' })
+  }
+
+  const selectOption = (cat: FilterCategory, value: string) => {
+    if (cat === 'milestone') onChange({ milestone: value ? Number(value) : undefined })
+    if (cat === 'assignee') onChange({ assignee: value })
+    if (cat === 'label') onChange({ labels: value ? [value] : [] })
+    if (cat === 'state') onChange({ state: value as 'all' | 'open' | 'closed' })
+    setOpen(false); setCategory(null); setSearch('')
+  }
+
+  const q = search.toLowerCase()
+  let options: { value: string; label: string; sub?: string; color?: string }[] = []
+  if (category === 'milestone') {
+    options = milestones
+      .filter(m => !q || m.title.toLowerCase().includes(q))
+      .map(m => ({ value: String(m.number), label: m.title, sub: m.state === 'closed' ? 'closed' : undefined }))
+  } else if (category === 'assignee') {
+    const base = [{ value: 'none', label: 'No assignee' }]
+    const users = assignees
+      .filter(u => !q || u.login.toLowerCase().includes(q) || (u.name ?? '').toLowerCase().includes(q))
+      .map(u => ({ value: u.login, label: u.login, sub: u.name || undefined }))
+    options = [...base, ...users]
+  } else if (category === 'label') {
+    options = labels
+      .filter(l => !q || l.name.toLowerCase().includes(q))
+      .map(l => ({ value: l.name, label: l.name, color: l.color ? '#' + l.color : undefined }))
+  } else if (category === 'state') {
+    options = [
+      { value: 'open', label: 'Open issues' },
+      { value: 'closed', label: 'Closed issues' },
+    ]
+  }
+
+  const activeValue = (cat: FilterCategory) => {
+    if (cat === 'milestone') return filterMilestone ? milestones.find(m => m.number === filterMilestone)?.title : undefined
+    if (cat === 'assignee') return filterAssignee || undefined
+    if (cat === 'label') return filterLabels[0]
+    if (cat === 'state') return filterState !== 'all' ? filterState : undefined
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      {/* Bar */}
+      <button
+        type="button"
+        onClick={() => { setOpen(v => !v); setCategory(null); setSearch('') }}
+        className="w-full flex items-center gap-2 px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-left hover:border-[#484f58] transition-colors focus:outline-none focus:border-primary-500"
+      >
+        <svg className="w-4 h-4 text-[#8b949e] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <div className="flex flex-wrap gap-1.5 flex-1 min-h-[20px]">
+          {chips.map(c => (
+            <span key={c.key} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#1f6feb]/20 border border-[#1f6feb]/40 text-[#79c0ff] rounded text-xs font-mono whitespace-nowrap">
+              {c.label}
+              <span
+                role="button"
+                onClick={e => { e.stopPropagation(); removeChip(c.key) }}
+                className="ml-0.5 text-[#8b949e] hover:text-white cursor-pointer leading-none"
+              >×</span>
+            </span>
+          ))}
+          {chips.length === 0 && <span className="text-sm text-[#8b949e]">Filter issues to import…</span>}
+        </div>
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-[#161b22] border border-[#30363d] rounded-lg shadow-2xl z-50 overflow-hidden text-sm">
+          {!category ? (
+            <>
+              <div className="px-3 py-2 text-xs text-[#8b949e] font-semibold border-b border-[#30363d]">Filter by</div>
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => { setCategory(cat.id); setSearch('') }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-[#c9d1d9] hover:bg-[#1f6feb]/10 transition-colors"
+                >
+                  <span className="text-[#8b949e] w-4">{cat.icon}</span>
+                  <span className="flex-1 text-left">{cat.label}</span>
+                  {activeValue(cat.id) && (
+                    <span className="text-xs text-[#79c0ff] font-mono truncate max-w-[120px]">{activeValue(cat.id)}</span>
+                  )}
+                  <svg className="w-3 h-3 text-[#8b949e]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                </button>
+              ))}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-[#30363d]">
+                <button type="button" onClick={() => { setCategory(null); setSearch('') }} className="text-[#8b949e] hover:text-[#c9d1d9] transition-colors">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <span className="text-xs text-[#8b949e] font-semibold uppercase tracking-wide">Filter by {category}</span>
+              </div>
+              {category !== 'state' && (
+                <div className="px-3 py-2 border-b border-[#30363d]">
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder={`Search ${category}s…`}
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="w-full text-sm bg-transparent text-[#c9d1d9] placeholder-[#8b949e] outline-none"
+                  />
+                </div>
+              )}
+              <div className="max-h-52 overflow-y-auto">
+                {options.length === 0 ? (
+                  <div className="px-3 py-3 text-[#8b949e]">No results</div>
+                ) : options.map(opt => {
+                  const isActive =
+                    (category === 'milestone' && filterMilestone === Number(opt.value)) ||
+                    (category === 'assignee' && filterAssignee === opt.value) ||
+                    (category === 'label' && filterLabels.includes(opt.value)) ||
+                    (category === 'state' && filterState === opt.value)
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => selectOption(category, opt.value)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#1f6feb]/10 transition-colors ${isActive ? 'text-[#79c0ff]' : 'text-[#c9d1d9]'}`}
+                    >
+                      <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 transition-colors ${isActive ? 'bg-[#1f6feb] border-[#1f6feb]' : 'border-[#484f58]'}`} />
+                      {opt.color && <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color.startsWith('#') ? opt.color : '#' + opt.color }} />}
+                      <span className="flex-1 text-left">{opt.label}</span>
+                      {opt.sub && <span className="text-xs text-[#8b949e]">{opt.sub}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function ProjectSettings() {
   const navigate = useNavigate()
@@ -1339,75 +1550,21 @@ export default function ProjectSettings() {
                       )}
 
                       {/* Filters */}
-                      <div>
-                        <h4 className="text-sm font-medium text-dark-text-primary mb-2">Filter issues to import</h4>
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                          {/* Milestone filter */}
-                          <div>
-                            <label className="block text-xs text-dark-text-tertiary mb-1">Milestone</label>
-                            <select
-                              value={filterMilestone ?? ''}
-                              onChange={e => setFilterMilestone(e.target.value ? Number(e.target.value) : undefined)}
-                              className="w-full text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            >
-                              <option value="">All milestones</option>
-                              {(githubPreview.milestones ?? []).map(m => (
-                                <option key={m.number} value={m.number}>{m.title}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {/* Assignee filter */}
-                          <div>
-                            <label className="block text-xs text-dark-text-tertiary mb-1">Assignee</label>
-                            <select
-                              value={filterAssignee}
-                              onChange={e => setFilterAssignee(e.target.value)}
-                              className="w-full text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            >
-                              <option value="">Anyone</option>
-                              <option value="none">Unassigned</option>
-                              {(githubPreview.github_users ?? []).map(u => (
-                                <option key={u.login} value={u.login}>{u.login}{u.name ? ` (${u.name})` : ''}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {/* Label filter */}
-                          <div>
-                            <label className="block text-xs text-dark-text-tertiary mb-1">Label</label>
-                            <select
-                              value={filterLabels[0] ?? ''}
-                              onChange={e => setFilterLabels(e.target.value ? [e.target.value] : [])}
-                              className="w-full text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            >
-                              <option value="">Any label</option>
-                              {(githubPreview.labels ?? []).map(l => (
-                                <option key={l.name} value={l.name}>{l.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {/* State filter */}
-                          <div>
-                            <label className="block text-xs text-dark-text-tertiary mb-1">State</label>
-                            <select
-                              value={filterState}
-                              onChange={e => setFilterState(e.target.value as 'all' | 'open' | 'closed')}
-                              className="w-full text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            >
-                              <option value="all">All</option>
-                              <option value="open">Open</option>
-                              <option value="closed">Closed</option>
-                            </select>
-                          </div>
-                        </div>
-                        {(filterMilestone || filterAssignee || filterLabels.length > 0 || filterState !== 'all') && (
-                          <button
-                            onClick={() => { setFilterMilestone(undefined); setFilterAssignee(''); setFilterLabels([]); setFilterState('all') }}
-                            className="mt-2 text-xs text-primary-400 hover:text-primary-300"
-                          >
-                            Clear filters
-                          </button>
-                        )}
-                      </div>
+                      <GitHubFilterBar
+                        milestones={githubPreview.milestones ?? []}
+                        assignees={githubPreview.github_users ?? []}
+                        labels={githubPreview.labels ?? []}
+                        filterMilestone={filterMilestone}
+                        filterAssignee={filterAssignee}
+                        filterLabels={filterLabels}
+                        filterState={filterState}
+                        onChange={patch => {
+                          if ('milestone' in patch) setFilterMilestone(patch.milestone)
+                          if ('assignee' in patch) setFilterAssignee(patch.assignee ?? '')
+                          if ('labels' in patch) setFilterLabels(patch.labels ?? [])
+                          if ('state' in patch) setFilterState(patch.state ?? 'all')
+                        }}
+                      />
 
                       {/* Options */}
                       <div className="flex flex-wrap gap-4">
