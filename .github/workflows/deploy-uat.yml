@@ -101,6 +101,8 @@ jobs:
               export OAUTH_STATE_SECRET="\$OAUTH_STATE"
             fi
             export APP_URL='https://uat.taskai.cc'
+            export OAUTH_SUCCESS_URL='https://uat.taskai.cc/oauth/callback'
+            export OAUTH_ERROR_URL='https://uat.taskai.cc/login'
             export ENV=uat
 
             # Login to Docker Hub to avoid rate limiting
