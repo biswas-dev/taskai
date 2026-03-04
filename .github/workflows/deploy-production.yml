@@ -111,6 +111,8 @@ jobs:
             export LOGIN_GITHUB_CLIENT_SECRET="$LOGIN_GH_CLIENT_SECRET"
             export OAUTH_STATE_SECRET="$OAUTH_STATE_SECRET"
             export APP_URL="$APP_URL"
+            export OAUTH_SUCCESS_URL="https://taskai.cc/oauth/callback"
+            export OAUTH_ERROR_URL="https://taskai.cc/login"
             export ENV=production
             echo "Version: \$VERSION, Commit: \$GIT_COMMIT, Build Time: \$BUILD_TIME"
             echo "DB Driver: \$DB_DRIVER"
