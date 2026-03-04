@@ -655,6 +655,8 @@ func (s *Server) HandleGitHubPreview(w http.ResponseWriter, r *http.Request) {
 		sendSSE(map[string]interface{}{"type": "error", "message": "Failed to fetch milestones: " + err.Error()})
 		return
 	}
+	// Send milestones as a dedicated event so the done event stays small
+	sendSSE(map[string]interface{}{"type": "milestones", "items": milestones})
 	sendSSE(map[string]interface{}{
 		"type": "progress", "stage": "labels",
 		"message": fmt.Sprintf("Found %d milestones — fetching labels...", len(milestones)), "current": 1, "total": 0,
@@ -667,6 +669,8 @@ func (s *Server) HandleGitHubPreview(w http.ResponseWriter, r *http.Request) {
 		sendSSE(map[string]interface{}{"type": "error", "message": "Failed to fetch labels: " + err.Error()})
 		return
 	}
+	// Send labels as a dedicated event so the done event stays small
+	sendSSE(map[string]interface{}{"type": "labels", "items": labels})
 	sendSSE(map[string]interface{}{
 		"type": "progress", "stage": "issues",
 		"message": fmt.Sprintf("Found %d labels — fetching issues...", len(labels)), "current": 2, "total": 0,
@@ -858,6 +862,8 @@ func (s *Server) HandleGitHubPreview(w http.ResponseWriter, r *http.Request) {
 		statuses = append(statuses, st)
 	}
 
+	// Milestones and Labels were already streamed as dedicated events above.
+	// Keep the done event small so it passes through nginx/proxies reliably.
 	sendSSE(map[string]interface{}{
 		"type": "done",
 		"result": GitHubPreviewResponse{
@@ -866,8 +872,6 @@ func (s *Server) HandleGitHubPreview(w http.ResponseWriter, r *http.Request) {
 			IssueCount:     len(allIssues),
 			GitHubUsers:    ghUsers,
 			Statuses:       statuses,
-			Milestones:     milestones,
-			Labels:         labels,
 		},
 	})
 }

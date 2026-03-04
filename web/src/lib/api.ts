@@ -781,6 +781,10 @@ class ApiClient {
     const decoder = new TextDecoder()
     let buffer = ''
 
+    // Accumulate chunked data sent as dedicated events before `done`
+    let collectedMilestones: unknown[] | null = null
+    let collectedLabels: unknown[] | null = null
+
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const { done, value } = await reader.read()
@@ -794,7 +798,15 @@ class ApiClient {
         if (!json) continue
         let event: Record<string, unknown>
         try { event = JSON.parse(json) } catch { continue }
-        if (event.type === 'done') return event.result as T
+        if (event.type === 'done') {
+          const result = event.result as Record<string, unknown>
+          // Merge milestones/labels streamed as dedicated events into the result
+          if (collectedMilestones !== null) result.milestones = collectedMilestones
+          if (collectedLabels !== null) result.labels = collectedLabels
+          return result as T
+        }
+        if (event.type === 'milestones') { collectedMilestones = event.items as unknown[]; continue }
+        if (event.type === 'labels') { collectedLabels = event.items as unknown[]; continue }
         if (event.type === 'error') throw new Error(event.message as string)
         if (event.type === 'progress') onProgress(event as unknown as GitHubProgressEvent)
       }
