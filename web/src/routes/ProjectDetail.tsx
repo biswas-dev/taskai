@@ -232,7 +232,7 @@ export default function ProjectDetail() {
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [tags, setTags] = useState<Tag[]>([])
 
-  // Board filters
+  // Board filters (persisted to localStorage per project)
   const [filterSprint, setFilterSprint] = useState<number | null>(null)
   const [filterAssignee, setFilterAssignee] = useState<number | null>(null)
   const [filterPriority, setFilterPriority] = useState('')
@@ -274,6 +274,38 @@ export default function ProjectDetail() {
       api.getTags(Number(projectId)).then(setTags).catch(() => {})
     }
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Restore filters from localStorage when projectId changes; track last visited project
+  useEffect(() => {
+    if (!projectId) return
+    localStorage.setItem('taskai_last_project', projectId)
+    try {
+      const raw = localStorage.getItem(`taskai_filters_${projectId}`)
+      if (raw) {
+        const s = JSON.parse(raw)
+        setFilterSprint(s.sprint ?? null)
+        setFilterAssignee(s.assignee ?? null)
+        setFilterPriority(s.priority ?? '')
+        setFilterTag(s.tag ?? null)
+      } else {
+        setFilterSprint(null)
+        setFilterAssignee(null)
+        setFilterPriority('')
+        setFilterTag(null)
+      }
+    } catch { /* ignore */ }
+  }, [projectId])
+
+  // Persist filters to localStorage when they change
+  useEffect(() => {
+    if (!projectId) return
+    localStorage.setItem(`taskai_filters_${projectId}`, JSON.stringify({
+      sprint: filterSprint,
+      assignee: filterAssignee,
+      priority: filterPriority,
+      tag: filterTag,
+    }))
+  }, [projectId, filterSprint, filterAssignee, filterPriority, filterTag])
 
   const loadProject = async () => {
     try {

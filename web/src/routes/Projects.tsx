@@ -1,5 +1,17 @@
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+
 // Projects welcome screen
 export default function Projects() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    const lastProject = localStorage.getItem('taskai_last_project')
+    if (lastProject) {
+      navigate(`/app/projects/${lastProject}`, { replace: true })
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="flex items-center justify-center h-full bg-dark-bg-base">
       <div className="text-center max-w-lg px-6">
