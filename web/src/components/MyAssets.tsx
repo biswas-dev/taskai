@@ -54,7 +54,7 @@ export default function MyAssets({ projectId }: { projectId: number }) {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [projectId])
 
   useEffect(() => {
     loadAssets(searchQuery, fileTypeFilter)
