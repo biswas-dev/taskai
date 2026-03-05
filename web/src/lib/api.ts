@@ -829,6 +829,7 @@ class ApiClient {
   async githubSync(
     projectId: number,
     statusAssignments?: Record<string, number>,
+    userAssignments?: Record<string, number>,
     onProgress?: (event: GitHubProgressEvent) => void
   ): Promise<GitHubPullResponse> {
     return this.streamGitHub(
@@ -838,7 +839,7 @@ class ApiClient {
         pull_tags: true,
         pull_tasks: true,
         pull_comments: true,
-        user_assignments: {},
+        user_assignments: userAssignments ?? {},
         status_assignments: statusAssignments ?? {},
       },
       onProgress ?? (() => {})
@@ -858,6 +859,17 @@ class ApiClient {
   async githubDisconnect(projectId: number): Promise<void> {
     await this.request<void>(`/api/projects/${projectId}/github/token`, {
       method: 'DELETE',
+    })
+  }
+
+  async githubGetMappings(projectId: number): Promise<{ status_mappings: Record<string, number>; user_mappings: Record<string, number> }> {
+    return this.request(`/api/projects/${projectId}/github/mappings`)
+  }
+
+  async githubSaveMappings(projectId: number, statusMappings: Record<string, number>, userMappings: Record<string, number>): Promise<void> {
+    await this.request(`/api/projects/${projectId}/github/mappings`, {
+      method: 'PUT',
+      body: JSON.stringify({ status_mappings: statusMappings, user_mappings: userMappings }),
     })
   }
 

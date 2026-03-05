@@ -407,6 +407,8 @@ func main() {
 			r.Get("/projects/{id}/github/repos", server.HandleGitHubListRepos)
 			r.Delete("/projects/{id}/github/token", server.HandleGitHubDisconnect)
 			r.Post("/projects/{id}/github/push-all", server.HandleGitHubPushAll)
+			r.Get("/projects/{id}/github/mappings", server.HandleGetGitHubMappings)
+			r.Put("/projects/{id}/github/mappings", server.HandleSaveGitHubMappings)
 
 			// Project invitation routes
 			r.Post("/projects/{id}/invitations", server.HandleInviteProjectMember)

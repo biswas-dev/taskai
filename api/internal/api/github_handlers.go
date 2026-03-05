@@ -916,6 +916,10 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 		return
 	}
 
+	// Merge in any previously saved mappings (request values take priority).
+	req.StatusAssignments, req.UserAssignments = s.loadSavedGitHubMappings(
+		r.Context(), int64(projectID), req.StatusAssignments, req.UserAssignments)
+
 	owner, repo, storedToken, err := s.loadGitHubConfig(projectID)
 	if err != nil {
 		http.Error(w, "Failed to load project config", http.StatusInternalServerError)
@@ -1403,6 +1407,9 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 	// Update last sync timestamp
 	_, _ = s.db.ExecContext(ctx, `UPDATE projects SET github_last_sync = $1 WHERE id = $2`, time.Now(), projectID)
 
+	// Persist the mappings used in this sync so future syncs reuse them.
+	s.saveGitHubMappings(ctx, int64(projectID), req.StatusAssignments, req.UserAssignments)
+
 	sendSSE(map[string]interface{}{"type": "done", "result": result})
 }
 
@@ -1522,6 +1529,157 @@ func (s *Server) tryPushCommentToGitHub(ctx context.Context, taskID, commentID i
 		return
 	}
 	_, _ = s.db.ExecContext(ctx, `UPDATE task_comments SET github_comment_id = $1 WHERE id = $2`, ghCommentID, commentID)
+}
+
+// GitHubMappingsResponse is returned by HandleGetGitHubMappings.
+type GitHubMappingsResponse struct {
+	StatusMappings map[string]int64 `json:"status_mappings"` // github_status_key → swim_lane_id (0 = unset)
+	UserMappings   map[string]int64 `json:"user_mappings"`   // github_login → user_id (0 = unset)
+}
+
+// HandleGetGitHubMappings returns the persisted sync mappings for a project.
+// GET /api/projects/{id}/github/mappings
+func (s *Server) HandleGetGitHubMappings(w http.ResponseWriter, r *http.Request) {
+	projectID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid project ID", "invalid_input")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	resp := GitHubMappingsResponse{
+		StatusMappings: map[string]int64{},
+		UserMappings:   map[string]int64{},
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		s.db.Rebind(`SELECT status_key, COALESCE(swim_lane_id,0) FROM github_status_mappings WHERE project_id = ?`),
+		projectID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			var laneID int64
+			if err := rows.Scan(&key, &laneID); err == nil {
+				resp.StatusMappings[key] = laneID
+			}
+		}
+		rows.Close()
+	}
+
+	rows, err = s.db.QueryContext(ctx,
+		s.db.Rebind(`SELECT github_login, COALESCE(user_id,0) FROM github_user_mappings WHERE project_id = ?`),
+		projectID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var login string
+			var uid int64
+			if err := rows.Scan(&login, &uid); err == nil {
+				resp.UserMappings[login] = uid
+			}
+		}
+		rows.Close()
+	}
+
+	respondJSON(w, http.StatusOK, resp)
+}
+
+// HandleSaveGitHubMappings persists sync mappings for a project.
+// PUT /api/projects/{id}/github/mappings
+func (s *Server) HandleSaveGitHubMappings(w http.ResponseWriter, r *http.Request) {
+	projectID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid project ID", "invalid_input")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	var req GitHubMappingsResponse
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_input")
+		return
+	}
+
+	s.saveGitHubMappings(ctx, int64(projectID), req.StatusMappings, req.UserMappings)
+	respondJSON(w, http.StatusOK, map[string]string{"message": "mappings saved"})
+}
+
+// saveGitHubMappings upserts status and user mappings for a project.
+func (s *Server) saveGitHubMappings(ctx context.Context, projectID int64, statusMappings map[string]int64, userMappings map[string]int64) {
+	for key, laneID := range statusMappings {
+		var laneVal interface{} = nil
+		if laneID > 0 {
+			laneVal = laneID
+		}
+		_, _ = s.db.ExecContext(ctx,
+			s.db.Rebind(`INSERT INTO github_status_mappings (project_id, status_key, swim_lane_id)
+				VALUES (?, ?, ?)
+				ON CONFLICT(project_id, status_key) DO UPDATE SET swim_lane_id = excluded.swim_lane_id`),
+			projectID, key, laneVal)
+	}
+	for login, uid := range userMappings {
+		var uidVal interface{} = nil
+		if uid > 0 {
+			uidVal = uid
+		}
+		_, _ = s.db.ExecContext(ctx,
+			s.db.Rebind(`INSERT INTO github_user_mappings (project_id, github_login, user_id)
+				VALUES (?, ?, ?)
+				ON CONFLICT(project_id, github_login) DO UPDATE SET user_id = excluded.user_id`),
+			projectID, login, uidVal)
+	}
+}
+
+// loadSavedGitHubMappings loads persisted mappings from DB, merging them under request-supplied values.
+// Request values take priority (user may have changed them in the UI).
+func (s *Server) loadSavedGitHubMappings(ctx context.Context, projectID int64, reqStatus, reqUser map[string]int64) (status, user map[string]int64) {
+	status = map[string]int64{}
+	user = map[string]int64{}
+
+	// Load saved status mappings as baseline
+	rows, err := s.db.QueryContext(ctx,
+		s.db.Rebind(`SELECT status_key, COALESCE(swim_lane_id,0) FROM github_status_mappings WHERE project_id = ?`),
+		projectID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			var laneID int64
+			if err := rows.Scan(&key, &laneID); err == nil {
+				status[key] = laneID
+			}
+		}
+		rows.Close()
+	}
+
+	// Load saved user mappings as baseline
+	rows, err = s.db.QueryContext(ctx,
+		s.db.Rebind(`SELECT github_login, COALESCE(user_id,0) FROM github_user_mappings WHERE project_id = ?`),
+		projectID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var login string
+			var uid int64
+			if err := rows.Scan(&login, &uid); err == nil {
+				user[login] = uid
+			}
+		}
+		rows.Close()
+	}
+
+	// Request values override saved values
+	for k, v := range reqStatus {
+		status[k] = v
+	}
+	for k, v := range reqUser {
+		user[k] = v
+	}
+
+	return status, user
 }
 
 // HandleGitHubPushTask creates or updates a GitHub issue for a TaskAI task.
