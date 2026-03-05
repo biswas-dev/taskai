@@ -1945,6 +1945,7 @@ func (s *Server) HandleGitHubPushTask(w http.ResponseWriter, r *http.Request) {
 	var (
 		title             string
 		description       sql.NullString
+		dueDate           sql.NullTime
 		projectID         int64
 		githubIssueNumber sql.NullInt64
 		milestoneNumber   sql.NullInt64
@@ -1952,14 +1953,14 @@ func (s *Server) HandleGitHubPushTask(w http.ResponseWriter, r *http.Request) {
 		tokenNull         sql.NullString
 	)
 	err = s.db.QueryRowContext(ctx, `
-		SELECT t.title, t.description, t.project_id, t.github_issue_number,
+		SELECT t.title, t.description, t.due_date, t.project_id, t.github_issue_number,
 		       (SELECT s.github_milestone_number FROM sprints s WHERE s.id = t.sprint_id LIMIT 1),
 		       COALESCE(p.github_owner,''), COALESCE(p.github_repo_name,''),
 		       p.github_token
 		FROM tasks t
 		JOIN projects p ON p.id = t.project_id
 		WHERE t.id = $1
-	`, taskID).Scan(&title, &description, &projectID, &githubIssueNumber, &milestoneNumber, &owner, &repo, &tokenNull)
+	`, taskID).Scan(&title, &description, &dueDate, &projectID, &githubIssueNumber, &milestoneNumber, &owner, &repo, &tokenNull)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			respondError(w, http.StatusNotFound, "task not found", "not_found")
@@ -1989,6 +1990,9 @@ func (s *Server) HandleGitHubPushTask(w http.ResponseWriter, r *http.Request) {
 	body := ""
 	if description.Valid {
 		body = description.String
+	}
+	if dueDate.Valid {
+		body += "\n\n**Due Date:** " + dueDate.Time.Format("2006-01-02")
 	}
 
 	// Reverse-map TaskAI assignees → GitHub logins via github_user_mappings.

@@ -20,6 +20,20 @@ import (
 	"taskai/ent/tasktag"
 )
 
+// parseDate parses a date string in RFC3339 or YYYY-MM-DD format.
+// Returns nil if the string is empty or unparseable.
+func parseDate(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return &t
+		}
+	}
+	return nil
+}
+
 type TaskAssigneeInfo struct {
 	UserID   int64  `json:"user_id"`
 	UserName string `json:"user_name"`
@@ -402,22 +416,14 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 		nextNumber = int(maxNumber.Int64) + 1
 	}
 
-	// Parse start_date if provided
+	// Parse start_date / due_date — accept RFC3339 or plain YYYY-MM-DD.
 	var startDate *time.Time
-	if req.StartDate != nil && *req.StartDate != "" {
-		parsed, err := time.Parse(time.RFC3339, *req.StartDate)
-		if err == nil {
-			startDate = &parsed
-		}
+	if req.StartDate != nil {
+		startDate = parseDate(*req.StartDate)
 	}
-
-	// Parse due_date if provided
 	var dueDate *time.Time
-	if req.DueDate != nil && *req.DueDate != "" {
-		parsed, err := time.Parse(time.RFC3339, *req.DueDate)
-		if err == nil {
-			dueDate = &parsed
-		}
+	if req.DueDate != nil {
+		dueDate = parseDate(*req.DueDate)
 	}
 
 	// Use Ent transaction
@@ -689,22 +695,14 @@ func (s *Server) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		finalSwimLaneID = req.SwimLaneID
 	}
 
-	// Parse start_date if provided
+	// Parse start_date / due_date — accept RFC3339 or plain YYYY-MM-DD.
 	var startDate *time.Time
-	if req.StartDate != nil && *req.StartDate != "" {
-		parsed, err := time.Parse(time.RFC3339, *req.StartDate)
-		if err == nil {
-			startDate = &parsed
-		}
+	if req.StartDate != nil {
+		startDate = parseDate(*req.StartDate)
 	}
-
-	// Parse due_date if provided
 	var dueDate *time.Time
-	if req.DueDate != nil && *req.DueDate != "" {
-		parsed, err := time.Parse(time.RFC3339, *req.DueDate)
-		if err == nil {
-			dueDate = &parsed
-		}
+	if req.DueDate != nil {
+		dueDate = parseDate(*req.DueDate)
 	}
 
 	// Build update using Ent
