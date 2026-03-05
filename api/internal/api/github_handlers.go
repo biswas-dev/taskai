@@ -1115,6 +1115,14 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 	// Force full sync: delete all GitHub-sourced tasks and sprints, clear last-sync timestamp
 	if req.ForceFullSync {
 		progress("reset", "Clearing GitHub-imported tasks and sprints...", 0, 0)
+		// Explicitly delete comments first — do not rely on FK cascade.
+		// SQLite PRAGMA foreign_keys is per-connection; pool connections may not have it set,
+		// leaving orphaned task_comments rows with github_comment_id values that block re-import.
+		_, _ = s.db.ExecContext(ctx, `
+			DELETE FROM task_comments
+			WHERE task_id IN (
+				SELECT id FROM tasks WHERE project_id=$1 AND github_issue_number IS NOT NULL
+			)`, projectID)
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM tasks WHERE project_id=$1 AND github_issue_number IS NOT NULL`, projectID)
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM sprints WHERE project_id=$1 AND github_milestone_number IS NOT NULL`, projectID)
 		_, _ = s.db.ExecContext(ctx, `UPDATE projects SET github_last_sync=NULL WHERE id=$1`, projectID)
@@ -1642,9 +1650,17 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 				// No since filter on comments — fetch all and rely on ON CONFLICT for dedup.
 				// Using since on comments causes older comments to be missed when an issue is
 				// re-synced after its comment was already created but before it was imported.
-				commentsURL := fmt.Sprintf("%s/issues/%d/comments?per_page=100", base, tr.issueNum)
-				if err := fetchGitHubJSON(ctx, token, commentsURL, &ghComments); err != nil {
-					continue // best-effort
+				// Paginate to handle issues with >100 comments.
+				for page := 1; ; page++ {
+					commentsURL := fmt.Sprintf("%s/issues/%d/comments?per_page=100&page=%d", base, tr.issueNum, page)
+					var pageComments []ghIssueComment
+					if err := fetchGitHubJSON(ctx, token, commentsURL, &pageComments); err != nil {
+						break // best-effort
+					}
+					ghComments = append(ghComments, pageComments...)
+					if len(pageComments) < 100 {
+						break
+					}
 				}
 				for _, gc := range ghComments {
 					if gc.Body == "" {

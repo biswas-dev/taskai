@@ -1972,7 +1972,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                           </Button>
                         </div>
                       </div>
-                      {isSyncing && importProgress && (
+                      {(isSyncing || isForceFullSyncing) && importProgress && (
                         <div className="p-3 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
                           <div className="flex items-center justify-between text-sm mb-1.5">
                             <span className="text-dark-text-primary font-medium">{importProgress.message}</span>
