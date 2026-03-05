@@ -1601,7 +1601,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                                   className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
                                 >
                                   <option value={0}>Unassigned</option>
-                                  {teamMembers.map(m => (
+                                  {members.map(m => (
                                     <option key={m.user_id} value={m.user_id}>
                                       {m.name || m.email}
                                     </option>
@@ -1794,7 +1794,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                                   className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
                                 >
                                   <option value={0}>Unassigned</option>
-                                  {teamMembers.map(u => (
+                                  {members.map(u => (
                                     <option key={u.user_id} value={u.user_id}>{u.name || u.email}</option>
                                   ))}
                                 </select>
