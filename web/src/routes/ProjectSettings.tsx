@@ -1418,15 +1418,21 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
               {!githubSettings.github_token_set ? (
                 /* --- Not connected --- */
                 <div className="py-4">
-                  <p className="text-sm text-dark-text-secondary mb-4">Connect this project to your GitHub account to pick a repository.</p>
-                  <Button onClick={handleConnectGitHub} disabled={isConnectingGitHub}>
-                    {isConnectingGitHub ? 'Redirecting...' : 'Connect with GitHub'}
-                  </Button>
+                  {isOwnerOrAdmin ? (
+                    <>
+                      <p className="text-sm text-dark-text-secondary mb-4">Connect this project to your GitHub account to pick a repository.</p>
+                      <Button onClick={handleConnectGitHub} disabled={isConnectingGitHub}>
+                        {isConnectingGitHub ? 'Redirecting...' : 'Connect with GitHub'}
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-dark-text-secondary">GitHub is not connected for this project. Ask a project owner or admin to set up the integration.</p>
+                  )}
                 </div>
               ) : (
                 /* --- Connected --- */
                 <form onSubmit={handleSaveGitHub} className="space-y-4">
-                  {/* Connected as badge + disconnect */}
+                  {/* Connected as badge + disconnect (disconnect only for owners/admins) */}
                   <div className="flex items-center justify-between p-3 bg-success-500/10 border border-success-500/20 rounded-lg">
                     <div className="flex items-center gap-2">
                       <svg className="w-4 h-4 text-success-400" fill="currentColor" viewBox="0 0 20 20">
@@ -1436,14 +1442,16 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                         Connected{githubSettings.github_login ? ` as @${githubSettings.github_login}` : ''}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleDisconnectGitHub}
-                      disabled={isDisconnectingGitHub}
-                      className="text-xs text-dark-text-tertiary hover:text-error-400 transition-colors"
-                    >
-                      {isDisconnectingGitHub ? 'Disconnecting...' : 'Disconnect'}
-                    </button>
+                    {isOwnerOrAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleDisconnectGitHub}
+                        disabled={isDisconnectingGitHub}
+                        className="text-xs text-dark-text-tertiary hover:text-error-400 transition-colors"
+                      >
+                        {isDisconnectingGitHub ? 'Disconnecting...' : 'Disconnect'}
+                      </button>
+                    )}
                   </div>
 
                   {/* Repository picker */}
@@ -1516,9 +1524,11 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                     </label>
                   </div>
 
-                  <Button type="submit" disabled={isSavingGitHub}>
-                    {isSavingGitHub ? 'Saving...' : 'Save Settings'}
-                  </Button>
+                  {isOwnerOrAdmin && (
+                    <Button type="submit" disabled={isSavingGitHub}>
+                      {isSavingGitHub ? 'Saving...' : 'Save Settings'}
+                    </Button>
+                  )}
                 </form>
               )}
 

@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => ({
   deleteTaskAttachment: vi.fn(),
   getUploadSignature: vi.fn(),
   updateAttachment: vi.fn(),
+  getProjectGitHub: vi.fn(),
+  getProjectTags: vi.fn(),
 }))
 
 vi.mock('../lib/api', () => ({
@@ -65,6 +67,8 @@ describe('TaskDetail', () => {
     mocks.getTaskComments.mockResolvedValue([])
     mocks.getProjectMembers.mockResolvedValue([])
     mocks.getTaskAttachments.mockResolvedValue([])
+    mocks.getProjectGitHub.mockResolvedValue({ github_owner: '', github_repo_name: '', github_token_set: false, github_branch: 'main', github_sync_enabled: false, github_last_sync: null, github_login: null })
+    mocks.getProjectTags.mockResolvedValue([])
   })
 
   it('shows loading state initially', () => {

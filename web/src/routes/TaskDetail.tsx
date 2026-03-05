@@ -56,6 +56,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
   // GitHub push
   const [pushingToGitHub, setPushingToGitHub] = useState(false)
   const [githubPushResult, setGithubPushResult] = useState<GitHubPushTaskResponse | null>(null)
+  const [githubRepo, setGithubRepo] = useState<{ github_owner: string; github_repo_name: string } | null>(null)
 
   useEffect(() => {
     loadTask()
@@ -63,6 +64,11 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
     loadSwimLanes()
     loadMembers()
     loadProjectTags()
+    if (projectId) {
+      apiClient.getProjectGitHub(Number(projectId))
+        .then(s => setGithubRepo({ github_owner: s.github_owner, github_repo_name: s.github_repo_name }))
+        .catch(() => {})
+    }
   }, [projectId, taskNumber]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -933,10 +939,10 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
 
             {/* GitHub */}
             <div className="mt-4">
-              {githubPushResult?.html_url ? (
+              {task.github_issue_number && githubRepo?.github_owner && githubRepo?.github_repo_name ? (
                 <div className="flex items-center gap-2">
                   <a
-                    href={githubPushResult.html_url}
+                    href={githubPushResult?.html_url || `https://github.com/${githubRepo.github_owner}/${githubRepo.github_repo_name}/issues/${task.github_issue_number}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 transition-colors"

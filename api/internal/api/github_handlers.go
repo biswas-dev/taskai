@@ -105,6 +105,7 @@ type ghProjectItemContent struct {
 type ghProjectFieldValue struct {
 	Name  string `json:"name"`  // selected option name (for single-select fields)
 	Field struct {
+		ID   string `json:"id"`   // field GraphQL ID
 		Name string `json:"name"` // field name (e.g. "Status")
 	} `json:"field"`
 }
@@ -353,7 +354,9 @@ query($owner: String!, $repo: String!) {
 
 // fetchProjectIssueStatuses builds a map of issue_number → status+itemID
 // by paginating through all items of the given project.
-func fetchProjectIssueStatuses(ctx context.Context, token, projectID string) (map[int]ghProjectItemStatus, error) {
+// statusFieldID is the GraphQL ID of the status field (from fetchProjectStatusColumns); used for
+// precise matching so fields named "Stage", "Phase", etc. work correctly.
+func fetchProjectIssueStatuses(ctx context.Context, token, projectID, statusFieldID string) (map[int]ghProjectItemStatus, error) {
 	result := map[int]ghProjectItemStatus{}
 	if token == "" || projectID == "" {
 		return result, nil
@@ -373,7 +376,7 @@ query($projectId: ID!, $cursor: String) {
             nodes {
               ... on ProjectV2ItemFieldSingleSelectValue {
                 name
-                field { ... on ProjectV2SingleSelectField { name } }
+                field { ... on ProjectV2SingleSelectField { id name } }
               }
             }
           }
@@ -418,7 +421,13 @@ query($projectId: ID!, $cursor: String) {
 			}
 			info := ghProjectItemStatus{ItemID: item.ID}
 			for _, fv := range item.FieldValues.Nodes {
-				if strings.EqualFold(fv.Field.Name, "status") && fv.Name != "" {
+				if fv.Name == "" {
+					continue
+				}
+				// Match by field ID when available (handles "Stage", "Phase", etc.)
+				// Fall back to name match "status" for backwards compat
+				if (statusFieldID != "" && fv.Field.ID == statusFieldID) ||
+					(statusFieldID == "" && strings.EqualFold(fv.Field.Name, "status")) {
 					info.StatusName = fv.Name
 					break
 				}
@@ -1191,7 +1200,7 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 				s.db.Rebind(`UPDATE projects SET github_project_id = ?, github_status_field_id = ? WHERE id = ?`),
 				projInfo.ProjectID, projInfo.FieldID, projectID)
 
-			if m, err := fetchProjectIssueStatuses(ctx, token, projInfo.ProjectID); err == nil {
+			if m, err := fetchProjectIssueStatuses(ctx, token, projInfo.ProjectID, projInfo.FieldID); err == nil {
 				issueColumnMap = m
 			}
 
