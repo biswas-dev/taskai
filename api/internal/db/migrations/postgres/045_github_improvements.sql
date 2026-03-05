@@ -1,4 +1,4 @@
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_date TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS start_date TIMESTAMPTZ;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_sync_interval TEXT; -- 'daily','weekly','monthly', NULL=disabled
 
 CREATE TABLE IF NOT EXISTS github_sync_logs (
