@@ -181,6 +181,8 @@ export interface ProjectGitHubSettings {
   github_login: string | null
   github_project_url: string   // optional explicit GitHub Projects V2 URL
   github_sync_interval: string // 'daily','weekly','monthly', '' = disabled
+  github_sync_hour: number     // 0-23
+  github_sync_day: number      // 0-6 for weekly (0=Sun), 1-28 for monthly
 }
 
 export interface GitHubRepo {

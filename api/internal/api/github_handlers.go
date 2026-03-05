@@ -2312,21 +2312,55 @@ func (s *Server) HandleGetGitHubSyncLogs(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, logs)
 }
 
-// shouldSync returns true if an auto-sync is due based on interval and last sync time.
-func shouldSync(interval string, lastSync sql.NullTime, now time.Time) bool {
+// shouldSync returns true if an auto-sync is due based on interval, hour, day and last sync time.
+func shouldSync(interval string, hour, day int, lastSync sql.NullTime, now time.Time) bool {
 	if !lastSync.Valid {
-		return true
+		return true // never synced → fire immediately
 	}
-	elapsed := now.Sub(lastSync.Time)
+	scheduled := scheduledWindowStart(interval, hour, day, now)
+	if scheduled.IsZero() {
+		return false
+	}
+	return lastSync.Time.Before(scheduled)
+}
+
+// scheduledWindowStart returns the most recent past scheduled-time occurrence ≤ now (UTC).
+// Returns zero time if the interval is unrecognised.
+func scheduledWindowStart(interval string, hour, day int, now time.Time) time.Time {
+	now = now.UTC()
 	switch interval {
 	case "daily":
-		return elapsed >= 24*time.Hour
+		t := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, time.UTC)
+		if now.Before(t) {
+			t = t.AddDate(0, 0, -1)
+		}
+		return t
 	case "weekly":
-		return elapsed >= 7*24*time.Hour
+		wd := time.Weekday(day % 7)
+		t := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, time.UTC)
+		daysBack := int(now.Weekday()) - int(wd)
+		if daysBack < 0 {
+			daysBack += 7
+		}
+		t = t.AddDate(0, 0, -daysBack)
+		if now.Before(t) {
+			t = t.AddDate(0, 0, -7)
+		}
+		return t
 	case "monthly":
-		return elapsed >= 30*24*time.Hour
+		if day < 1 {
+			day = 1
+		}
+		if day > 28 {
+			day = 28
+		}
+		t := time.Date(now.Year(), now.Month(), day, hour, 0, 0, 0, time.UTC)
+		if now.Before(t) {
+			t = t.AddDate(0, -1, 0)
+		}
+		return t
 	}
-	return false
+	return time.Time{}
 }
 
 // StartGitHubSyncWorker starts a background goroutine that runs auto-sync
@@ -2351,6 +2385,8 @@ type autoSyncProject struct {
 	Token        string
 	ProjectURL   string
 	SyncInterval string
+	SyncHour     int
+	SyncDay      int
 	LastSync     sql.NullTime
 }
 
@@ -2358,7 +2394,8 @@ func (s *Server) runAutoSync(ctx context.Context) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, COALESCE(github_owner,''), COALESCE(github_repo_name,''),
 		       COALESCE(github_token,''), COALESCE(github_project_url,''),
-		       github_sync_interval, github_last_sync
+		       github_sync_interval, COALESCE(github_sync_hour,0), COALESCE(github_sync_day,0),
+		       github_last_sync
 		FROM projects
 		WHERE github_sync_enabled = true
 		  AND github_sync_interval IS NOT NULL
@@ -2373,7 +2410,7 @@ func (s *Server) runAutoSync(ctx context.Context) {
 	var projects []autoSyncProject
 	for rows.Next() {
 		var p autoSyncProject
-		if err := rows.Scan(&p.ID, &p.Owner, &p.Repo, &p.Token, &p.ProjectURL, &p.SyncInterval, &p.LastSync); err != nil {
+		if err := rows.Scan(&p.ID, &p.Owner, &p.Repo, &p.Token, &p.ProjectURL, &p.SyncInterval, &p.SyncHour, &p.SyncDay, &p.LastSync); err != nil {
 			continue
 		}
 		projects = append(projects, p)
@@ -2382,7 +2419,7 @@ func (s *Server) runAutoSync(ctx context.Context) {
 
 	now := time.Now()
 	for _, p := range projects {
-		if !shouldSync(p.SyncInterval, p.LastSync, now) {
+		if !shouldSync(p.SyncInterval, p.SyncHour, p.SyncDay, p.LastSync, now) {
 			continue
 		}
 		proj := p // capture

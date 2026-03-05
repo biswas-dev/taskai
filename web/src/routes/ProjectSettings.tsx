@@ -38,6 +38,8 @@ interface GitHubSettings {
   github_login: string | null
   github_project_url: string
   github_sync_interval: string
+  github_sync_hour: number
+  github_sync_day: number
 }
 
 // ── GitHub-style filter bar ───────────────────────────────────────────────────
@@ -292,6 +294,8 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     github_login: null,
     github_project_url: '',
     github_sync_interval: '',
+    github_sync_hour: 0,
+    github_sync_day: 0,
   })
   const [syncLogs, setSyncLogs] = useState<import('../lib/api').GitHubSyncLog[]>([])
   const [githubError, setGithubError] = useState('')
@@ -901,6 +905,8 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
         github_push_enabled: githubSettings.github_push_enabled,
         github_project_url: githubSettings.github_project_url,
         github_sync_interval: githubSettings.github_sync_interval,
+        github_sync_hour: githubSettings.github_sync_hour,
+        github_sync_day: githubSettings.github_sync_day,
       })
       setGithubSuccess('GitHub settings saved successfully')
     } catch (error: unknown) {
@@ -1582,6 +1588,52 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
                       </select>
+                    </div>
+                  )}
+
+                  {isOwnerOrAdmin && githubSettings.github_sync_interval && (
+                    <div className="flex items-center gap-3 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                      <div className="flex-1">
+                        <span className="font-medium text-dark-text-primary">Sync Time (UTC)</span>
+                        <p className="text-sm text-dark-text-secondary mt-0.5">
+                          {githubSettings.github_sync_interval === 'daily' && `Runs daily at ${String(githubSettings.github_sync_hour).padStart(2,'0')}:00 UTC`}
+                          {githubSettings.github_sync_interval === 'weekly' && `Runs every ${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][githubSettings.github_sync_day]} at ${String(githubSettings.github_sync_hour).padStart(2,'0')}:00 UTC`}
+                          {githubSettings.github_sync_interval === 'monthly' && `Runs on the ${githubSettings.github_sync_day === 1 ? '1st' : githubSettings.github_sync_day === 2 ? '2nd' : githubSettings.github_sync_day === 3 ? '3rd' : `${githubSettings.github_sync_day}th`} at ${String(githubSettings.github_sync_hour).padStart(2,'0')}:00 UTC`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {githubSettings.github_sync_interval === 'weekly' && (
+                          <select
+                            value={githubSettings.github_sync_day}
+                            onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_day: +e.target.value })}
+                            className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          >
+                            {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => (
+                              <option key={i} value={i}>{d}</option>
+                            ))}
+                          </select>
+                        )}
+                        {githubSettings.github_sync_interval === 'monthly' && (
+                          <select
+                            value={githubSettings.github_sync_day}
+                            onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_day: +e.target.value })}
+                            className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          >
+                            {Array.from({length: 28}, (_, i) => i + 1).map(d => (
+                              <option key={d} value={d}>{d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : `${d}th`}</option>
+                            ))}
+                          </select>
+                        )}
+                        <select
+                          value={githubSettings.github_sync_hour}
+                          onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_hour: +e.target.value })}
+                          className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        >
+                          {Array.from({length: 24}, (_, h) => (
+                            <option key={h} value={h}>{String(h).padStart(2,'0')}:00 UTC</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   )}
 
