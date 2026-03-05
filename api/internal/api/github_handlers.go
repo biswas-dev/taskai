@@ -41,6 +41,7 @@ type ghIssue struct {
 	Body        string       `json:"body"`
 	State       string       `json:"state"`
 	StateReason *string      `json:"state_reason"` // "completed", "not_planned", "reopened", or nil
+	UpdatedAt   string       `json:"updated_at"`   // RFC3339; used to skip comment fetch for unchanged issues
 	Assignee    *ghUser      `json:"assignee"`
 	Assignees   []ghUser     `json:"assignees"`
 	Labels      []ghLabel    `json:"labels"`
@@ -1305,11 +1306,12 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 	}
 
 	// --- Import Tasks from Issues ---
+	// allIssues is declared here so the comment section below can also use it for filtering.
+	var allIssues []ghIssue
 	if req.PullTasks {
 		progress("issues", "Fetching issues...", 0, 0)
 		// NOTE: GitHub's /issues endpoint returns both issues and pull requests.
 		// We only handle issues for now. To add PR support, remove the PullRequest filter below.
-		var allIssues []ghIssue
 		for page := 1; page <= 10; page++ {
 			var pageIssues []ghIssue
 			if err := fetchGitHubJSON(ctx, token, buildIssueURL(page), &pageIssues); err != nil {
@@ -1572,7 +1574,22 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 
 	// --- Import Comments from Issues ---
 	if req.PullComments {
-		var issueNumbers []int
+		// Build a set of issue numbers updated since sinceParam (from already-fetched allIssues).
+		// We skip comment API calls for issues that haven't changed — but when we do fetch,
+		// we fetch ALL comments (no since filter) so we never miss comments that predate our
+		// last sync. ON CONFLICT handles deduplication.
+		// If allIssues is empty (PullTasks was false), updatedIssues is nil — the skip check
+		// below treats nil as "fetch all" so no comments are dropped.
+		var updatedIssues map[int]bool
+		if len(allIssues) > 0 {
+			updatedIssues = map[int]bool{}
+			for _, iss := range allIssues {
+				if sinceParam == "" || iss.UpdatedAt >= sinceParam {
+					updatedIssues[iss.Number] = true
+				}
+			}
+		}
+
 		// Collect tasks with github_issue_number in this project
 		rows, err := s.db.QueryContext(ctx, `
 			SELECT id, github_issue_number FROM tasks
@@ -1588,22 +1605,24 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 				var tr taskRef
 				if err := rows.Scan(&tr.taskID, &tr.issueNum); err == nil {
 					taskRefs = append(taskRefs, tr)
-					issueNumbers = append(issueNumbers, tr.issueNum)
 				}
 			}
 			rows.Close()
-			_ = issueNumbers // suppress unused warning
 
 			progress("comments", fmt.Sprintf("Fetching comments for %d issues...", len(taskRefs)), 0, len(taskRefs))
 			for i, tr := range taskRefs {
 				if i%10 == 0 && i > 0 {
 					progress("comments", fmt.Sprintf("Fetched comments for %d/%d issues...", i, len(taskRefs)), i, len(taskRefs))
 				}
-				var ghComments []ghIssueComment
-				commentsURL := fmt.Sprintf("%s/issues/%d/comments?per_page=100", base, tr.issueNum)
-				if sinceParam != "" {
-					commentsURL += "&since=" + sinceParam
+				// Skip issues that haven't been updated since last sync — their comments are already synced.
+				if sinceParam != "" && !updatedIssues[tr.issueNum] {
+					continue
 				}
+				var ghComments []ghIssueComment
+				// No since filter on comments — fetch all and rely on ON CONFLICT for dedup.
+				// Using since on comments causes older comments to be missed when an issue is
+				// re-synced after its comment was already created but before it was imported.
+				commentsURL := fmt.Sprintf("%s/issues/%d/comments?per_page=100", base, tr.issueNum)
 				if err := fetchGitHubJSON(ctx, token, commentsURL, &ghComments); err != nil {
 					continue // best-effort
 				}
@@ -2553,6 +2572,8 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 	_ = noop
 
 	// --- Import Tasks from Issues ---
+	// allIssues is declared here so the comment section below can also use it for filtering.
+	var allIssues []ghIssue
 	unknownStatusKeys := map[string]struct{}{}
 	if req.PullTasks {
 		buildIssueURL := func(page int) string {
@@ -2561,7 +2582,6 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 
 		// NOTE: GitHub's /issues endpoint returns both issues and pull requests.
 		// We only handle issues for now. To add PR support, remove the PullRequest filter below.
-		var allIssues []ghIssue
 		for page := 1; page <= 10; page++ {
 			var pageIssues []ghIssue
 			if err := fetchGitHubJSON(ctx, token, buildIssueURL(page), &pageIssues); err != nil {
@@ -2689,6 +2709,14 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 
 	// --- Import Comments ---
 	if req.PullComments {
+		// Build updated-issue set from already-fetched allIssues for efficient filtering.
+		updatedIssues := map[int]bool{}
+		for _, iss := range allIssues {
+			if sinceParam == "" || iss.UpdatedAt >= sinceParam {
+				updatedIssues[iss.Number] = true
+			}
+		}
+
 		rows, err := s.db.QueryContext(ctx, `SELECT id, github_issue_number FROM tasks WHERE project_id = $1 AND github_issue_number IS NOT NULL`, projectID)
 		if err == nil {
 			type taskRef struct {
@@ -2708,10 +2736,12 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 			_ = s.db.QueryRowContext(ctx, `SELECT user_id FROM project_members WHERE project_id = $1 AND role = 'owner' LIMIT 1`, projectID).Scan(&ownerID)
 
 			for _, tr := range taskRefs {
-				commentsURL := fmt.Sprintf("%s/issues/%d/comments?per_page=100", base, tr.issueNum)
-				if sinceParam != "" {
-					commentsURL += "&since=" + sinceParam
+				// Skip issues not updated since last sync — their comments are already in sync.
+				if sinceParam != "" && updatedIssues != nil && !updatedIssues[tr.issueNum] {
+					continue
 				}
+				// Fetch all comments (no since) — ON CONFLICT handles dedup.
+				commentsURL := fmt.Sprintf("%s/issues/%d/comments?per_page=100", base, tr.issueNum)
 				var ghComments []ghIssueComment
 				if err := fetchGitHubJSON(ctx, token, commentsURL, &ghComments); err != nil {
 					continue
