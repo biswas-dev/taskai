@@ -20,46 +20,20 @@ Run `./script/server deploy "$ARGUMENTS"` (commits uncommitted changes, pushes t
 If there are no uncommitted changes and `$ARGUMENTS` is empty, just push: `git push origin main`.
 
 ### 2. Promote to UAT
-UAT must be a mirror of main — force-push via GitHub API (UAT branch is protected):
-
 ```bash
-# 1. Enable force pushes
-gh api repos/anchoo2kewl/taskai/branches/uat/protection -X PUT \
-  -H "Accept: application/vnd.github+json" \
-  --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":true,"required_linear_history":false}
-EOF
-
-# 2. Force-push main to uat
-git push origin main:uat --force
-
-# 3. Re-disable force pushes
-gh api repos/anchoo2kewl/taskai/branches/uat/protection -X PUT \
-  -H "Accept: application/vnd.github+json" \
-  --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"required_linear_history":false}
-EOF
+./script/server promote staging uat
 ```
 
 ### 3. Promote to Production
 ```bash
-./script/server promote
+./script/server promote staging prod
+# or, if UAT was verified and you want to promote from UAT:
+./script/server promote uat prod
 ```
 
-You can chain steps 2 and 3 into a single shell command:
+You can chain steps 2 and 3:
 ```bash
-gh api repos/anchoo2kewl/taskai/branches/uat/protection -X PUT \
-  -H "Accept: application/vnd.github+json" \
-  --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":true,"required_linear_history":false}
-EOF
-git push origin main:uat --force && \
-gh api repos/anchoo2kewl/taskai/branches/uat/protection -X PUT \
-  -H "Accept: application/vnd.github+json" \
-  --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"required_linear_history":false}
-EOF
-./script/server promote
+./script/server promote staging uat && ./script/server promote staging prod
 ```
 
 ### 4. Report Status

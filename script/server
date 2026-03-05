@@ -104,8 +104,8 @@ show_help() {
     echo "  local:clean          Stop and remove all local containers/volumes"
     echo ""
     echo -e "${YELLOW}Deployment Commands:${NC}"
-    echo "  deploy [\"message\"]   Commit, push to main, auto-deploy to STAGING"
-    echo "  promote [ref]        Promote to PRODUCTION (triggers GitHub Action)"
+    echo "  deploy [\"message\"]         Commit, push to main, auto-deploy to STAGING"
+    echo "  promote <src> <dst>       Promote between environments (one-way: staging→uat→prod)"
     echo "  watch [staging|prod] Watch GitHub Actions build status and logs"
     echo ""
     echo -e "${YELLOW}Staging Commands (staging.taskai.cc):${NC}"
@@ -150,8 +150,9 @@ show_help() {
     echo ""
     echo -e "${YELLOW}Examples:${NC}"
     echo "  $0 deploy \"feat: add dark mode\"       # Deploy to staging"
-    echo "  $0 promote                             # Promote main to production"
-    echo "  $0 promote abc123                      # Promote specific commit"
+    echo "  $0 promote staging uat                # Promote staging → UAT"
+    echo "  $0 promote staging prod                # Promote staging → production"
+    echo "  $0 promote uat prod                    # Promote UAT → production"
     echo "  $0 staging health                      # Check staging health"
     echo "  $0 prod health                         # Check production health"
     echo "  $0 staging logs api                    # View staging API logs"
@@ -228,34 +229,100 @@ Co-Authored-By: Claude <noreply@anthropic.com>" || {
     return 1
 }
 
-# Promote to production (triggers GitHub Actions workflow)
-promote_to_production() {
-    local ref="${1:-main}"
+# Promote between environments: staging → uat, staging → prod, uat → prod
+# Usage: promote <source> <destination>
+promote() {
+    local src="${1:-}"
+    local dst="${2:-}"
 
-    print_header "Promoting to Production"
-    echo -e "${CYAN}Ref:${NC} $ref"
-    echo ""
+    # Normalize aliases
+    case "$src" in
+        staging|stage) src="staging" ;;
+        uat)           src="uat" ;;
+        prod|production) src="prod" ;;
+        *)
+            print_error "Unknown source environment: '$src'"
+            echo "  Valid sources: staging, uat"
+            echo "  Usage: $0 promote <source> <destination>"
+            echo "  Example: $0 promote staging uat"
+            return 1
+            ;;
+    esac
+    case "$dst" in
+        uat)             dst="uat" ;;
+        prod|production) dst="prod" ;;
+        *)
+            print_error "Unknown destination environment: '$dst'"
+            echo "  Valid destinations: uat, prod"
+            echo "  Usage: $0 promote <source> <destination>"
+            echo "  Example: $0 promote staging prod"
+            return 1
+            ;;
+    esac
 
-    # Check if gh CLI is available
-    if ! command -v gh &> /dev/null; then
-        print_error "GitHub CLI (gh) is not installed"
-        print_status "Install: brew install gh"
+    # Enforce one-way pipeline: staging → uat → prod (no reverse, no prod as source)
+    local allowed=0
+    [[ "$src" == "staging" && "$dst" == "uat"  ]] && allowed=1
+    [[ "$src" == "staging" && "$dst" == "prod" ]] && allowed=1
+    [[ "$src" == "uat"     && "$dst" == "prod" ]] && allowed=1
+    if [[ "$allowed" == "0" ]]; then
+        print_error "Invalid promotion: $src → $dst"
+        echo "  Allowed paths:"
+        echo "    staging → uat"
+        echo "    staging → prod"
+        echo "    uat     → prod"
         return 1
     fi
 
-    # Trigger the production deployment workflow
-    print_status "Triggering production deployment..."
-    gh workflow run deploy-production.yml \
-        -f ref="$ref" || {
-        print_error "Failed to trigger production deployment"
+    # Check gh CLI
+    if ! command -v gh &> /dev/null; then
+        print_error "GitHub CLI (gh) is not installed. Install: brew install gh"
         return 1
-    }
+    fi
 
-    print_success "Production deployment triggered!"
-    echo ""
-    echo -e "${CYAN}Monitor:${NC} https://github.com/anchoo2kewl/taskai/actions"
-    echo ""
-    print_status "After deployment completes, verify: $0 prod health"
+    if [[ "$dst" == "uat" ]]; then
+        print_header "Promoting staging → UAT"
+        print_status "Temporarily enabling force pushes on UAT branch..."
+        gh api repos/anchoo2kewl/taskai/branches/uat/protection -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            --input - <<'EOF'
+{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":true,"required_linear_history":false}
+EOF
+        print_status "Force-pushing main → uat..."
+        git push origin main:uat --force || {
+            print_error "Force push to UAT failed"
+            return 1
+        }
+        print_status "Re-disabling force pushes on UAT branch..."
+        gh api repos/anchoo2kewl/taskai/branches/uat/protection -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            --input - <<'EOF'
+{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"required_linear_history":false}
+EOF
+        print_success "UAT promoted from staging!"
+        echo -e "${CYAN}UAT URL:${NC} https://uat.taskai.cc"
+        echo -e "${CYAN}Monitor:${NC} https://github.com/anchoo2kewl/taskai/actions"
+
+    elif [[ "$dst" == "prod" ]]; then
+        local ref="main"
+        if [[ "$src" == "uat" ]]; then
+            # Resolve the current HEAD of the uat branch as the ref to deploy
+            ref=$(git ls-remote origin uat | awk '{print $1}')
+            [[ -z "$ref" ]] && ref="main"
+        fi
+        print_header "Promoting $src → Production"
+        echo -e "${CYAN}Ref:${NC} $ref"
+        echo ""
+        print_status "Triggering production deployment..."
+        gh workflow run deploy-production.yml -f ref="$ref" || {
+            print_error "Failed to trigger production deployment"
+            return 1
+        }
+        print_success "Production deployment triggered!"
+        echo -e "${CYAN}Monitor:${NC} https://github.com/anchoo2kewl/taskai/actions"
+        echo ""
+        print_status "After deployment completes, verify: $0 prod health"
+    fi
 }
 
 # Watch GitHub Actions deployment status and logs
@@ -1444,7 +1511,7 @@ case ${1:-help} in
         deploy_to_staging "$*"
         ;;
     promote)
-        promote_to_production "$2"
+        promote "$2" "$3"
         ;;
     watch)
         watch_deployment "$2"
