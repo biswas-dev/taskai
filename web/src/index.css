@@ -3,6 +3,52 @@
 @tailwind utilities;
 
 @layer base {
+  /* ── Dark mode (default) ── */
+  :root {
+    /* Background channels (RGB, space-separated for Tailwind opacity support) */
+    --color-bg-base:      10 10 11;      /* #0A0A0B */
+    --color-bg-primary:   19 19 22;      /* #131316 */
+    --color-bg-secondary: 27 27 31;      /* #1B1B1F */
+    --color-bg-tertiary:  34 34 38;      /* #222226 */
+    --color-bg-elevated:  42 42 46;      /* #2A2A2E */
+
+    /* Border colors (full rgba — no Tailwind opacity modifier needed) */
+    --color-border-subtle: rgba(255, 255, 255, 0.06);
+    --color-border-medium: rgba(255, 255, 255, 0.08);
+    --color-border-strong: rgba(255, 255, 255, 0.12);
+
+    /* Text channels */
+    --color-text-primary:    255 255 255; /* #FFFFFF */
+    --color-text-secondary:  238 238 238; /* #EEEEEE */
+    --color-text-tertiary:   138 143 152; /* #8A8F98 */
+    --color-text-quaternary:  92  95 102; /* #5C5F66 */
+
+    /* Scrollbar */
+    --scrollbar-thumb: rgba(34, 34, 38, 0.6);
+    --scrollbar-thumb-hover: rgba(42, 42, 46, 0.8);
+  }
+
+  /* ── Light mode override ── */
+  html.light {
+    --color-bg-base:      248 248 250;   /* #F8F8FA */
+    --color-bg-primary:   255 255 255;   /* #FFFFFF */
+    --color-bg-secondary: 249 250 251;   /* #F9FAFB */
+    --color-bg-tertiary:  243 244 246;   /* #F3F4F6 */
+    --color-bg-elevated:  255 255 255;   /* #FFFFFF */
+
+    --color-border-subtle: rgba(0, 0, 0, 0.06);
+    --color-border-medium: rgba(0, 0, 0, 0.10);
+    --color-border-strong: rgba(0, 0, 0, 0.16);
+
+    --color-text-primary:    13  14  16; /* #0D0E10 */
+    --color-text-secondary:  55  65  81; /* #374151 */
+    --color-text-tertiary:  107 114 128; /* #6B7280 */
+    --color-text-quaternary: 156 163 175; /* #9CA3AF */
+
+    --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+    --scrollbar-thumb-hover: rgba(0, 0, 0, 0.30);
+  }
+
   body {
     margin: 0;
     font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
@@ -36,11 +82,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-dark-bg-tertiary rounded-full;
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-dark-bg-elevated;
+    background: var(--scrollbar-thumb-hover);
   }
 }
 

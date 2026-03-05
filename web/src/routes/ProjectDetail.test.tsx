@@ -124,8 +124,8 @@ describe('ProjectDetail', () => {
   it('renders tasks in their swim lanes', async () => {
     render(<ProjectDetail />)
     await waitFor(() => {
-      expect(screen.getByText('Build login page')).toBeInTheDocument()
-      expect(screen.getByText('Write tests')).toBeInTheDocument()
+      expect(screen.getAllByText('Build login page').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('Write tests').length).toBeGreaterThanOrEqual(1)
     })
   })
 

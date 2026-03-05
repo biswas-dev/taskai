@@ -64,25 +64,25 @@ export default {
           800: '#991b1b',
           900: '#7f1d1d',
         },
-        // Linear dark mode colors
+        // Themeable semantic colors (CSS variable driven)
         dark: {
           bg: {
-            base: '#0A0A0B',       // Near-black page base
-            primary: '#131316',    // Main content background
-            secondary: '#1B1B1F', // Cards, sidebar
-            tertiary: '#222226',  // Hover states
-            elevated: '#2A2A2E',  // Modals, dropdowns
+            base: 'rgb(var(--color-bg-base) / <alpha-value>)',
+            primary: 'rgb(var(--color-bg-primary) / <alpha-value>)',
+            secondary: 'rgb(var(--color-bg-secondary) / <alpha-value>)',
+            tertiary: 'rgb(var(--color-bg-tertiary) / <alpha-value>)',
+            elevated: 'rgb(var(--color-bg-elevated) / <alpha-value>)',
           },
           border: {
-            subtle: 'rgba(255, 255, 255, 0.06)',
-            medium: 'rgba(255, 255, 255, 0.08)',
-            strong: 'rgba(255, 255, 255, 0.12)',
+            subtle: 'var(--color-border-subtle)',
+            medium: 'var(--color-border-medium)',
+            strong: 'var(--color-border-strong)',
           },
           text: {
-            primary: '#FFFFFF',    // Headings
-            secondary: '#EEEEEE', // Body text
-            tertiary: '#8A8F98',  // Muted text, labels
-            quaternary: '#5C5F66', // Disabled, placeholder
+            primary: 'rgb(var(--color-text-primary) / <alpha-value>)',
+            secondary: 'rgb(var(--color-text-secondary) / <alpha-value>)',
+            tertiary: 'rgb(var(--color-text-tertiary) / <alpha-value>)',
+            quaternary: 'rgb(var(--color-text-quaternary) / <alpha-value>)',
           },
         },
       },

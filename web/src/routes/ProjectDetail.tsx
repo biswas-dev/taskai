@@ -116,8 +116,8 @@ function BoardFilterBar({ sprints, assignees, tags, sprintId, assigneeId, priori
         onClick={() => { setOpen(v => !v); setCategory(null); setSearch('') }}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors focus:outline-none ${
           hasFilters
-            ? 'bg-[#1f6feb]/10 border-[#1f6feb]/40 text-[#79c0ff]'
-            : 'bg-transparent border-[#30363d] text-[#8b949e] hover:border-[#484f58] hover:text-[#c9d1d9]'
+            ? 'bg-primary-500/10 border-primary-500/40 text-primary-400'
+            : 'bg-transparent border-dark-border-medium text-dark-text-tertiary hover:border-dark-border-strong hover:text-dark-text-secondary'
         }`}
       >
         <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -131,7 +131,7 @@ function BoardFilterBar({ sprints, assignees, tags, sprintId, assigneeId, priori
                 <span
                   role="button"
                   onClick={e => { e.stopPropagation(); removeChip(c.key) }}
-                  className="text-[#8b949e] hover:text-white cursor-pointer"
+                  className="text-dark-text-tertiary hover:text-dark-text-primary cursor-pointer"
                 >×</span>
               </span>
             ))}
@@ -142,29 +142,29 @@ function BoardFilterBar({ sprints, assignees, tags, sprintId, assigneeId, priori
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-[#161b22] border border-[#30363d] rounded-lg shadow-2xl z-50 overflow-hidden text-sm">
+        <div className="absolute top-full left-0 mt-1 w-64 bg-dark-bg-elevated border border-dark-border-medium rounded-lg shadow-linear-xl z-50 overflow-hidden text-sm">
           {!category ? (
             <>
-              <div className="px-3 py-2 text-xs text-[#8b949e] font-semibold border-b border-[#30363d]">Filter by</div>
+              <div className="px-3 py-2 text-xs text-dark-text-tertiary font-semibold border-b border-dark-border-subtle">Filter by</div>
               {CATEGORIES.map(cat => (
                 <button
                   key={cat.id}
                   type="button"
                   onClick={() => { setCategory(cat.id); setSearch('') }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-[#c9d1d9] hover:bg-[#1f6feb]/10 transition-colors"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-dark-text-secondary hover:bg-primary-500/10 transition-colors"
                 >
-                  <span className="text-[#8b949e] w-4 flex-shrink-0">{cat.icon}</span>
+                  <span className="text-dark-text-tertiary w-4 flex-shrink-0">{cat.icon}</span>
                   <span className="flex-1 text-left">{cat.label}</span>
-                  {activeVal(cat.id) && <span className="text-xs text-[#79c0ff] font-mono truncate max-w-[80px]">{activeVal(cat.id)}</span>}
-                  <svg className="w-3 h-3 text-[#8b949e] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  {activeVal(cat.id) && <span className="text-xs text-primary-400 font-mono truncate max-w-[80px]">{activeVal(cat.id)}</span>}
+                  <svg className="w-3 h-3 text-dark-text-tertiary flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                 </button>
               ))}
               {hasFilters && (
-                <div className="border-t border-[#30363d] px-3 py-2">
+                <div className="border-t border-dark-border-subtle px-3 py-2">
                   <button
                     type="button"
                     onClick={() => { onChange({ sprintId: null, assigneeId: null, priority: '', tagId: null }); setOpen(false) }}
-                    className="text-xs text-[#f85149] hover:text-red-400"
+                    className="text-xs text-danger-400 hover:text-danger-300"
                   >
                     Clear all filters
                   </button>
@@ -173,27 +173,27 @@ function BoardFilterBar({ sprints, assignees, tags, sprintId, assigneeId, priori
             </>
           ) : (
             <>
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-[#30363d]">
-                <button type="button" onClick={() => { setCategory(null); setSearch('') }} className="text-[#8b949e] hover:text-[#c9d1d9]">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-dark-border-subtle">
+                <button type="button" onClick={() => { setCategory(null); setSearch('') }} className="text-dark-text-tertiary hover:text-dark-text-secondary">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                 </button>
-                <span className="text-xs text-[#8b949e] font-semibold uppercase tracking-wide">Filter by {category}</span>
+                <span className="text-xs text-dark-text-tertiary font-semibold uppercase tracking-wide">Filter by {category}</span>
               </div>
               {category !== 'priority' && (
-                <div className="px-3 py-2 border-b border-[#30363d]">
+                <div className="px-3 py-2 border-b border-dark-border-subtle">
                   <input
                     autoFocus
                     type="text"
                     placeholder={`Search ${category}s…`}
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-full text-sm bg-transparent text-[#c9d1d9] placeholder-[#8b949e] outline-none"
+                    className="w-full text-sm bg-transparent text-dark-text-secondary placeholder:text-dark-text-quaternary outline-none"
                   />
                 </div>
               )}
               <div className="max-h-52 overflow-y-auto">
                 {options.length === 0 ? (
-                  <div className="px-3 py-3 text-[#8b949e]">No results</div>
+                  <div className="px-3 py-3 text-dark-text-tertiary">No results</div>
                 ) : options.map(opt => {
                   const isActive =
                     (category === 'sprint'   && sprintId   === Number(opt.value)) ||
@@ -205,12 +205,12 @@ function BoardFilterBar({ sprints, assignees, tags, sprintId, assigneeId, priori
                       key={opt.value}
                       type="button"
                       onClick={() => selectOption(category, opt.value)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#1f6feb]/10 transition-colors ${isActive ? 'text-[#79c0ff]' : 'text-[#c9d1d9]'}`}
+                      className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-primary-500/10 transition-colors ${isActive ? 'text-primary-400' : 'text-dark-text-secondary'}`}
                     >
-                      <span className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${isActive ? 'bg-[#1f6feb] border-[#1f6feb]' : 'border-[#484f58]'}`} />
+                      <span className={`w-3 h-3 rounded-full border-2 flex-shrink-0 ${isActive ? 'bg-primary-500 border-primary-500' : 'border-dark-border-strong'}`} />
                       {opt.color && <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color }} />}
                       <span className="flex-1 text-left">{opt.label}</span>
-                      {opt.sub && <span className="text-xs text-[#8b949e]">{opt.sub}</span>}
+                      {opt.sub && <span className="text-xs text-dark-text-tertiary">{opt.sub}</span>}
                     </button>
                   )
                 })}
@@ -258,6 +258,9 @@ export default function ProjectDetail() {
   const [newTaskDueDate, setNewTaskDueDate] = useState('')
   const [creating, setCreating] = useState(false)
 
+  // Mobile: selected swim lane (tab picker)
+  const [mobileLane, setMobileLane] = useState<number | null>(null)
+
   // Drag and drop state
   const [activeTask, setActiveTask] = useState<Task | null>(null)
 
@@ -272,12 +275,20 @@ export default function ProjectDetail() {
   // Load project metadata, swim lanes, sprints and tags
   useEffect(() => {
     if (projectId) {
+      setMobileLane(null)
       loadProject()
       loadSwimLanes()
       api.getSprints(Number(projectId)).then(setSprints).catch(() => {})
       api.getTags(Number(projectId)).then(setTags).catch(() => {})
     }
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Default mobile lane to first swim lane once loaded
+  useEffect(() => {
+    if (swimLanes.length > 0 && mobileLane === null) {
+      setMobileLane(swimLanes[0].id)
+    }
+  }, [swimLanes, mobileLane])
 
   // Restore filters from localStorage when projectId changes; track last visited project
   useEffect(() => {
@@ -530,15 +541,18 @@ export default function ProjectDetail() {
                   if ('tagId'      in patch) setFilterTag(patch.tagId ?? null)
                 }}
               />
-              <div className="w-px h-4 bg-dark-border-subtle" />
-              {swimLanes.map((lane) => (
-                <div key={lane.id} className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: lane.color }} />
-                  <span className="text-xs font-medium text-dark-text-secondary">
-                    <span className="text-dark-text-primary">{tasksBySwimLane[lane.id]?.length || 0}</span> {lane.name}
-                  </span>
-                </div>
-              ))}
+              {/* Lane stats — hidden on mobile (shown in lane tab bar instead) */}
+              <div className="hidden md:flex items-center gap-4">
+                <div className="w-px h-4 bg-dark-border-subtle" />
+                {swimLanes.map((lane) => (
+                  <div key={lane.id} className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: lane.color }} />
+                    <span className="text-xs font-medium text-dark-text-secondary">
+                      <span className="text-dark-text-primary">{tasksBySwimLane[lane.id]?.length || 0}</span> {lane.name}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -547,7 +561,7 @@ export default function ProjectDetail() {
         {activeTab === 'board' && (
           <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
             {/* Tasks Board */}
-            <div className="flex-1 overflow-y-auto overflow-x-auto p-4 md:p-6 bg-dark-bg-base">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-dark-bg-base">
               {tasks.length === 0 ? (
                 <div className="flex items-center justify-center h-64">
                   <div className="text-center">
@@ -571,19 +585,62 @@ export default function ProjectDetail() {
                   </div>
                 </div>
               ) : (
-                <div className="flex gap-4 overflow-x-auto pb-2 md:grid md:overflow-x-visible" style={{ gridTemplateColumns: `repeat(${swimLanes.length}, minmax(0, 1fr))` }}>
-                  {swimLanes.map((lane) => (
-                    <TaskColumn
-                      key={lane.id}
-                      id={lane.id.toString()}
-                      title={lane.name}
-                      count={tasksBySwimLane[lane.id]?.length || 0}
-                      tasks={tasksBySwimLane[lane.id] || []}
-                      color={lane.color}
-                      projectId={projectId || ''}
-                    />
-                  ))}
-                </div>
+                <>
+                  {/* Mobile: swim lane tab picker */}
+                  <div className="md:hidden flex gap-1.5 overflow-x-auto pb-3 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+                    {swimLanes.map(lane => (
+                      <button
+                        key={lane.id}
+                        onClick={() => setMobileLane(lane.id)}
+                        className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                          mobileLane === lane.id
+                            ? 'bg-dark-bg-elevated border border-dark-border-medium text-dark-text-primary shadow-linear-sm'
+                            : 'text-dark-text-tertiary hover:text-dark-text-secondary hover:bg-dark-bg-secondary'
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: lane.color }} />
+                        {lane.name}
+                        <span className={`text-xs tabular-nums ${mobileLane === lane.id ? 'text-dark-text-secondary' : 'text-dark-text-quaternary'}`}>
+                          {tasksBySwimLane[lane.id]?.length || 0}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Mobile: single lane view */}
+                  {mobileLane !== null && (
+                    <div className="md:hidden">
+                      {swimLanes
+                        .filter(lane => lane.id === mobileLane)
+                        .map(lane => (
+                          <TaskColumn
+                            key={lane.id}
+                            id={lane.id.toString()}
+                            title={lane.name}
+                            count={tasksBySwimLane[lane.id]?.length || 0}
+                            tasks={tasksBySwimLane[lane.id] || []}
+                            color={lane.color}
+                            projectId={projectId || ''}
+                          />
+                        ))}
+                    </div>
+                  )}
+
+                  {/* Desktop: all lanes as grid */}
+                  <div className="hidden md:grid gap-4" style={{ gridTemplateColumns: `repeat(${swimLanes.length}, minmax(0, 1fr))` }}>
+                    {swimLanes.map((lane) => (
+                      <TaskColumn
+                        key={lane.id}
+                        id={lane.id.toString()}
+                        title={lane.name}
+                        count={tasksBySwimLane[lane.id]?.length || 0}
+                        tasks={tasksBySwimLane[lane.id] || []}
+                        color={lane.color}
+                        projectId={projectId || ''}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 

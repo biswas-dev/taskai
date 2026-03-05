@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../state/AuthContext'
+import { useTheme } from '../state/ThemeContext'
 import Sidebar from '../components/Sidebar'
 import ProjectModal from '../components/ProjectModal'
 import SyncStatus from '../components/SyncStatus'
@@ -11,6 +12,7 @@ import { Project } from '../lib/api'
 
 export default function Dashboard() {
   const { user, logout } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -79,6 +81,25 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 md:gap-4">
               <SyncStatus />
               <NotificationBell />
+              {/* Theme toggle */}
+              <button
+                onClick={toggleTheme}
+                className="p-1.5 text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary rounded-md transition-colors"
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              >
+                {theme === 'dark' ? (
+                  /* Sun icon */
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+                  </svg>
+                ) : (
+                  /* Moon icon */
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                )}
+              </button>
               <button
                 onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}
                 className="hidden md:inline-flex items-center gap-2 px-3 py-1.5 text-xs text-dark-text-quaternary hover:text-dark-text-tertiary bg-dark-bg-secondary hover:bg-dark-bg-tertiary border border-dark-border-subtle rounded-md transition-all duration-150 cursor-pointer"

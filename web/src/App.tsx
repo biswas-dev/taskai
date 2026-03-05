@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './state/AuthContext'
 import { SyncProvider } from './state/SyncContext'
+import { ThemeProvider } from './state/ThemeContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Landing from './routes/Landing'
 import Login from './routes/Login'
@@ -130,13 +131,15 @@ function TaskDetailModal() {
 
 function App() {
   return (
-    <AuthProvider>
-      <SyncProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-      </SyncProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <SyncProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+        </SyncProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }
 
