@@ -479,6 +479,7 @@ func (s *Server) HandleUpdateProjectGitHubSettings(w http.ResponseWriter, r *htt
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	req.ProjectURL = strings.TrimSpace(req.ProjectURL)
 
 	if req.Token != "" {
 		_, err = s.db.Exec(`

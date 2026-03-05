@@ -586,7 +586,7 @@ func (s *Server) loadGitHubConfig(projectID int) (owner, repo, token, projectURL
 		token = tokenNull.String
 	}
 	if projectURLNull.Valid {
-		projectURL = projectURLNull.String
+		projectURL = strings.TrimSpace(projectURLNull.String)
 	}
 	return
 }
@@ -1303,6 +1303,12 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 			slRows.Close()
 		}
 
+		// Build a lowercase-keyed copy of StatusAssignments for case-insensitive fallback.
+		statusAssignmentsLower := map[string]int64{}
+		for k, v := range req.StatusAssignments {
+			statusAssignmentsLower[strings.ToLower(k)] = v
+		}
+
 		// Fetch GitHub Projects V2 issue→column+itemID map (best-effort; ignore errors)
 		// Use the explicit project URL if configured; otherwise auto-detect from repo/org.
 		issueColumnMap := map[int]ghProjectItemStatus{}
@@ -1393,6 +1399,8 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 				ghItemID = itemStatus.ItemID
 				if itemStatus.StatusName != "" {
 					if laneID, ok := req.StatusAssignments[itemStatus.StatusName]; ok && laneID > 0 {
+						swimLaneID = &laneID
+					} else if laneID, ok := statusAssignmentsLower[strings.ToLower(itemStatus.StatusName)]; ok && laneID > 0 {
 						swimLaneID = &laneID
 					}
 				}
