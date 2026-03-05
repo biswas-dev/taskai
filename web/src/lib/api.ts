@@ -830,8 +830,10 @@ class ApiClient {
     projectId: number,
     statusAssignments?: Record<string, number>,
     userAssignments?: Record<string, number>,
+    stateFilter?: 'open' | 'closed' | 'all',
     onProgress?: (event: GitHubProgressEvent) => void
   ): Promise<GitHubPullResponse> {
+    const filter = stateFilter && stateFilter !== 'all' ? { state: stateFilter } : undefined
     return this.streamGitHub(
       `/api/projects/${projectId}/github/sync`,
       {
@@ -841,6 +843,7 @@ class ApiClient {
         pull_comments: true,
         user_assignments: userAssignments ?? {},
         status_assignments: statusAssignments ?? {},
+        filter,
       },
       onProgress ?? (() => {})
     )

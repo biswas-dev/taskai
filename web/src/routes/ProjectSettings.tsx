@@ -314,6 +314,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   const [statusAssignments, setStatusAssignments] = useState<Record<string, number>>({})
   const [isSavingMappings, setIsSavingMappings] = useState(false)
   const [mappingsSaved, setMappingsSaved] = useState(false)
+  const [syncStateFilter, setSyncStateFilter] = useState<'open' | 'closed' | 'all'>('open')
   const [pullSprints, setPullSprints] = useState(true)
   const [pullTags, setPullTags] = useState(true)
   const [pullTasks, setPullTasks] = useState(true)
@@ -602,6 +603,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
         projectId,
         statusAssignments,
         userAssignments,
+        syncStateFilter,
         (evt) => setImportProgress(evt)
       )
       setImportSuccess(`Synced: ${result.created_tasks} new tasks, updated existing`)
@@ -1806,16 +1808,29 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                     </div>
                   )}
 
-                  {/* Sync Now (shown after first sync, only for owners/admins) */}
-                  {githubSettings.github_last_sync && (
+                  {/* Sync Now (shown after first sync, owners/admins only) */}
+                  {githubSettings.github_last_sync && isOwnerOrAdmin && (
                     <div className="mt-4 pt-4 border-t border-dark-border-subtle space-y-3">
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-3">
                         <span className="text-sm text-dark-text-secondary">
                           Last synced: {new Date(githubSettings.github_last_sync).toLocaleString()}
                         </span>
-                        <Button onClick={handleSyncNow} disabled={isSyncing} variant="secondary" size="sm">
-                          {isSyncing ? 'Syncing...' : 'Sync Now'}
-                        </Button>
+                        <div className="flex items-center gap-2 ml-auto">
+                          <label className="text-xs text-dark-text-tertiary">Sync:</label>
+                          <select
+                            value={syncStateFilter}
+                            onChange={e => setSyncStateFilter(e.target.value as 'open' | 'closed' | 'all')}
+                            disabled={isSyncing}
+                            className="text-xs bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          >
+                            <option value="open">Open issues only</option>
+                            <option value="all">All issues</option>
+                            <option value="closed">Closed issues only</option>
+                          </select>
+                          <Button onClick={handleSyncNow} disabled={isSyncing} variant="secondary" size="sm">
+                            {isSyncing ? 'Syncing...' : 'Sync Now'}
+                          </Button>
+                        </div>
                       </div>
                       {isSyncing && importProgress && (
                         <div className="p-3 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
