@@ -426,6 +426,7 @@ var (
 		{Name: "priority", Type: field.TypeString, Default: "medium"},
 		{Name: "estimated_hours", Type: field.TypeFloat64, Nullable: true},
 		{Name: "actual_hours", Type: field.TypeFloat64, Nullable: true},
+		{Name: "start_date", Type: field.TypeTime, Nullable: true},
 		{Name: "due_date", Type: field.TypeTime, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
@@ -442,25 +443,25 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "tasks_projects_tasks",
-				Columns:    []*schema.Column{TasksColumns[11]},
+				Columns:    []*schema.Column{TasksColumns[12]},
 				RefColumns: []*schema.Column{ProjectsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "tasks_sprints_tasks",
-				Columns:    []*schema.Column{TasksColumns[12]},
+				Columns:    []*schema.Column{TasksColumns[13]},
 				RefColumns: []*schema.Column{SprintsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "tasks_swim_lanes_tasks",
-				Columns:    []*schema.Column{TasksColumns[13]},
+				Columns:    []*schema.Column{TasksColumns[14]},
 				RefColumns: []*schema.Column{SwimLanesColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "tasks_users_tasks_assigned",
-				Columns:    []*schema.Column{TasksColumns[14]},
+				Columns:    []*schema.Column{TasksColumns[15]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -469,7 +470,7 @@ var (
 			{
 				Name:    "task_project_id",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[11]},
+				Columns: []*schema.Column{TasksColumns[12]},
 			},
 			{
 				Name:    "task_status",
@@ -479,12 +480,12 @@ var (
 			{
 				Name:    "task_swim_lane_id",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[13]},
+				Columns: []*schema.Column{TasksColumns[14]},
 			},
 			{
 				Name:    "task_sprint_id",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[12]},
+				Columns: []*schema.Column{TasksColumns[13]},
 			},
 			{
 				Name:    "task_priority",
@@ -494,12 +495,12 @@ var (
 			{
 				Name:    "task_assignee_id",
 				Unique:  false,
-				Columns: []*schema.Column{TasksColumns[14]},
+				Columns: []*schema.Column{TasksColumns[15]},
 			},
 			{
 				Name:    "task_project_id_task_number",
 				Unique:  true,
-				Columns: []*schema.Column{TasksColumns[11], TasksColumns[1]},
+				Columns: []*schema.Column{TasksColumns[12], TasksColumns[1]},
 			},
 		},
 	}

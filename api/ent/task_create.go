@@ -166,6 +166,20 @@ func (_c *TaskCreate) SetNillableActualHours(v *float64) *TaskCreate {
 	return _c
 }
 
+// SetStartDate sets the "start_date" field.
+func (_c *TaskCreate) SetStartDate(v time.Time) *TaskCreate {
+	_c.mutation.SetStartDate(v)
+	return _c
+}
+
+// SetNillableStartDate sets the "start_date" field if the given value is not nil.
+func (_c *TaskCreate) SetNillableStartDate(v *time.Time) *TaskCreate {
+	if v != nil {
+		_c.SetStartDate(*v)
+	}
+	return _c
+}
+
 // SetDueDate sets the "due_date" field.
 func (_c *TaskCreate) SetDueDate(v time.Time) *TaskCreate {
 	_c.mutation.SetDueDate(v)
@@ -434,6 +448,10 @@ func (_c *TaskCreate) createSpec() (*Task, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ActualHours(); ok {
 		_spec.SetField(task.FieldActualHours, field.TypeFloat64, value)
 		_node.ActualHours = &value
+	}
+	if value, ok := _c.mutation.StartDate(); ok {
+		_spec.SetField(task.FieldStartDate, field.TypeTime, value)
+		_node.StartDate = &value
 	}
 	if value, ok := _c.mutation.DueDate(); ok {
 		_spec.SetField(task.FieldDueDate, field.TypeTime, value)

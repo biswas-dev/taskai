@@ -409,6 +409,7 @@ func main() {
 			r.Post("/projects/{id}/github/push-all", server.HandleGitHubPushAll)
 			r.Get("/projects/{id}/github/mappings", server.HandleGetGitHubMappings)
 			r.Put("/projects/{id}/github/mappings", server.HandleSaveGitHubMappings)
+			r.Get("/projects/{id}/github/sync-logs", server.HandleGetGitHubSyncLogs)
 
 			// Project invitation routes
 			r.Post("/projects/{id}/invitations", server.HandleInviteProjectMember)
@@ -509,6 +510,7 @@ func main() {
 	server.StartBrevoHealthCheck(bgCtx)
 	go server.StartSnapshotWorker(bgCtx)
 	go server.StartIndexingWorker(bgCtx)
+	go server.StartGitHubSyncWorker(bgCtx)
 
 	// Create HTTP server
 	addr := fmt.Sprintf(":%s", cfg.Port)

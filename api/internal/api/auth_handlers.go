@@ -11,6 +11,7 @@ import (
 
 	"taskai/ent"
 	"taskai/ent/invite"
+	"taskai/ent/teaminvitation"
 	"taskai/ent/user"
 	"taskai/internal/auth"
 )
@@ -186,6 +187,9 @@ func (s *Server) HandleSignup(w http.ResponseWriter, r *http.Request) {
 		zap.Int64("team_id", team.ID),
 		zap.String("email", newUser.Email),
 	)
+
+	// Auto-accept any pending team invitation linked to this invite code
+	s.acceptPendingTeamInvitation(ctx, req.InviteCode, newUser.ID)
 
 	// Convert Ent user to API user struct
 	apiUser := entUserToAPI(newUser)
@@ -486,4 +490,59 @@ func entUserToAPI(u *ent.User) User {
 		apiUser.Name = *u.Name
 	}
 	return apiUser
+}
+
+// acceptPendingTeamInvitation looks up a TeamInvitation by its invite_code and, if pending, accepts it
+// and adds the new user to the team. Errors are logged but do not fail the signup.
+func (s *Server) acceptPendingTeamInvitation(ctx context.Context, inviteCode string, newUserID int64) {
+	entInv, err := s.db.Client.TeamInvitation.Query().
+		Where(
+			teaminvitation.InviteCode(inviteCode),
+			teaminvitation.Status("pending"),
+		).
+		Only(ctx)
+	if err != nil {
+		// Not found or already accepted — nothing to do
+		return
+	}
+
+	now := time.Now()
+	tx, err := s.db.Client.Tx(ctx)
+	if err != nil {
+		s.logger.Error("acceptPendingTeamInvitation: begin tx failed", zap.Error(err))
+		return
+	}
+	defer tx.Rollback()
+
+	_, err = tx.TeamInvitation.UpdateOneID(entInv.ID).
+		SetStatus("accepted").
+		SetInviteeID(newUserID).
+		SetRespondedAt(now).
+		Save(ctx)
+	if err != nil {
+		s.logger.Error("acceptPendingTeamInvitation: update invitation failed", zap.Error(err))
+		return
+	}
+
+	_, err = tx.TeamMember.Create().
+		SetTeamID(entInv.TeamID).
+		SetUserID(newUserID).
+		SetRole("member").
+		SetStatus("active").
+		Save(ctx)
+	if err != nil {
+		s.logger.Error("acceptPendingTeamInvitation: create team member failed", zap.Error(err))
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		s.logger.Error("acceptPendingTeamInvitation: commit failed", zap.Error(err))
+		return
+	}
+
+	s.logger.Info("Team invitation auto-accepted on signup",
+		zap.Int64("invitation_id", entInv.ID),
+		zap.Int64("team_id", entInv.TeamID),
+		zap.Int64("new_user_id", newUserID),
+	)
 }

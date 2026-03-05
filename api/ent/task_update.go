@@ -253,6 +253,26 @@ func (_u *TaskUpdate) ClearActualHours() *TaskUpdate {
 	return _u
 }
 
+// SetStartDate sets the "start_date" field.
+func (_u *TaskUpdate) SetStartDate(v time.Time) *TaskUpdate {
+	_u.mutation.SetStartDate(v)
+	return _u
+}
+
+// SetNillableStartDate sets the "start_date" field if the given value is not nil.
+func (_u *TaskUpdate) SetNillableStartDate(v *time.Time) *TaskUpdate {
+	if v != nil {
+		_u.SetStartDate(*v)
+	}
+	return _u
+}
+
+// ClearStartDate clears the value of the "start_date" field.
+func (_u *TaskUpdate) ClearStartDate() *TaskUpdate {
+	_u.mutation.ClearStartDate()
+	return _u
+}
+
 // SetDueDate sets the "due_date" field.
 func (_u *TaskUpdate) SetDueDate(v time.Time) *TaskUpdate {
 	_u.mutation.SetDueDate(v)
@@ -574,6 +594,12 @@ func (_u *TaskUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ActualHoursCleared() {
 		_spec.ClearField(task.FieldActualHours, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.StartDate(); ok {
+		_spec.SetField(task.FieldStartDate, field.TypeTime, value)
+	}
+	if _u.mutation.StartDateCleared() {
+		_spec.ClearField(task.FieldStartDate, field.TypeTime)
 	}
 	if value, ok := _u.mutation.DueDate(); ok {
 		_spec.SetField(task.FieldDueDate, field.TypeTime, value)
@@ -1117,6 +1143,26 @@ func (_u *TaskUpdateOne) ClearActualHours() *TaskUpdateOne {
 	return _u
 }
 
+// SetStartDate sets the "start_date" field.
+func (_u *TaskUpdateOne) SetStartDate(v time.Time) *TaskUpdateOne {
+	_u.mutation.SetStartDate(v)
+	return _u
+}
+
+// SetNillableStartDate sets the "start_date" field if the given value is not nil.
+func (_u *TaskUpdateOne) SetNillableStartDate(v *time.Time) *TaskUpdateOne {
+	if v != nil {
+		_u.SetStartDate(*v)
+	}
+	return _u
+}
+
+// ClearStartDate clears the value of the "start_date" field.
+func (_u *TaskUpdateOne) ClearStartDate() *TaskUpdateOne {
+	_u.mutation.ClearStartDate()
+	return _u
+}
+
 // SetDueDate sets the "due_date" field.
 func (_u *TaskUpdateOne) SetDueDate(v time.Time) *TaskUpdateOne {
 	_u.mutation.SetDueDate(v)
@@ -1468,6 +1514,12 @@ func (_u *TaskUpdateOne) sqlSave(ctx context.Context) (_node *Task, err error) {
 	}
 	if _u.mutation.ActualHoursCleared() {
 		_spec.ClearField(task.FieldActualHours, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.StartDate(); ok {
+		_spec.SetField(task.FieldStartDate, field.TypeTime, value)
+	}
+	if _u.mutation.StartDateCleared() {
+		_spec.ClearField(task.FieldStartDate, field.TypeTime)
 	}
 	if value, ok := _u.mutation.DueDate(); ok {
 		_spec.SetField(task.FieldDueDate, field.TypeTime, value)

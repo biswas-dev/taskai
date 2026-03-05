@@ -29,6 +29,7 @@ func (Task) Fields() []ent.Field {
 		field.String("priority").Default("medium"),
 		field.Float("estimated_hours").Optional().Nillable(),
 		field.Float("actual_hours").Optional().Nillable(),
+		field.Time("start_date").Optional().Nillable(),
 		field.Time("due_date").Optional().Nillable(),
 		field.Time("created_at").Default(time.Now).Immutable(),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),

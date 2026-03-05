@@ -88,6 +88,8 @@ type ghProjectInfo struct {
 type ghProjectItemStatus struct {
 	StatusName string
 	ItemID     string // GraphQL item ID
+	StartDate  string // "YYYY-MM-DD" from Projects V2 date field, may be empty
+	DueDate    string // "YYYY-MM-DD", may be empty
 }
 
 // ghIssueComment is a comment on a GitHub issue.
@@ -104,6 +106,7 @@ type ghProjectItemContent struct {
 
 type ghProjectFieldValue struct {
 	Name  string `json:"name"`  // selected option name (for single-select fields)
+	Date  string `json:"date"`  // date value (for date fields)
 	Field struct {
 		ID   string `json:"id"`   // field GraphQL ID
 		Name string `json:"name"` // field name (e.g. "Status")
@@ -171,6 +174,7 @@ type GitHubPullResponse struct {
 	CreatedSprints  int `json:"created_sprints"`
 	CreatedTags     int `json:"created_tags"`
 	CreatedTasks    int `json:"created_tasks"`
+	UpdatedTasks    int `json:"updated_tasks"`
 	SkippedTasks    int `json:"skipped_tasks"`
 	CreatedComments int `json:"created_comments"`
 }
@@ -372,11 +376,15 @@ query($projectId: ID!, $cursor: String) {
           content {
             ... on Issue { number }
           }
-          fieldValues(first: 10) {
+          fieldValues(first: 20) {
             nodes {
               ... on ProjectV2ItemFieldSingleSelectValue {
                 name
                 field { ... on ProjectV2SingleSelectField { id name } }
+              }
+              ... on ProjectV2ItemFieldDateValue {
+                date
+                field { ... on ProjectV2Field { id name } }
               }
             }
           }
@@ -421,15 +429,23 @@ query($projectId: ID!, $cursor: String) {
 			}
 			info := ghProjectItemStatus{ItemID: item.ID}
 			for _, fv := range item.FieldValues.Nodes {
-				if fv.Name == "" {
-					continue
+				// Capture status from single-select field
+				if fv.Name != "" {
+					// Match by field ID when available (handles "Stage", "Phase", etc.)
+					// Fall back to name match "status" for backwards compat
+					if (statusFieldID != "" && fv.Field.ID == statusFieldID) ||
+						(statusFieldID == "" && strings.EqualFold(fv.Field.Name, "status")) {
+						info.StatusName = fv.Name
+					}
 				}
-				// Match by field ID when available (handles "Stage", "Phase", etc.)
-				// Fall back to name match "status" for backwards compat
-				if (statusFieldID != "" && fv.Field.ID == statusFieldID) ||
-					(statusFieldID == "" && strings.EqualFold(fv.Field.Name, "status")) {
-					info.StatusName = fv.Name
-					break
+				// Capture date fields
+				if fv.Date != "" {
+					lower := strings.ToLower(fv.Field.Name)
+					if strings.Contains(lower, "start") {
+						info.StartDate = fv.Date
+					} else if strings.Contains(lower, "due") || strings.Contains(lower, "end") {
+						info.DueDate = fv.Date
+					}
 				}
 			}
 			result[item.Content.Number] = info
@@ -1088,6 +1104,48 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 	ctx := r.Context()
 	base := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
 
+	// Compute since parameter for efficient incremental sync (sync mode only)
+	sinceParam := ""
+	if doUpdate {
+		var lastSync sql.NullTime
+		_ = s.db.QueryRowContext(ctx, `SELECT github_last_sync FROM projects WHERE id=$1`, projectID).Scan(&lastSync)
+		if lastSync.Valid {
+			sinceParam = lastSync.Time.UTC().Format(time.RFC3339)
+		}
+	}
+
+	// Record sync log entry
+	var syncLogID int64
+	_ = s.db.QueryRowContext(ctx, `
+		INSERT INTO github_sync_logs (project_id, triggered_by) VALUES ($1, 'manual') RETURNING id
+	`, projectID).Scan(&syncLogID)
+
+	finishSyncLog := func(result *GitHubPullResponse, syncErr error) {
+		status := "success"
+		var errMsg *string
+		if syncErr != nil {
+			status = "failed"
+			msg := syncErr.Error()
+			errMsg = &msg
+		}
+		if syncLogID != 0 {
+			_, _ = s.db.ExecContext(context.Background(), `
+				UPDATE github_sync_logs
+				SET completed_at = $1, status = $2, error_message = $3,
+				    created_tasks = $4, updated_tasks = $5, created_comments = $6, skipped_tasks = $7
+				WHERE id = $8
+			`, time.Now(), status, errMsg,
+				result.CreatedTasks, result.UpdatedTasks, result.CreatedComments, result.SkippedTasks,
+				syncLogID)
+			// Purge old logs — keep last 100 per project
+			_, _ = s.db.ExecContext(context.Background(), `
+				DELETE FROM github_sync_logs WHERE project_id = $1 AND id NOT IN (
+					SELECT id FROM github_sync_logs WHERE project_id = $1 ORDER BY started_at DESC LIMIT 100
+				)
+			`, projectID)
+		}
+	}
+
 	// buildIssueURL builds the GitHub issues endpoint URL with optional filter params.
 	buildIssueURL := func(page int) string {
 		state := "all"
@@ -1105,6 +1163,9 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 			if len(req.Filter.Labels) > 0 {
 				url += "&labels=" + strings.Join(req.Filter.Labels, ",")
 			}
+		}
+		if sinceParam != "" {
+			url += "&since=" + sinceParam
 		}
 		return url
 	}
@@ -1393,10 +1454,14 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 			// 4. Category fallback
 			var swimLaneID *int64
 			ghItemID := ""
+			ghStartDate := ""
+			ghDueDate := ""
 
 			// 1. Projects V2 column
 			if itemStatus, ok := issueColumnMap[issue.Number]; ok {
 				ghItemID = itemStatus.ItemID
+				ghStartDate = itemStatus.StartDate
+				ghDueDate = itemStatus.DueDate
 				if itemStatus.StatusName != "" {
 					if laneID, ok := req.StatusAssignments[itemStatus.StatusName]; ok && laneID > 0 {
 						swimLaneID = &laneID
@@ -1437,11 +1502,11 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 				if err == sql.ErrNoRows {
 					// Insert new task
 					err = s.db.QueryRowContext(ctx, `
-						INSERT INTO tasks (project_id, task_number, title, description, status, priority, assignee_id, sprint_id, github_issue_number, swim_lane_id, github_project_item_id)
-						VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8, $9, $10)
+						INSERT INTO tasks (project_id, task_number, title, description, status, priority, assignee_id, sprint_id, github_issue_number, swim_lane_id, github_project_item_id, start_date, due_date)
+						VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8, $9, $10, $11, $12)
 						ON CONFLICT (project_id, github_issue_number) DO NOTHING
 						RETURNING id
-					`, projectID, nextNumber, issue.Title, description, taskStatus, assigneeID, sprintID, issue.Number, swimLaneID, nullableStr(ghItemID)).Scan(&existingID)
+					`, projectID, nextNumber, issue.Title, description, taskStatus, assigneeID, sprintID, issue.Number, swimLaneID, nullableStr(ghItemID), nullableStr(ghStartDate), nullableStr(ghDueDate)).Scan(&existingID)
 					if err == nil {
 						nextNumber++
 						result.CreatedTasks++
@@ -1452,21 +1517,22 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 				} else if err == nil {
 					// Update existing
 					_, _ = s.db.ExecContext(ctx, `
-						UPDATE tasks SET title = $1, description = $2, status = $3, assignee_id = $4, sprint_id = $5, swim_lane_id = $6, github_project_item_id = COALESCE(NULLIF($7,''), github_project_item_id)
-						WHERE id = $8
-					`, issue.Title, description, taskStatus, assigneeID, sprintID, swimLaneID, ghItemID, existingID)
-					// Refresh tags
+						UPDATE tasks SET title = $1, description = $2, status = $3, assignee_id = $4, sprint_id = $5, swim_lane_id = $6, github_project_item_id = COALESCE(NULLIF($7,''), github_project_item_id),
+						start_date = COALESCE($8, start_date), due_date = COALESCE($9, due_date)
+						WHERE id = $10
+					`, issue.Title, description, taskStatus, assigneeID, sprintID, swimLaneID, ghItemID, nullableStr(ghStartDate), nullableStr(ghDueDate), existingID)
 					_, _ = s.db.ExecContext(ctx, `DELETE FROM task_tags WHERE task_id = $1`, existingID)
 					s.insertTaskTags(ctx, existingID, issue.Labels, labelToTagID)
+					result.UpdatedTasks++
 				}
 			} else {
 				var newID int64
 				err := s.db.QueryRowContext(ctx, `
-					INSERT INTO tasks (project_id, task_number, title, description, status, priority, assignee_id, sprint_id, github_issue_number, swim_lane_id, github_project_item_id)
-					VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8, $9, $10)
+					INSERT INTO tasks (project_id, task_number, title, description, status, priority, assignee_id, sprint_id, github_issue_number, swim_lane_id, github_project_item_id, start_date, due_date)
+					VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8, $9, $10, $11, $12)
 					ON CONFLICT (project_id, github_issue_number) DO NOTHING
 					RETURNING id
-				`, projectID, nextNumber, issue.Title, description, taskStatus, assigneeID, sprintID, issue.Number, swimLaneID, nullableStr(ghItemID)).Scan(&newID)
+				`, projectID, nextNumber, issue.Title, description, taskStatus, assigneeID, sprintID, issue.Number, swimLaneID, nullableStr(ghItemID), nullableStr(ghStartDate), nullableStr(ghDueDate)).Scan(&newID)
 				if err == nil {
 					nextNumber++
 					result.CreatedTasks++
@@ -1508,8 +1574,11 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 					progress("comments", fmt.Sprintf("Fetched comments for %d/%d issues...", i, len(taskRefs)), i, len(taskRefs))
 				}
 				var ghComments []ghIssueComment
-				url := fmt.Sprintf("%s/issues/%d/comments?per_page=100", base, tr.issueNum)
-				if err := fetchGitHubJSON(ctx, token, url, &ghComments); err != nil {
+				commentsURL := fmt.Sprintf("%s/issues/%d/comments?per_page=100", base, tr.issueNum)
+				if sinceParam != "" {
+					commentsURL += "&since=" + sinceParam
+				}
+				if err := fetchGitHubJSON(ctx, token, commentsURL, &ghComments); err != nil {
 					continue // best-effort
 				}
 				for _, gc := range ghComments {
@@ -1552,6 +1621,7 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 	// Persist the mappings used in this sync so future syncs reuse them.
 	s.saveGitHubMappings(ctx, int64(projectID), req.StatusAssignments, req.UserAssignments)
 
+	finishSyncLog(&result, nil)
 	sendSSE(map[string]interface{}{"type": "done", "result": result})
 }
 
@@ -2142,4 +2212,406 @@ func (s *Server) tryPushSwimLaneToGitHub(ctx context.Context, taskID int64, newL
 	if err := pushSwimLaneStatusToGitHub(ctx, token, projectID, fieldID, itemID, optionID); err != nil {
 		s.logger.Warn("Failed to push swim lane status to GitHub", zap.Int64("task_id", taskID), zap.Error(err))
 	}
+}
+
+// GitHubSyncLog represents one sync log entry.
+type GitHubSyncLog struct {
+	ID              int64      `json:"id"`
+	ProjectID       int64      `json:"project_id"`
+	StartedAt       time.Time  `json:"started_at"`
+	CompletedAt     *time.Time `json:"completed_at,omitempty"`
+	Status          string     `json:"status"`
+	TriggeredBy     string     `json:"triggered_by"`
+	CreatedTasks    int        `json:"created_tasks"`
+	UpdatedTasks    int        `json:"updated_tasks"`
+	CreatedComments int        `json:"created_comments"`
+	SkippedTasks    int        `json:"skipped_tasks"`
+	ErrorMessage    *string    `json:"error_message,omitempty"`
+}
+
+// HandleGetGitHubSyncLogs returns recent sync log entries for a project.
+// GET /api/projects/{id}/github/sync-logs
+func (s *Server) HandleGetGitHubSyncLogs(w http.ResponseWriter, r *http.Request) {
+	projectID, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid project ID", "invalid_input")
+		return
+	}
+	userID, ok := GetUserID(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	hasAccess, err := s.userHasProjectAccess(int(userID), projectID)
+	if err != nil || !hasAccess {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	rows, err := s.db.QueryContext(r.Context(), `
+		SELECT id, project_id, started_at, completed_at, status, triggered_by,
+		       created_tasks, updated_tasks, created_comments, skipped_tasks, error_message
+		FROM github_sync_logs
+		WHERE project_id = $1
+		ORDER BY started_at DESC
+		LIMIT 10
+	`, projectID)
+	if err != nil {
+		s.logger.Error("Failed to fetch sync logs", zap.Int("project_id", projectID), zap.Error(err))
+		http.Error(w, "Failed to fetch sync logs", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	logs := []GitHubSyncLog{}
+	for rows.Next() {
+		var l GitHubSyncLog
+		var completedAt sql.NullTime
+		var errMsg sql.NullString
+		if err := rows.Scan(&l.ID, &l.ProjectID, &l.StartedAt, &completedAt, &l.Status, &l.TriggeredBy,
+			&l.CreatedTasks, &l.UpdatedTasks, &l.CreatedComments, &l.SkippedTasks, &errMsg); err != nil {
+			continue
+		}
+		if completedAt.Valid {
+			l.CompletedAt = &completedAt.Time
+		}
+		if errMsg.Valid && errMsg.String != "" {
+			l.ErrorMessage = &errMsg.String
+		}
+		logs = append(logs, l)
+	}
+	respondJSON(w, http.StatusOK, logs)
+}
+
+// shouldSync returns true if an auto-sync is due based on interval and last sync time.
+func shouldSync(interval string, lastSync sql.NullTime, now time.Time) bool {
+	if !lastSync.Valid {
+		return true
+	}
+	elapsed := now.Sub(lastSync.Time)
+	switch interval {
+	case "daily":
+		return elapsed >= 24*time.Hour
+	case "weekly":
+		return elapsed >= 7*24*time.Hour
+	case "monthly":
+		return elapsed >= 30*24*time.Hour
+	}
+	return false
+}
+
+// StartGitHubSyncWorker starts a background goroutine that runs auto-sync
+// every 15 minutes for projects with github_sync_interval set.
+func (s *Server) StartGitHubSyncWorker(ctx context.Context) {
+	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.runAutoSync(ctx)
+		}
+	}
+}
+
+type autoSyncProject struct {
+	ID           int
+	Owner        string
+	Repo         string
+	Token        string
+	ProjectURL   string
+	SyncInterval string
+	LastSync     sql.NullTime
+}
+
+func (s *Server) runAutoSync(ctx context.Context) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, COALESCE(github_owner,''), COALESCE(github_repo_name,''),
+		       COALESCE(github_token,''), COALESCE(github_project_url,''),
+		       github_sync_interval, github_last_sync
+		FROM projects
+		WHERE github_sync_enabled = true
+		  AND github_sync_interval IS NOT NULL
+		  AND github_token IS NOT NULL
+	`)
+	if err != nil {
+		s.logger.Error("auto-sync: failed to query projects", zap.Error(err))
+		return
+	}
+	defer rows.Close()
+
+	var projects []autoSyncProject
+	for rows.Next() {
+		var p autoSyncProject
+		if err := rows.Scan(&p.ID, &p.Owner, &p.Repo, &p.Token, &p.ProjectURL, &p.SyncInterval, &p.LastSync); err != nil {
+			continue
+		}
+		projects = append(projects, p)
+	}
+	rows.Close()
+
+	now := time.Now()
+	for _, p := range projects {
+		if !shouldSync(p.SyncInterval, p.LastSync, now) {
+			continue
+		}
+		proj := p // capture
+		go func() {
+			syncCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+
+			req, err := s.loadSavedGitHubMappingsForAutoSync(syncCtx, int64(proj.ID))
+			if err != nil {
+				s.logger.Warn("auto-sync: failed to load mappings", zap.Int("project_id", proj.ID), zap.Error(err))
+				return
+			}
+			req.PullTasks = true
+			req.PullComments = true
+
+			s.runGitHubImportCore(syncCtx, proj.ID, proj.Owner, proj.Repo, proj.Token, proj.ProjectURL, req, true, "auto")
+		}()
+	}
+}
+
+func (s *Server) loadSavedGitHubMappingsForAutoSync(ctx context.Context, projectID int64) (GitHubPullRequest, error) {
+	req := GitHubPullRequest{
+		StatusAssignments: map[string]int64{},
+		UserAssignments:   map[string]int64{},
+	}
+	req.StatusAssignments, req.UserAssignments = s.loadSavedGitHubMappings(ctx, projectID, nil, nil)
+	return req, nil
+}
+
+// runGitHubImportCore performs the actual GitHub import without SSE streaming.
+// Used by the auto-sync worker.
+func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, repo, token, projectURL string, req GitHubPullRequest, doUpdate bool, triggeredBy string) *GitHubPullResponse {
+	result := &GitHubPullResponse{}
+
+	base := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
+
+	// Compute since parameter
+	sinceParam := ""
+	if doUpdate {
+		var lastSync sql.NullTime
+		_ = s.db.QueryRowContext(ctx, `SELECT github_last_sync FROM projects WHERE id=$1`, projectID).Scan(&lastSync)
+		if lastSync.Valid {
+			sinceParam = lastSync.Time.UTC().Format(time.RFC3339)
+		}
+	}
+
+	// Record sync log
+	var syncLogID int64
+	_ = s.db.QueryRowContext(ctx,
+		s.db.Rebind(`INSERT INTO github_sync_logs (project_id, triggered_by) VALUES (?, ?) RETURNING id`),
+		projectID, triggeredBy).Scan(&syncLogID)
+
+	defer func() {
+		if syncLogID != 0 {
+			_, _ = s.db.ExecContext(context.Background(), s.db.Rebind(`
+				UPDATE github_sync_logs
+				SET completed_at = ?, status = 'success',
+				    created_tasks = ?, updated_tasks = ?, created_comments = ?, skipped_tasks = ?
+				WHERE id = ?
+			`), time.Now(), result.CreatedTasks, result.UpdatedTasks, result.CreatedComments, result.SkippedTasks, syncLogID)
+			_, _ = s.db.ExecContext(context.Background(), s.db.Rebind(`
+				DELETE FROM github_sync_logs WHERE project_id = ? AND id NOT IN (
+					SELECT id FROM github_sync_logs WHERE project_id = ? ORDER BY started_at DESC LIMIT 100
+				)
+			`), projectID, projectID)
+		}
+	}()
+
+	noop := func(stage, msg string, current, total int) {}
+	_ = noop
+
+	// --- Import Tasks from Issues ---
+	if req.PullTasks {
+		buildIssueURL := func(page int) string {
+			url := fmt.Sprintf("%s/issues?state=all&per_page=100&page=%d", base, page)
+			if sinceParam != "" {
+				url += "&since=" + sinceParam
+			}
+			return url
+		}
+
+		var allIssues []ghIssue
+		for page := 1; page <= 10; page++ {
+			var pageIssues []ghIssue
+			if err := fetchGitHubJSON(ctx, token, buildIssueURL(page), &pageIssues); err != nil {
+				s.logger.Error("auto-sync: failed to fetch issues", zap.Int("project_id", projectID), zap.Error(err))
+				return result
+			}
+			if len(pageIssues) == 0 {
+				break
+			}
+			allIssues = append(allIssues, pageIssues...)
+		}
+
+		swimLaneByCategory := map[string]int64{}
+		slRows, _ := s.db.QueryContext(ctx, `SELECT status_category, id FROM swim_lanes WHERE project_id = $1 ORDER BY position ASC`, projectID)
+		if slRows != nil {
+			for slRows.Next() {
+				var cat string
+				var slID int64
+				if err := slRows.Scan(&cat, &slID); err == nil {
+					if _, exists := swimLaneByCategory[cat]; !exists {
+						swimLaneByCategory[cat] = slID
+					}
+				}
+			}
+			slRows.Close()
+		}
+
+		issueColumnMap := map[int]ghProjectItemStatus{}
+		var projInfo *ghProjectInfo
+		if projectURL != "" {
+			projInfo, _ = fetchProjectByURL(ctx, token, projectURL)
+		} else {
+			projInfo, _ = fetchProjectStatusColumns(ctx, token, owner, repo)
+		}
+		if projInfo != nil {
+			if m, err := fetchProjectIssueStatuses(ctx, token, projInfo.ProjectID, projInfo.FieldID); err == nil {
+				issueColumnMap = m
+			}
+		}
+
+		statusAssignmentsLower := map[string]int64{}
+		for k, v := range req.StatusAssignments {
+			statusAssignmentsLower[strings.ToLower(k)] = v
+		}
+
+		var maxNumber sql.NullInt64
+		_ = s.db.QueryRowContext(ctx, `SELECT MAX(task_number) FROM tasks WHERE project_id = $1`, projectID).Scan(&maxNumber)
+		nextNumber := int64(1)
+		if maxNumber.Valid {
+			nextNumber = maxNumber.Int64 + 1
+		}
+
+		for _, issue := range allIssues {
+			if issue.PullRequest != nil {
+				continue
+			}
+			taskStatus := "todo"
+			if issue.State == "closed" {
+				taskStatus = "done"
+			}
+
+			var swimLaneID *int64
+			ghItemID := ""
+			ghStartDate := ""
+			ghDueDate := ""
+
+			if itemStatus, ok := issueColumnMap[issue.Number]; ok {
+				ghItemID = itemStatus.ItemID
+				ghStartDate = itemStatus.StartDate
+				ghDueDate = itemStatus.DueDate
+				if itemStatus.StatusName != "" {
+					if laneID, ok := req.StatusAssignments[itemStatus.StatusName]; ok && laneID > 0 {
+						swimLaneID = &laneID
+					} else if laneID, ok := statusAssignmentsLower[strings.ToLower(itemStatus.StatusName)]; ok && laneID > 0 {
+						swimLaneID = &laneID
+					}
+				}
+			}
+			if swimLaneID == nil {
+				stateKey := issueStatusKey(issue.State, issue.StateReason)
+				if laneID, ok := req.StatusAssignments[stateKey]; ok && laneID > 0 {
+					swimLaneID = &laneID
+				}
+			}
+			if swimLaneID == nil {
+				if slID, ok := swimLaneByCategory[taskStatus]; ok {
+					swimLaneID = &slID
+				}
+			}
+
+			var existingID int64
+			err := s.db.QueryRowContext(ctx, `SELECT id FROM tasks WHERE project_id = $1 AND github_issue_number = $2`, projectID, issue.Number).Scan(&existingID)
+			if err == sql.ErrNoRows {
+				err = s.db.QueryRowContext(ctx, `
+					INSERT INTO tasks (project_id, task_number, title, description, status, priority, github_issue_number, swim_lane_id, github_project_item_id, start_date, due_date)
+					VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8, $9, $10)
+					ON CONFLICT (project_id, github_issue_number) DO NOTHING
+					RETURNING id
+				`, projectID, nextNumber, issue.Title, issue.Body, taskStatus, issue.Number, swimLaneID, nullableStr(ghItemID), nullableStr(ghStartDate), nullableStr(ghDueDate)).Scan(&existingID)
+				if err == nil {
+					nextNumber++
+					result.CreatedTasks++
+				} else {
+					result.SkippedTasks++
+				}
+			} else if err == nil {
+				_, _ = s.db.ExecContext(ctx, `
+					UPDATE tasks SET title = $1, description = $2, status = $3, swim_lane_id = $4,
+					github_project_item_id = COALESCE(NULLIF($5,''), github_project_item_id),
+					start_date = COALESCE($6, start_date), due_date = COALESCE($7, due_date)
+					WHERE id = $8
+				`, issue.Title, issue.Body, taskStatus, swimLaneID, ghItemID, nullableStr(ghStartDate), nullableStr(ghDueDate), existingID)
+				result.UpdatedTasks++
+			}
+		}
+	}
+
+	// --- Import Comments ---
+	if req.PullComments {
+		rows, err := s.db.QueryContext(ctx, `SELECT id, github_issue_number FROM tasks WHERE project_id = $1 AND github_issue_number IS NOT NULL`, projectID)
+		if err == nil {
+			type taskRef struct {
+				taskID   int64
+				issueNum int
+			}
+			var taskRefs []taskRef
+			for rows.Next() {
+				var tr taskRef
+				if err := rows.Scan(&tr.taskID, &tr.issueNum); err == nil {
+					taskRefs = append(taskRefs, tr)
+				}
+			}
+			rows.Close()
+
+			var ownerID int64
+			_ = s.db.QueryRowContext(ctx, `SELECT user_id FROM project_members WHERE project_id = $1 AND role = 'owner' LIMIT 1`, projectID).Scan(&ownerID)
+
+			for _, tr := range taskRefs {
+				commentsURL := fmt.Sprintf("%s/issues/%d/comments?per_page=100", base, tr.issueNum)
+				if sinceParam != "" {
+					commentsURL += "&since=" + sinceParam
+				}
+				var ghComments []ghIssueComment
+				if err := fetchGitHubJSON(ctx, token, commentsURL, &ghComments); err != nil {
+					continue
+				}
+				for _, gc := range ghComments {
+					if gc.Body == "" {
+						continue
+					}
+					login := ""
+					if gc.User != nil {
+						login = gc.User.Login
+					}
+					body := gc.Body
+					if login != "" {
+						body = "**@" + login + "** (GitHub):\n\n" + gc.Body
+					}
+					var newCID int64
+					err := s.db.QueryRowContext(ctx, `
+						INSERT INTO task_comments (task_id, user_id, comment, github_comment_id)
+						VALUES ($1, $2, $3, $4)
+						ON CONFLICT (github_comment_id) DO NOTHING
+						RETURNING id
+					`, tr.taskID, ownerID, body, gc.ID).Scan(&newCID)
+					if err == nil {
+						result.CreatedComments++
+					}
+				}
+			}
+		}
+	}
+
+	// Update last sync timestamp
+	_, _ = s.db.ExecContext(ctx, `UPDATE projects SET github_last_sync = $1 WHERE id = $2`, time.Now(), projectID)
+	s.saveGitHubMappings(ctx, int64(projectID), req.StatusAssignments, req.UserAssignments)
+
+	return result
 }

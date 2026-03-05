@@ -37,6 +37,7 @@ interface GitHubSettings {
   github_token_set: boolean
   github_login: string | null
   github_project_url: string
+  github_sync_interval: string
 }
 
 // ── GitHub-style filter bar ───────────────────────────────────────────────────
@@ -290,7 +291,9 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     github_token_set: false,
     github_login: null,
     github_project_url: '',
+    github_sync_interval: '',
   })
+  const [syncLogs, setSyncLogs] = useState<import('../lib/api').GitHubSyncLog[]>([])
   const [githubError, setGithubError] = useState('')
   const [githubSuccess, setGithubSuccess] = useState('')
   const [isSavingGitHub, setIsSavingGitHub] = useState(false)
@@ -348,6 +351,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     loadInvitations()
     loadTeamMembers()
     loadGitHubSettings()
+    loadSyncLogs()
     loadSwimLanes()
     loadStorageUsage()
 
@@ -439,13 +443,22 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   const loadGitHubSettings = async () => {
     try {
       const data = await apiClient.getProjectGitHub(projectId)
-      setGithubSettings(data)
+      setGithubSettings({ ...data, github_sync_interval: data.github_sync_interval ?? '' })
       if (data.github_token_set) {
         loadGitHubRepos()
         if (data.github_owner) setSelectedRepoFullName(`${data.github_owner}/${data.github_repo_name}`)
       }
     } catch (error: unknown) {
       console.error('Failed to load data:', error)
+    }
+  }
+
+  const loadSyncLogs = async () => {
+    try {
+      const logs = await apiClient.githubGetSyncLogs(projectId)
+      setSyncLogs(logs)
+    } catch {
+      // Silently fail
     }
   }
 
@@ -608,9 +621,10 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
         syncStateFilter,
         (evt) => setImportProgress(evt)
       )
-      setImportSuccess(`Synced: ${result.created_tasks} new tasks, updated existing`)
+      setImportSuccess(`Synced: ${result.created_tasks} new, ${result.updated_tasks ?? 0} updated`)
       setImportProgress(null)
       loadGitHubSettings()
+      loadSyncLogs()
     } catch (error: unknown) {
       setImportError(error instanceof Error ? error.message : 'Sync failed')
       setImportProgress(null)
@@ -857,6 +871,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
         github_sync_enabled: githubSettings.github_sync_enabled,
         github_push_enabled: githubSettings.github_push_enabled,
         github_project_url: githubSettings.github_project_url,
+        github_sync_interval: githubSettings.github_sync_interval,
       })
       setGithubSuccess('GitHub settings saved successfully')
     } catch (error: unknown) {
@@ -1522,6 +1537,25 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                     </label>
                   </div>
 
+                  {isOwnerOrAdmin && (
+                    <div className="flex items-center gap-3 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                      <div className="flex-1">
+                        <span className="font-medium text-dark-text-primary">Auto-sync Interval</span>
+                        <p className="text-sm text-dark-text-secondary mt-0.5">Automatically run sync on a schedule</p>
+                      </div>
+                      <select
+                        value={githubSettings.github_sync_interval}
+                        onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_interval: e.target.value })}
+                        className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      >
+                        <option value="">Disabled</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </div>
+                  )}
+
                   <div className="flex items-center gap-3 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
                     <input
                       type="checkbox"
@@ -1907,6 +1941,36 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Sync History */}
+              {syncLogs.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-dark-border-subtle">
+                  <h3 className="text-sm font-semibold text-dark-text-primary mb-3">Sync History</h3>
+                  <div className="space-y-1.5">
+                    {syncLogs.map((log) => (
+                      <div key={log.id} className="flex items-center gap-3 p-2.5 bg-dark-bg-secondary rounded-lg text-xs">
+                        <span className="text-dark-text-tertiary shrink-0">
+                          {new Date(log.started_at).toLocaleString()}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${log.triggered_by === 'auto' ? 'bg-blue-500/20 text-blue-300' : 'bg-gray-500/20 text-gray-300'}`}>
+                          {log.triggered_by}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${log.status === 'success' ? 'bg-success-500/20 text-success-300' : log.status === 'failed' ? 'bg-red-500/20 text-red-300' : 'bg-yellow-500/20 text-yellow-300'}`}>
+                          {log.status}
+                        </span>
+                        {log.status !== 'running' && (
+                          <span className="text-dark-text-secondary">
+                            +{log.created_tasks} created · {log.updated_tasks} updated · {log.created_comments} comments
+                          </span>
+                        )}
+                        {log.error_message && (
+                          <span className="text-red-400 truncate" title={log.error_message}>{log.error_message}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

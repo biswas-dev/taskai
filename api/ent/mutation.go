@@ -8976,6 +8976,7 @@ type TaskMutation struct {
 	addestimated_hours    *float64
 	actual_hours          *float64
 	addactual_hours       *float64
+	start_date            *time.Time
 	due_date              *time.Time
 	created_at            *time.Time
 	updated_at            *time.Time
@@ -9659,6 +9660,55 @@ func (m *TaskMutation) ResetActualHours() {
 	delete(m.clearedFields, task.FieldActualHours)
 }
 
+// SetStartDate sets the "start_date" field.
+func (m *TaskMutation) SetStartDate(t time.Time) {
+	m.start_date = &t
+}
+
+// StartDate returns the value of the "start_date" field in the mutation.
+func (m *TaskMutation) StartDate() (r time.Time, exists bool) {
+	v := m.start_date
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStartDate returns the old "start_date" field's value of the Task entity.
+// If the Task object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TaskMutation) OldStartDate(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStartDate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStartDate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStartDate: %w", err)
+	}
+	return oldValue.StartDate, nil
+}
+
+// ClearStartDate clears the value of the "start_date" field.
+func (m *TaskMutation) ClearStartDate() {
+	m.start_date = nil
+	m.clearedFields[task.FieldStartDate] = struct{}{}
+}
+
+// StartDateCleared returns if the "start_date" field was cleared in this mutation.
+func (m *TaskMutation) StartDateCleared() bool {
+	_, ok := m.clearedFields[task.FieldStartDate]
+	return ok
+}
+
+// ResetStartDate resets all changes to the "start_date" field.
+func (m *TaskMutation) ResetStartDate() {
+	m.start_date = nil
+	delete(m.clearedFields, task.FieldStartDate)
+}
+
 // SetDueDate sets the "due_date" field.
 func (m *TaskMutation) SetDueDate(t time.Time) {
 	m.due_date = &t
@@ -10138,7 +10188,7 @@ func (m *TaskMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TaskMutation) Fields() []string {
-	fields := make([]string, 0, 14)
+	fields := make([]string, 0, 15)
 	if m.project != nil {
 		fields = append(fields, task.FieldProjectID)
 	}
@@ -10171,6 +10221,9 @@ func (m *TaskMutation) Fields() []string {
 	}
 	if m.actual_hours != nil {
 		fields = append(fields, task.FieldActualHours)
+	}
+	if m.start_date != nil {
+		fields = append(fields, task.FieldStartDate)
 	}
 	if m.due_date != nil {
 		fields = append(fields, task.FieldDueDate)
@@ -10211,6 +10264,8 @@ func (m *TaskMutation) Field(name string) (ent.Value, bool) {
 		return m.EstimatedHours()
 	case task.FieldActualHours:
 		return m.ActualHours()
+	case task.FieldStartDate:
+		return m.StartDate()
 	case task.FieldDueDate:
 		return m.DueDate()
 	case task.FieldCreatedAt:
@@ -10248,6 +10303,8 @@ func (m *TaskMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldEstimatedHours(ctx)
 	case task.FieldActualHours:
 		return m.OldActualHours(ctx)
+	case task.FieldStartDate:
+		return m.OldStartDate(ctx)
 	case task.FieldDueDate:
 		return m.OldDueDate(ctx)
 	case task.FieldCreatedAt:
@@ -10339,6 +10396,13 @@ func (m *TaskMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetActualHours(v)
+		return nil
+	case task.FieldStartDate:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStartDate(v)
 		return nil
 	case task.FieldDueDate:
 		v, ok := value.(time.Time)
@@ -10451,6 +10515,9 @@ func (m *TaskMutation) ClearedFields() []string {
 	if m.FieldCleared(task.FieldActualHours) {
 		fields = append(fields, task.FieldActualHours)
 	}
+	if m.FieldCleared(task.FieldStartDate) {
+		fields = append(fields, task.FieldStartDate)
+	}
 	if m.FieldCleared(task.FieldDueDate) {
 		fields = append(fields, task.FieldDueDate)
 	}
@@ -10488,6 +10555,9 @@ func (m *TaskMutation) ClearField(name string) error {
 		return nil
 	case task.FieldActualHours:
 		m.ClearActualHours()
+		return nil
+	case task.FieldStartDate:
+		m.ClearStartDate()
 		return nil
 	case task.FieldDueDate:
 		m.ClearDueDate()
@@ -10532,6 +10602,9 @@ func (m *TaskMutation) ResetField(name string) error {
 		return nil
 	case task.FieldActualHours:
 		m.ResetActualHours()
+		return nil
+	case task.FieldStartDate:
+		m.ResetStartDate()
 		return nil
 	case task.FieldDueDate:
 		m.ResetDueDate()

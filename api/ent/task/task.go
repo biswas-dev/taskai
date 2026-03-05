@@ -36,6 +36,8 @@ const (
 	FieldEstimatedHours = "estimated_hours"
 	// FieldActualHours holds the string denoting the actual_hours field in the database.
 	FieldActualHours = "actual_hours"
+	// FieldStartDate holds the string denoting the start_date field in the database.
+	FieldStartDate = "start_date"
 	// FieldDueDate holds the string denoting the due_date field in the database.
 	FieldDueDate = "due_date"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -132,6 +134,7 @@ var Columns = []string{
 	FieldPriority,
 	FieldEstimatedHours,
 	FieldActualHours,
+	FieldStartDate,
 	FieldDueDate,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -223,6 +226,11 @@ func ByEstimatedHours(opts ...sql.OrderTermOption) OrderOption {
 // ByActualHours orders the results by the actual_hours field.
 func ByActualHours(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldActualHours, opts...).ToFunc()
+}
+
+// ByStartDate orders the results by the start_date field.
+func ByStartDate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStartDate, opts...).ToFunc()
 }
 
 // ByDueDate orders the results by the due_date field.

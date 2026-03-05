@@ -35,7 +35,8 @@ type ProjectGitHubSettings struct {
 	LastSync     *time.Time `json:"github_last_sync"`
 	TokenSet     bool       `json:"github_token_set"`
 	Login        *string    `json:"github_login"`
-	ProjectURL   string     `json:"github_project_url"` // optional explicit GitHub Projects V2 URL
+	ProjectURL   string     `json:"github_project_url"`   // optional explicit GitHub Projects V2 URL
+	SyncInterval string     `json:"github_sync_interval"` // 'daily','weekly','monthly', '' = disabled
 }
 
 // AddMemberRequest represents a request to add a member to a project
@@ -51,14 +52,15 @@ type UpdateMemberRoleRequest struct {
 
 // UpdateProjectGitHubRequest represents a request to update GitHub settings
 type UpdateProjectGitHubRequest struct {
-	RepoURL     string `json:"github_repo_url"`
-	Owner       string `json:"github_owner"`
-	RepoName    string `json:"github_repo_name"`
-	Branch      string `json:"github_branch"`
-	SyncEnabled bool   `json:"github_sync_enabled"`
-	PushEnabled bool   `json:"github_push_enabled"`
-	Token       string `json:"github_token"`
-	ProjectURL  string `json:"github_project_url"` // optional explicit GitHub Projects V2 URL
+	RepoURL      string `json:"github_repo_url"`
+	Owner        string `json:"github_owner"`
+	RepoName     string `json:"github_repo_name"`
+	Branch       string `json:"github_branch"`
+	SyncEnabled  bool   `json:"github_sync_enabled"`
+	PushEnabled  bool   `json:"github_push_enabled"`
+	Token        string `json:"github_token"`
+	ProjectURL   string `json:"github_project_url"`   // optional explicit GitHub Projects V2 URL
+	SyncInterval string `json:"github_sync_interval"` // 'daily','weekly','monthly', '' = disabled
 }
 
 // HandleGetProjectMembers returns all members of a project
@@ -401,6 +403,7 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 	var token sql.NullString
 	var loginNull sql.NullString
 	var projectURLNull sql.NullString
+	var syncIntervalNull sql.NullString
 
 	err = s.db.QueryRow(`
 		SELECT
@@ -413,7 +416,8 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 			github_last_sync,
 			github_token,
 			github_login,
-			github_project_url
+			github_project_url,
+			COALESCE(github_sync_interval, '')
 		FROM projects
 		WHERE id = $1
 	`, projectID).Scan(
@@ -427,6 +431,7 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 		&token,
 		&loginNull,
 		&projectURLNull,
+		&syncIntervalNull,
 	)
 
 	if err != nil {
@@ -445,6 +450,7 @@ func (s *Server) HandleGetProjectGitHubSettings(w http.ResponseWriter, r *http.R
 	if projectURLNull.Valid {
 		settings.ProjectURL = projectURLNull.String
 	}
+	settings.SyncInterval = syncIntervalNull.String
 
 	respondJSON(w, http.StatusOK, settings)
 }
@@ -492,9 +498,10 @@ func (s *Server) HandleUpdateProjectGitHubSettings(w http.ResponseWriter, r *htt
 				github_sync_enabled = $5,
 				github_push_enabled = $6,
 				github_token = $7,
-				github_project_url = NULLIF($8, '')
-			WHERE id = $9
-		`, req.RepoURL, req.Owner, req.RepoName, req.Branch, req.SyncEnabled, req.PushEnabled, req.Token, req.ProjectURL, projectID)
+				github_project_url = NULLIF($8, ''),
+				github_sync_interval = NULLIF($9, '')
+			WHERE id = $10
+		`, req.RepoURL, req.Owner, req.RepoName, req.Branch, req.SyncEnabled, req.PushEnabled, req.Token, req.ProjectURL, req.SyncInterval, projectID)
 	} else {
 		_, err = s.db.Exec(`
 			UPDATE projects
@@ -505,9 +512,10 @@ func (s *Server) HandleUpdateProjectGitHubSettings(w http.ResponseWriter, r *htt
 				github_branch = $4,
 				github_sync_enabled = $5,
 				github_push_enabled = $6,
-				github_project_url = NULLIF($7, '')
-			WHERE id = $8
-		`, req.RepoURL, req.Owner, req.RepoName, req.Branch, req.SyncEnabled, req.PushEnabled, req.ProjectURL, projectID)
+				github_project_url = NULLIF($7, ''),
+				github_sync_interval = NULLIF($8, '')
+			WHERE id = $9
+		`, req.RepoURL, req.Owner, req.RepoName, req.Branch, req.SyncEnabled, req.PushEnabled, req.ProjectURL, req.SyncInterval, projectID)
 	}
 
 	if err != nil {

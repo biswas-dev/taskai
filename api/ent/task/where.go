@@ -110,6 +110,11 @@ func ActualHours(v float64) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldActualHours, v))
 }
 
+// StartDate applies equality check predicate on the "start_date" field. It's identical to StartDateEQ.
+func StartDate(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldStartDate, v))
+}
+
 // DueDate applies equality check predicate on the "due_date" field. It's identical to DueDateEQ.
 func DueDate(v time.Time) predicate.Task {
 	return predicate.Task(sql.FieldEQ(FieldDueDate, v))
@@ -653,6 +658,56 @@ func ActualHoursIsNil() predicate.Task {
 // ActualHoursNotNil applies the NotNil predicate on the "actual_hours" field.
 func ActualHoursNotNil() predicate.Task {
 	return predicate.Task(sql.FieldNotNull(FieldActualHours))
+}
+
+// StartDateEQ applies the EQ predicate on the "start_date" field.
+func StartDateEQ(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldEQ(FieldStartDate, v))
+}
+
+// StartDateNEQ applies the NEQ predicate on the "start_date" field.
+func StartDateNEQ(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldNEQ(FieldStartDate, v))
+}
+
+// StartDateIn applies the In predicate on the "start_date" field.
+func StartDateIn(vs ...time.Time) predicate.Task {
+	return predicate.Task(sql.FieldIn(FieldStartDate, vs...))
+}
+
+// StartDateNotIn applies the NotIn predicate on the "start_date" field.
+func StartDateNotIn(vs ...time.Time) predicate.Task {
+	return predicate.Task(sql.FieldNotIn(FieldStartDate, vs...))
+}
+
+// StartDateGT applies the GT predicate on the "start_date" field.
+func StartDateGT(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldGT(FieldStartDate, v))
+}
+
+// StartDateGTE applies the GTE predicate on the "start_date" field.
+func StartDateGTE(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldGTE(FieldStartDate, v))
+}
+
+// StartDateLT applies the LT predicate on the "start_date" field.
+func StartDateLT(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldLT(FieldStartDate, v))
+}
+
+// StartDateLTE applies the LTE predicate on the "start_date" field.
+func StartDateLTE(v time.Time) predicate.Task {
+	return predicate.Task(sql.FieldLTE(FieldStartDate, v))
+}
+
+// StartDateIsNil applies the IsNil predicate on the "start_date" field.
+func StartDateIsNil() predicate.Task {
+	return predicate.Task(sql.FieldIsNull(FieldStartDate))
+}
+
+// StartDateNotNil applies the NotNil predicate on the "start_date" field.
+func StartDateNotNil() predicate.Task {
+	return predicate.Task(sql.FieldNotNull(FieldStartDate))
 }
 
 // DueDateEQ applies the EQ predicate on the "due_date" field.

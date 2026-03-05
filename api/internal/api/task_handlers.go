@@ -34,6 +34,7 @@ type Task struct {
 	Status              string             `json:"status"`
 	SwimLaneID          *int64             `json:"swim_lane_id,omitempty"`
 	SwimLaneName        *string            `json:"swim_lane_name,omitempty"`
+	StartDate           *string            `json:"start_date,omitempty"`
 	DueDate             *string            `json:"due_date,omitempty"`
 	SprintID            *int64             `json:"sprint_id,omitempty"`
 	SprintName          *string            `json:"sprint_name,omitempty"`
@@ -54,6 +55,7 @@ type CreateTaskRequest struct {
 	Description    *string  `json:"description,omitempty"`
 	Status         *string  `json:"status,omitempty"`
 	SwimLaneID     *int64   `json:"swim_lane_id,omitempty"`
+	StartDate      *string  `json:"start_date,omitempty"`
 	DueDate        *string  `json:"due_date,omitempty"`
 	SprintID       *int64   `json:"sprint_id,omitempty"`
 	Priority       *string  `json:"priority,omitempty"`
@@ -69,6 +71,7 @@ type UpdateTaskRequest struct {
 	Description    *string  `json:"description,omitempty"`
 	Status         *string  `json:"status,omitempty"`
 	SwimLaneID     *int64   `json:"swim_lane_id,omitempty"`
+	StartDate      *string  `json:"start_date,omitempty"`
 	DueDate        *string  `json:"due_date,omitempty"`
 	SprintID       *int64   `json:"sprint_id,omitempty"`
 	Priority       *string  `json:"priority,omitempty"`
@@ -239,6 +242,12 @@ func (s *Server) HandleListTasks(w http.ResponseWriter, r *http.Request) {
 			t.TaskNumber = int64(*et.TaskNumber)
 		}
 
+		// Convert start_date from time.Time to string if present
+		if et.StartDate != nil {
+			startDateStr := et.StartDate.Format(time.RFC3339)
+			t.StartDate = &startDateStr
+		}
+
 		// Convert due_date from time.Time to string if present
 		if et.DueDate != nil {
 			dueDateStr := et.DueDate.Format(time.RFC3339)
@@ -393,6 +402,15 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 		nextNumber = int(maxNumber.Int64) + 1
 	}
 
+	// Parse start_date if provided
+	var startDate *time.Time
+	if req.StartDate != nil && *req.StartDate != "" {
+		parsed, err := time.Parse(time.RFC3339, *req.StartDate)
+		if err == nil {
+			startDate = &parsed
+		}
+	}
+
 	// Parse due_date if provided
 	var dueDate *time.Time
 	if req.DueDate != nil && *req.DueDate != "" {
@@ -418,6 +436,7 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 		SetNillableDescription(req.Description).
 		SetStatus(status).
 		SetNillableSwimLaneID(swimLaneID).
+		SetNillableStartDate(startDate).
 		SetNillableDueDate(dueDate).
 		SetNillableSprintID(req.SprintID).
 		SetPriority(priority).
@@ -498,6 +517,12 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 	// Convert task_number from *int to int64
 	if createdTask.TaskNumber != nil {
 		t.TaskNumber = int64(*createdTask.TaskNumber)
+	}
+
+	// Convert start_date from time.Time to string if present
+	if createdTask.StartDate != nil {
+		startDateStr := createdTask.StartDate.Format(time.RFC3339)
+		t.StartDate = &startDateStr
 	}
 
 	// Convert due_date from time.Time to string if present
@@ -660,6 +685,15 @@ func (s *Server) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 		finalSwimLaneID = req.SwimLaneID
 	}
 
+	// Parse start_date if provided
+	var startDate *time.Time
+	if req.StartDate != nil && *req.StartDate != "" {
+		parsed, err := time.Parse(time.RFC3339, *req.StartDate)
+		if err == nil {
+			startDate = &parsed
+		}
+	}
+
 	// Parse due_date if provided
 	var dueDate *time.Time
 	if req.DueDate != nil && *req.DueDate != "" {
@@ -683,6 +717,9 @@ func (s *Server) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if finalSwimLaneID != nil {
 		updateBuilder.SetNillableSwimLaneID(finalSwimLaneID)
+	}
+	if startDate != nil {
+		updateBuilder.SetNillableStartDate(startDate)
 	}
 	if dueDate != nil {
 		updateBuilder.SetNillableDueDate(dueDate)
@@ -812,6 +849,12 @@ func (s *Server) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	// Convert task_number
 	if updatedTask.TaskNumber != nil {
 		t.TaskNumber = int64(*updatedTask.TaskNumber)
+	}
+
+	// Convert start_date
+	if updatedTask.StartDate != nil {
+		startDateStr := updatedTask.StartDate.Format(time.RFC3339)
+		t.StartDate = &startDateStr
 	}
 
 	// Convert due_date
@@ -1011,6 +1054,12 @@ func (s *Server) HandleGetTaskByNumber(w http.ResponseWriter, r *http.Request) {
 	// Convert task_number
 	if taskEntity.TaskNumber != nil {
 		t.TaskNumber = int64(*taskEntity.TaskNumber)
+	}
+
+	// Convert start_date
+	if taskEntity.StartDate != nil {
+		startDateStr := taskEntity.StartDate.Format(time.RFC3339)
+		t.StartDate = &startDateStr
 	}
 
 	// Convert due_date

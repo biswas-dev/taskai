@@ -312,6 +312,9 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
         case 'assignee_id':
           update.assignee_id = value ? parseInt(value) : null
           break
+        case 'start_date':
+          update.start_date = value || null
+          break
         case 'due_date':
           update.due_date = value || null
           break
@@ -852,6 +855,28 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                   placeholder="Unassigned"
                   filterPlaceholder="Filter members…"
                 />
+              </SidebarField>
+
+              {/* Start Date */}
+              <SidebarField label="Start Date">
+                {editingField === 'start_date' ? (
+                  <input
+                    type="date"
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onBlur={() => saveField('start_date', editValue)}
+                    onKeyDown={(e) => handleKeyDown(e, 'start_date')}
+                    className="w-full text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-3 py-1.5 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none"
+                    autoFocus
+                  />
+                ) : (
+                  <button
+                    onClick={() => startEdit('start_date', task.start_date?.split('T')[0] || '')}
+                    className="text-sm text-dark-text-primary hover:bg-dark-bg-tertiary/50 px-3 py-1.5 rounded-md w-full text-left transition-colors"
+                  >
+                    {task.start_date ? new Date(task.start_date).toLocaleDateString() : 'None'}
+                  </button>
+                )}
               </SidebarField>
 
               {/* Due Date */}

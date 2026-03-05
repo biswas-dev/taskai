@@ -7,7 +7,7 @@ export type AuthResponse = components['schemas']['AuthResponse']
 export type SignupRequest = components['schemas']['SignupRequest']
 export type LoginRequest = components['schemas']['LoginRequest']
 export type Project = components['schemas']['Project']
-export type Task = components['schemas']['Task'] & { task_number?: number; github_issue_number?: number | null }
+export type Task = components['schemas']['Task'] & { task_number?: number; github_issue_number?: number | null; start_date?: string | null }
 export type ApiError = components['schemas']['Error']
 // Types with required fields for commonly used API responses
 export interface TaskComment {
@@ -179,7 +179,8 @@ export interface ProjectGitHubSettings {
   github_last_sync: string | null
   github_token_set: boolean
   github_login: string | null
-  github_project_url: string  // optional explicit GitHub Projects V2 URL
+  github_project_url: string   // optional explicit GitHub Projects V2 URL
+  github_sync_interval: string // 'daily','weekly','monthly', '' = disabled
 }
 
 export interface GitHubRepo {
@@ -252,8 +253,23 @@ export interface GitHubPullResponse {
   created_sprints: number
   created_tags: number
   created_tasks: number
+  updated_tasks: number
   skipped_tasks: number
   created_comments: number
+}
+
+export interface GitHubSyncLog {
+  id: number
+  project_id: number
+  started_at: string
+  completed_at?: string
+  status: 'running' | 'success' | 'failed'
+  triggered_by: 'manual' | 'auto'
+  created_tasks: number
+  updated_tasks: number
+  created_comments: number
+  skipped_tasks: number
+  error_message?: string
 }
 
 export interface GitHubPushTaskResponse {
@@ -383,6 +399,7 @@ export interface UpdateTaskRequest {
   description?: string
   status?: 'todo' | 'in_progress' | 'done'
   swim_lane_id?: number | null
+  start_date?: string | null
   due_date?: string | null
   sprint_id?: number | null
   priority?: 'low' | 'medium' | 'high' | 'urgent'
@@ -875,6 +892,10 @@ class ApiClient {
       method: 'PUT',
       body: JSON.stringify({ status_mappings: statusMappings, user_mappings: userMappings }),
     })
+  }
+
+  async githubGetSyncLogs(projectId: number): Promise<GitHubSyncLog[]> {
+    return this.request<GitHubSyncLog[]>(`/api/projects/${projectId}/github/sync-logs`)
   }
 
   async githubPushTask(taskId: number): Promise<GitHubPushTaskResponse> {
