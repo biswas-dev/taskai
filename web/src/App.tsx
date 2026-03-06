@@ -43,9 +43,10 @@ function WikiRedirect() {
   const { projectId } = useParams()
   const [searchParams] = useSearchParams()
   const page = searchParams.get('page')
-  const target = page
-    ? `/app/projects/${projectId}?tab=wiki&page=${page}`
-    : `/app/projects/${projectId}?tab=wiki`
+  const annotation = searchParams.get('annotation')
+  let target = `/app/projects/${projectId}?tab=wiki`
+  if (page) target += `&page=${page}`
+  if (annotation) target += `&annotation=${annotation}`
   return <Navigate to={target} replace />
 }
 

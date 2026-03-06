@@ -11,6 +11,7 @@ interface WikiContentProps {
 export default function WikiContent({ projectId }: WikiContentProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedPageId = searchParams.get('page')
+  const annotationParam = searchParams.get('annotation')
 
   const [pages, setPages] = useState<WikiPage[]>([])
   const [loading, setLoading] = useState(true)
@@ -40,6 +41,15 @@ export default function WikiContent({ projectId }: WikiContentProps) {
       setAnnotations([])
     }
   }, [selectedPageId])
+
+  // Deep-link to annotation from ?annotation=X (e.g. notification clicks)
+  useEffect(() => {
+    if (!annotationParam || !annotations.length) return
+    const id = Number(annotationParam)
+    if (!id) return
+    setSelectedAnnotationId(id)
+    setShowAnnotationSidebar(true)
+  }, [annotationParam, annotations])
 
   const loadPages = async () => {
     try {
