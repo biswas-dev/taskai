@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { apiClient, UserProfile as UserProfileType, UserProfileActivity } from '../lib/api'
 
@@ -70,6 +70,13 @@ export default function UserProfile() {
   const [typeFilter, setTypeFilter] = useState<FilterType>('all')
   const [projectFilter, setProjectFilter] = useState<string>('all')
 
+  // Lazy load state
+  const [allActivity, setAllActivity] = useState<UserProfileActivity[]>([])
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+
   useEffect(() => {
     if (!userId) return
     setLoading(true)
@@ -77,33 +84,62 @@ export default function UserProfile() {
     setSearch('')
     setTypeFilter('all')
     setProjectFilter('all')
+    setAllActivity([])
+    setHasMore(false)
     apiClient.getUserProfile(parseInt(userId, 10))
-      .then(setProfile)
+      .then(p => {
+        setProfile(p)
+        setAllActivity(p.recent_activity)
+        setHasMore(p.has_more)
+      })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load profile'))
       .finally(() => setLoading(false))
   }, [userId])
 
-  const { user, recent_activity } = profile ?? { user: null, recent_activity: [] as UserProfileActivity[] }
+  const loadMore = useCallback(() => {
+    if (!userId || loadingMore || !hasMore || allActivity.length === 0) return
+    const cursor = allActivity[allActivity.length - 1].created_at
+    setLoadingMore(true)
+    apiClient.getUserActivityFeed(parseInt(userId, 10), cursor)
+      .then(page => {
+        setAllActivity(prev => [...prev, ...page.items])
+        setHasMore(page.has_more)
+      })
+      .catch(() => { /* silently ignore — sentinel will retry on next intersection */ })
+      .finally(() => setLoadingMore(false))
+  }, [userId, loadingMore, hasMore, allActivity])
+
+  // Set up IntersectionObserver on sentinel
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect()
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) loadMore()
+    }, { threshold: 0.1 })
+    if (sentinelRef.current) observerRef.current.observe(sentinelRef.current)
+    return () => observerRef.current?.disconnect()
+  }, [loadMore])
+
+  const { user } = profile ?? { user: null }
 
   // Derive unique projects from all activity
   const projects = useMemo(() => {
     const map = new Map<string, string>()
-    for (const a of recent_activity) {
+    for (const a of allActivity) {
       map.set(String(a.project_id), a.project_name)
     }
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
-  }, [recent_activity])
+  }, [allActivity])
 
   // Apply filters
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
-    return recent_activity.filter(a => {
+    return allActivity.filter(a => {
       if (typeFilter !== 'all' && a.type !== typeFilter) return false
       if (projectFilter !== 'all' && String(a.project_id) !== projectFilter) return false
       if (q && !a.entity_title.toLowerCase().includes(q) && !a.project_name.toLowerCase().includes(q)) return false
       return true
     })
-  }, [recent_activity, search, typeFilter, projectFilter])
+  }, [allActivity, search, typeFilter, projectFilter])
 
   // Group filtered activities by date
   const groups = useMemo(() => {
@@ -121,7 +157,7 @@ export default function UserProfile() {
   // Activity count summary (total, not filtered)
   const summary = useMemo(() => {
     const counts: Record<string, number> = {}
-    for (const a of recent_activity) counts[a.type] = (counts[a.type] ?? 0) + 1
+    for (const a of allActivity) counts[a.type] = (counts[a.type] ?? 0) + 1
     const parts: string[] = []
     if (counts.task_comment) parts.push(`${counts.task_comment} comment${counts.task_comment !== 1 ? 's' : ''}`)
     if (counts.task_created) parts.push(`${counts.task_created} task${counts.task_created !== 1 ? 's' : ''} created`)
@@ -130,7 +166,7 @@ export default function UserProfile() {
     if (counts.annotation_comment) parts.push(`${counts.annotation_comment} ann. comment${counts.annotation_comment !== 1 ? 's' : ''}`)
     if (counts.wiki_edit) parts.push(`${counts.wiki_edit} wiki edit${counts.wiki_edit !== 1 ? 's' : ''}`)
     return parts.join(' · ')
-  }, [recent_activity])
+  }, [allActivity])
 
   const filtersActive = typeFilter !== 'all' || projectFilter !== 'all' || search.trim() !== ''
 
@@ -213,9 +249,9 @@ export default function UserProfile() {
             )}
           </div>
           {/* Type filter chips */}
-          {recent_activity.length > 0 && (
+          {allActivity.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {TYPE_FILTERS.filter(f => f.value === 'all' || recent_activity.some(a => a.type === f.value)).map(f => (
+              {TYPE_FILTERS.filter(f => f.value === 'all' || allActivity.some(a => a.type === f.value)).map(f => (
                 <button
                   key={f.value}
                   onClick={() => setTypeFilter(f.value)}
@@ -254,6 +290,15 @@ export default function UserProfile() {
                 ))}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Sentinel for infinite scroll */}
+        <div ref={sentinelRef} className="h-1" />
+
+        {loadingMore && (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-400" />
           </div>
         )}
       </div>

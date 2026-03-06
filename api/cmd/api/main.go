@@ -540,6 +540,7 @@ func main() {
 
 			// User profile routes
 			r.Get("/users/{userId}/profile", server.HandleGetUserProfile)
+			r.Get("/users/{userId}/activity", server.HandleGetUserActivity2)
 		})
 	})
 

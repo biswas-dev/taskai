@@ -174,6 +174,12 @@ export interface UserProfile {
     joined_at?: string | null
   }
   recent_activity: UserProfileActivity[]
+  has_more: boolean
+}
+
+export interface UserActivityPage {
+  items: UserProfileActivity[]
+  has_more: boolean
 }
 
 export type AnnotationColor = 'yellow' | 'blue' | 'green' | 'red'
@@ -1707,6 +1713,11 @@ class ApiClient {
   // User profile
   async getUserProfile(userId: number): Promise<UserProfile> {
     return this.request<UserProfile>(`/api/users/${userId}/profile`)
+  }
+
+  async getUserActivityFeed(userId: number, before?: string): Promise<UserActivityPage> {
+    const qs = before ? `?before=${encodeURIComponent(before)}` : ''
+    return this.request<UserActivityPage>(`/api/users/${userId}/activity${qs}`)
   }
 
   // Version endpoint
