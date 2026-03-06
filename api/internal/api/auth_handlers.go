@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -545,4 +547,129 @@ func (s *Server) acceptPendingTeamInvitation(ctx context.Context, inviteCode str
 		zap.Int64("team_id", entInv.TeamID),
 		zap.Int64("new_user_id", newUserID),
 	)
+}
+
+// HandleForgotPassword generates a one-time password reset token and sends a reset email.
+// Always returns 200 to prevent email enumeration.
+func (s *Server) HandleForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
+		return
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.Email == "" {
+		respondError(w, http.StatusBadRequest, "email is required", "validation_error")
+		return
+	}
+
+	ok200 := map[string]string{"message": "If that email is registered, a reset link has been sent"}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	entUser, err := s.db.Client.User.Query().Where(user.Email(req.Email)).Only(ctx)
+	if err != nil {
+		// Not found or error — respond 200 to prevent enumeration
+		respondJSON(w, http.StatusOK, ok200)
+		return
+	}
+
+	// Generate 32-byte random token (hex encoded = 64 chars)
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		s.logger.Error("Failed to generate reset token", zap.Error(err))
+		respondJSON(w, http.StatusOK, ok200)
+		return
+	}
+	token := hex.EncodeToString(tokenBytes)
+	expiresAt := time.Now().Add(1 * time.Hour)
+
+	_, err = s.db.ExecContext(ctx,
+		`INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)`,
+		entUser.ID, token, expiresAt,
+	)
+	if err != nil {
+		s.logger.Error("Failed to store reset token", zap.Error(err))
+		respondJSON(w, http.StatusOK, ok200)
+		return
+	}
+
+	if emailSvc := s.GetEmailService(); emailSvc != nil {
+		appURL := s.getAppURL()
+		go func() {
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel2()
+			if err := emailSvc.SendPasswordReset(ctx2, entUser.Email, token, appURL); err != nil {
+				s.logger.Error("Failed to send password reset email", zap.Error(err), zap.String("email", entUser.Email))
+			}
+		}()
+	}
+
+	respondJSON(w, http.StatusOK, ok200)
+}
+
+// HandleResetPassword validates a reset token and sets the new password.
+func (s *Server) HandleResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
+		return
+	}
+	if req.Token == "" {
+		respondError(w, http.StatusBadRequest, "token is required", "validation_error")
+		return
+	}
+	if err := validatePasswordStrength(req.Password); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error(), "validation_error")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	var userID int64
+	var expiresAt time.Time
+	var usedAt *time.Time
+	err := s.db.QueryRowContext(ctx,
+		`SELECT user_id, expires_at, used_at FROM password_reset_tokens WHERE token = $1`,
+		req.Token,
+	).Scan(&userID, &expiresAt, &usedAt)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid or expired reset link", "invalid_token")
+		return
+	}
+	if usedAt != nil {
+		respondError(w, http.StatusBadRequest, "this reset link has already been used", "token_used")
+		return
+	}
+	if time.Now().After(expiresAt) {
+		respondError(w, http.StatusBadRequest, "this reset link has expired — please request a new one", "token_expired")
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(req.Password)
+	if err != nil {
+		s.logger.Error("Failed to hash password", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to reset password", "internal_error")
+		return
+	}
+
+	if err := s.db.Client.User.UpdateOneID(userID).SetPasswordHash(hashedPassword).Exec(ctx); err != nil {
+		s.logger.Error("Failed to update password", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to reset password", "internal_error")
+		return
+	}
+
+	// Mark token as used
+	now := time.Now()
+	_, _ = s.db.ExecContext(ctx, `UPDATE password_reset_tokens SET used_at = $1 WHERE token = $2`, now, req.Token)
+
+	s.logger.Info("Password reset completed", zap.Int64("user_id", userID))
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Password reset successfully"})
 }

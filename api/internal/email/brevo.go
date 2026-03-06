@@ -177,6 +177,22 @@ func (s *BrevoService) SendProjectMemberInvitation(ctx context.Context, toEmail,
 	return s.SendEmail(ctx, toEmail, subject, html)
 }
 
+// SendPasswordReset sends a password reset email with a one-time link
+func (s *BrevoService) SendPasswordReset(ctx context.Context, toEmail, token, appURL string) error {
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s", appURL, token)
+	subject := "Reset your TaskAI password"
+
+	html := buildEmailTemplate(
+		"Reset Your Password",
+		"We received a request to reset your TaskAI password. Click the button below to choose a new password. This link expires in 1 hour.",
+		resetURL,
+		"Reset Password",
+		"If you did not request a password reset, you can safely ignore this email — your password will not change.",
+	)
+
+	return s.SendEmail(ctx, toEmail, subject, html)
+}
+
 // buildEmailTemplate generates a responsive HTML email with TaskAI branding
 func buildEmailTemplate(heading, bodyText, ctaURL, ctaLabel, footerNote string) string {
 	return fmt.Sprintf(`<!DOCTYPE html>

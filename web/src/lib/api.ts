@@ -344,6 +344,9 @@ export interface GitHubProgressEvent {
 export interface UserWithStats {
   id: number
   email: string
+  name?: string
+  first_name?: string
+  last_name?: string
   is_admin: boolean
   created_at: string
   login_count: number
@@ -1023,6 +1026,34 @@ class ApiClient {
   async deleteUser(userId: number): Promise<{ id: number; deleted: boolean }> {
     return this.request<{ id: number; deleted: boolean }>(`/api/admin/users/${userId}`, {
       method: 'DELETE',
+    })
+  }
+
+  async adminUpdateUserProfile(userId: number, data: { first_name: string; last_name: string }): Promise<{ id: number; first_name: string; last_name: string; name: string }> {
+    return this.request(`/api/admin/users/${userId}/profile`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async adminResetPassword(userId: number, data: { send_email: boolean; password?: string }): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/api/admin/users/${userId}/reset-password`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  }
+
+  async resetPassword(token: string, password: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
     })
   }
 

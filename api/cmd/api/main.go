@@ -288,6 +288,8 @@ func main() {
 			r.Use(api.RateLimitMiddleware(20))
 			r.Post("/signup", server.HandleSignup)
 			r.Post("/login", server.HandleLogin)
+			r.Post("/forgot-password", server.HandleForgotPassword)
+			r.Post("/reset-password", server.HandleResetPassword)
 
 			// GitHub callback — shared between repo-sync and login flows.
 			// The state JWT secret differs between the two; we dispatch accordingly.
@@ -510,6 +512,8 @@ func main() {
 			r.Get("/admin/users/{id}/activity", server.HandleGetUserActivity)
 			r.Patch("/admin/users/{id}/admin", server.HandleUpdateUserAdmin)
 			r.Patch("/admin/users/{id}/invites", server.HandleAdminBoostInvites)
+			r.Patch("/admin/users/{id}/profile", server.HandleUpdateUserProfile)
+			r.Post("/admin/users/{id}/reset-password", server.HandleAdminResetPassword)
 			r.Delete("/admin/users/{id}", server.HandleDeleteUser)
 
 			// Admin email provider routes

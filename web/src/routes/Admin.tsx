@@ -11,6 +11,9 @@ const API_URL = import.meta.env.VITE_API_URL || ''
 interface UserWithStats {
   id: number
   email: string
+  name?: string
+  first_name?: string
+  last_name?: string
   is_admin: boolean
   created_at: string
   login_count: number
@@ -64,6 +67,18 @@ export default function Admin() {
   const [deletingUserId, setDeletingUserId] = useState<number | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; email: string } | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // Name editing state (per user)
+  const [editingName, setEditingName] = useState<Record<number, { firstName: string; lastName: string }>>({})
+  const [savingName, setSavingName] = useState<number | null>(null)
+  const [nameSuccess, setNameSuccess] = useState<Record<number, string>>({})
+
+  // Password reset state (per user)
+  const [resetPasswordModal, setResetPasswordModal] = useState<{ id: number; email: string } | null>(null)
+  const [resetPasswordValue, setResetPasswordValue] = useState('')
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false)
+  const [resetPasswordError, setResetPasswordError] = useState('')
+  const [resetPasswordSuccess, setResetPasswordSuccess] = useState('')
 
   // Email provider state
   const [emailProvider, setEmailProvider] = useState<EmailProviderResponse | null>(null)
@@ -194,6 +209,53 @@ export default function Admin() {
       setDeleteError(err instanceof Error ? err.message : 'Failed to delete user')
     } finally {
       setDeletingUserId(null)
+    }
+  }
+
+  // === Name editing ===
+  const startEditName = (e: React.MouseEvent, u: UserWithStats) => {
+    e.stopPropagation()
+    setEditingName(prev => ({ ...prev, [u.id]: { firstName: u.first_name ?? '', lastName: u.last_name ?? '' } }))
+  }
+
+  const handleSaveName = async (e: React.MouseEvent, userId: number) => {
+    e.stopPropagation()
+    const data = editingName[userId]
+    if (!data) return
+    setSavingName(userId)
+    try {
+      const updated = await api.adminUpdateUserProfile(userId, { first_name: data.firstName, last_name: data.lastName })
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, first_name: updated.first_name, last_name: updated.last_name, name: updated.name } : u))
+      setEditingName(prev => { const next = { ...prev }; delete next[userId]; return next })
+      setNameSuccess(prev => ({ ...prev, [userId]: 'Name updated' }))
+      setTimeout(() => setNameSuccess(prev => { const n = { ...prev }; delete n[userId]; return n }), 3000)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to update name')
+    } finally {
+      setSavingName(null)
+    }
+  }
+
+  // === Password reset ===
+  const handleAdminResetPassword = async (sendEmail: boolean) => {
+    if (!resetPasswordModal) return
+    if (!sendEmail && !resetPasswordValue) {
+      setResetPasswordError('Enter a password or choose to send email')
+      return
+    }
+    setResetPasswordLoading(true)
+    setResetPasswordError('')
+    try {
+      const result = await api.adminResetPassword(resetPasswordModal.id, {
+        send_email: sendEmail,
+        password: sendEmail ? undefined : resetPasswordValue,
+      })
+      setResetPasswordSuccess(result.message)
+      setResetPasswordValue('')
+    } catch (err) {
+      setResetPasswordError(err instanceof Error ? err.message : 'Failed to reset password')
+    } finally {
+      setResetPasswordLoading(false)
     }
   }
 
@@ -447,7 +509,10 @@ export default function Admin() {
                     </svg>
 
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium text-dark-text-primary truncate block">{u.email}</span>
+                      {u.name && u.name !== u.email && (
+                        <span className="text-sm font-medium text-dark-text-primary truncate block">{u.name}</span>
+                      )}
+                      <span className={`truncate block ${u.name && u.name !== u.email ? 'text-xs text-dark-text-tertiary' : 'text-sm font-medium text-dark-text-primary'}`}>{u.email}</span>
                       <span className="text-xs text-dark-text-tertiary">Joined {formatShortDate(u.created_at)}</span>
                     </div>
 
@@ -538,6 +603,74 @@ export default function Admin() {
                             )}
                           </>
                         )}
+                      </div>
+
+                      {/* Name editing */}
+                      <div className="bg-dark-bg-secondary rounded-lg p-3 border border-dark-border-subtle space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm text-dark-text-secondary">Display name</label>
+                          {!editingName[u.id] && (
+                            <button
+                              onClick={(e) => startEditName(e, u)}
+                              className="text-xs text-primary-400 hover:text-primary-300 transition-colors"
+                            >
+                              {u.name && u.name !== u.email ? 'Edit' : 'Set name'}
+                            </button>
+                          )}
+                        </div>
+                        {editingName[u.id] ? (
+                          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              placeholder="First"
+                              value={editingName[u.id].firstName}
+                              onChange={(e) => setEditingName(prev => ({ ...prev, [u.id]: { ...prev[u.id], firstName: e.target.value } }))}
+                              className="flex-1 px-2 py-1 text-sm bg-dark-bg-primary border border-dark-border-subtle rounded text-dark-text-primary focus:outline-none focus:border-primary-500"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Last"
+                              value={editingName[u.id].lastName}
+                              onChange={(e) => setEditingName(prev => ({ ...prev, [u.id]: { ...prev[u.id], lastName: e.target.value } }))}
+                              className="flex-1 px-2 py-1 text-sm bg-dark-bg-primary border border-dark-border-subtle rounded text-dark-text-primary focus:outline-none focus:border-primary-500"
+                            />
+                            <button
+                              onClick={(e) => handleSaveName(e, u.id)}
+                              disabled={savingName === u.id}
+                              className="px-3 py-1 text-xs font-medium bg-primary-500 text-white rounded hover:bg-primary-600 transition-colors disabled:opacity-50"
+                            >
+                              {savingName === u.id ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setEditingName(prev => { const n = { ...prev }; delete n[u.id]; return n }) }}
+                              className="px-2 py-1 text-xs text-dark-text-tertiary hover:text-dark-text-primary rounded border border-dark-border-subtle transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-dark-text-primary">
+                            {nameSuccess[u.id] ? (
+                              <span className="text-green-400 text-xs">{nameSuccess[u.id]}</span>
+                            ) : u.name && u.name !== u.email ? u.name : (
+                              <span className="text-dark-text-tertiary italic">Not set (showing email)</span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Password reset */}
+                      <div className="bg-dark-bg-secondary rounded-lg p-3 border border-dark-border-subtle space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm text-dark-text-secondary">Password reset</label>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setResetPasswordModal({ id: u.id, email: u.email }); setResetPasswordValue(''); setResetPasswordError(''); setResetPasswordSuccess('') }}
+                            className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                          >
+                            Reset password
+                          </button>
+                        </div>
+                        <p className="text-xs text-dark-text-tertiary">Send a reset link to the user or set a password directly.</p>
                       </div>
 
                       <div>
@@ -988,6 +1121,63 @@ export default function Admin() {
           )}
         </div>
       </div>
+
+      {/* Password Reset Modal */}
+      {resetPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-dark-bg-secondary border border-dark-border-subtle rounded-xl shadow-2xl p-6 max-w-md w-full mx-4 space-y-4">
+            <h3 className="text-base font-semibold text-dark-text-primary">Reset password for {resetPasswordModal.email}</h3>
+            {resetPasswordSuccess ? (
+              <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-sm text-green-300">{resetPasswordSuccess}</div>
+            ) : (
+              <>
+                {resetPasswordError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-sm text-red-300">{resetPasswordError}</div>
+                )}
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-dark-text-secondary block mb-1.5">Set password directly</label>
+                    <input
+                      type="password"
+                      placeholder="New password (min 8 chars)"
+                      value={resetPasswordValue}
+                      onChange={(e) => setResetPasswordValue(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-dark-bg-primary border border-dark-border-subtle rounded text-dark-text-primary focus:outline-none focus:border-primary-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleAdminResetPassword(false)}
+                    disabled={resetPasswordLoading || !resetPasswordValue}
+                    className="w-full px-4 py-2 text-sm font-medium bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors disabled:opacity-50"
+                  >
+                    {resetPasswordLoading ? 'Setting…' : 'Set password'}
+                  </button>
+                  <div className="relative flex items-center">
+                    <div className="flex-1 border-t border-dark-border-subtle" />
+                    <span className="px-3 text-xs text-dark-text-tertiary">or</span>
+                    <div className="flex-1 border-t border-dark-border-subtle" />
+                  </div>
+                  <button
+                    onClick={() => handleAdminResetPassword(true)}
+                    disabled={resetPasswordLoading}
+                    className="w-full px-4 py-2 text-sm font-medium bg-dark-bg-tertiary text-dark-text-secondary border border-dark-border-subtle rounded-lg hover:text-dark-text-primary hover:bg-dark-bg-tertiary/80 transition-colors disabled:opacity-50"
+                  >
+                    {resetPasswordLoading ? 'Sending…' : 'Send reset email to user'}
+                  </button>
+                </div>
+              </>
+            )}
+            <div className="flex justify-end">
+              <button
+                onClick={() => { setResetPasswordModal(null); setResetPasswordSuccess(''); setResetPasswordError(''); setResetPasswordValue('') }}
+                className="px-4 py-2 text-sm font-medium text-dark-text-secondary bg-dark-bg-tertiary/50 border border-dark-border-subtle rounded-lg hover:text-dark-text-primary transition-colors"
+              >
+                {resetPasswordSuccess ? 'Close' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete User Confirmation Modal */}
       {deleteConfirm && (

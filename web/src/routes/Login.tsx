@@ -117,20 +117,27 @@ export default function Login() {
                 disabled={loading}
               />
 
-              <TextInput
-                id="password"
-                name="password"
-                type="password"
-                label="Password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onBlur={() => handleBlur('password')}
-                error={touched.password ? fieldErrors.password : undefined}
-                placeholder="••••••••"
-                disabled={loading}
-              />
+              <div>
+                <TextInput
+                  id="password"
+                  name="password"
+                  type="password"
+                  label="Password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onBlur={() => handleBlur('password')}
+                  error={touched.password ? fieldErrors.password : undefined}
+                  placeholder="••••••••"
+                  disabled={loading}
+                />
+                <div className="mt-1.5 text-right">
+                  <Link to="/forgot-password" className="text-xs text-dark-text-tertiary hover:text-primary-400 transition-colors">
+                    Forgot password?
+                  </Link>
+                </div>
+              </div>
             </div>
 
             <Button

@@ -1037,7 +1037,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                   onChange={(vals) => saveAssigneeIds(vals.map(Number))}
                   options={members.map((m) => ({
                     value: String(m.user_id || m.id),
-                    label: m.user_name || m.email || `User ${m.user_id || m.id}`,
+                    label: m.user_name || m.name || m.email || `User ${m.user_id || m.id}`,
                     description: m.email || undefined,
                   }))}
                   title="Select assignees"

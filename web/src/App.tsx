@@ -7,6 +7,8 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Landing from './routes/Landing'
 import Login from './routes/Login'
 import Signup from './routes/Signup'
+import ForgotPassword from './routes/ForgotPassword'
+import ResetPassword from './routes/ResetPassword'
 import Dashboard from './routes/Dashboard'
 import OAuthCallback from './routes/OAuthCallback'
 
@@ -67,6 +69,8 @@ function AppRoutes() {
         <Route path="/" element={<HomeRoute />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/accept-invite" element={<AcceptTeamInvite />} />
 

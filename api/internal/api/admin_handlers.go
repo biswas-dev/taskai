@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
@@ -12,12 +14,16 @@ import (
 	"taskai/ent"
 	"taskai/ent/user"
 	"taskai/ent/useractivity"
+	"taskai/internal/auth"
 )
 
 // UserWithStats represents a user with admin and activity stats
 type UserWithStats struct {
 	ID             int64     `json:"id"`
 	Email          string    `json:"email"`
+	Name           string    `json:"name,omitempty"`
+	FirstName      string    `json:"first_name,omitempty"`
+	LastName       string    `json:"last_name,omitempty"`
 	IsAdmin        bool      `json:"is_admin"`
 	CreatedAt      time.Time `json:"created_at"`
 	LoginCount     int       `json:"login_count"`
@@ -83,9 +89,16 @@ func (s *Server) HandleGetUsers(w http.ResponseWriter, r *http.Request) {
 		userStats := UserWithStats{
 			ID:          u.ID,
 			Email:       u.Email,
+			Name:        userDisplayName(u),
 			IsAdmin:     u.IsAdmin,
 			CreatedAt:   u.CreatedAt,
 			InviteCount: u.InviteCount,
+		}
+		if u.FirstName != nil {
+			userStats.FirstName = *u.FirstName
+		}
+		if u.LastName != nil {
+			userStats.LastName = *u.LastName
 		}
 
 		// Get login count and last login
@@ -368,4 +381,168 @@ func getClientIP(r *http.Request) string {
 
 	// Fall back to RemoteAddr
 	return r.RemoteAddr
+}
+
+// HandleUpdateUserProfile updates first/last name for any user (admin only)
+func (s *Server) HandleUpdateUserProfile(w http.ResponseWriter, r *http.Request) {
+	adminID, ok := GetUserID(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "user not authenticated", "unauthorized")
+		return
+	}
+	if !s.isAdmin(r.Context(), adminID) {
+		respondError(w, http.StatusForbidden, "admin access required", "forbidden")
+		return
+	}
+
+	targetUserIDStr := r.PathValue("id")
+	var targetUserID int64
+	if _, err := fmt.Sscanf(targetUserIDStr, "%d", &targetUserID); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid user id", "validation_error")
+		return
+	}
+
+	var req struct {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
+		return
+	}
+	if len(req.FirstName) > 50 || len(req.LastName) > 50 {
+		respondError(w, http.StatusBadRequest, "name fields must be 50 characters or less", "validation_error")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	update := s.db.Client.User.UpdateOneID(targetUserID).
+		SetFirstName(req.FirstName).
+		SetLastName(req.LastName)
+	fullName := strings.TrimSpace(req.FirstName + " " + req.LastName)
+	if fullName != "" {
+		update = update.SetName(fullName)
+	} else {
+		update = update.ClearName()
+	}
+	entUser, err := update.Save(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			respondError(w, http.StatusNotFound, "user not found", "not_found")
+			return
+		}
+		s.logger.Error("Failed to update user profile", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to update profile", "internal_error")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, entUserToAPI(entUser))
+}
+
+// HandleAdminResetPassword resets a user's password (admin only).
+// If send_email is true, generates a reset token and emails it.
+// Otherwise, sets the password directly from the provided value.
+func (s *Server) HandleAdminResetPassword(w http.ResponseWriter, r *http.Request) {
+	adminID, ok := GetUserID(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "user not authenticated", "unauthorized")
+		return
+	}
+	if !s.isAdmin(r.Context(), adminID) {
+		respondError(w, http.StatusForbidden, "admin access required", "forbidden")
+		return
+	}
+
+	targetUserIDStr := r.PathValue("id")
+	var targetUserID int64
+	if _, err := fmt.Sscanf(targetUserIDStr, "%d", &targetUserID); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid user id", "validation_error")
+		return
+	}
+
+	var req struct {
+		SendEmail bool   `json:"send_email"`
+		Password  string `json:"password"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	// Look up target user
+	entUser, err := s.db.Client.User.Get(ctx, targetUserID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			respondError(w, http.StatusNotFound, "user not found", "not_found")
+			return
+		}
+		s.logger.Error("Failed to get user", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to get user", "internal_error")
+		return
+	}
+
+	if req.SendEmail {
+		// Generate reset token and send email
+		tokenBytes := make([]byte, 32)
+		if _, err := rand.Read(tokenBytes); err != nil {
+			s.logger.Error("Failed to generate reset token", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to generate reset token", "internal_error")
+			return
+		}
+		token := hex.EncodeToString(tokenBytes)
+		expiresAt := time.Now().Add(24 * time.Hour) // admin-generated tokens last 24h
+
+		_, err = s.db.ExecContext(ctx,
+			`INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)`,
+			targetUserID, token, expiresAt,
+		)
+		if err != nil {
+			s.logger.Error("Failed to store reset token", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to store token", "internal_error")
+			return
+		}
+
+		emailSvc := s.GetEmailService()
+		if emailSvc == nil {
+			respondError(w, http.StatusBadRequest, "email service not configured — set password directly instead", "email_not_configured")
+			return
+		}
+		appURL := s.getAppURL()
+		if err := emailSvc.SendPasswordReset(ctx, entUser.Email, token, appURL); err != nil {
+			s.logger.Error("Failed to send password reset email", zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to send reset email", "email_error")
+			return
+		}
+		s.logger.Info("Admin sent password reset email", zap.Int64("admin_id", adminID), zap.Int64("target_user_id", targetUserID))
+		respondJSON(w, http.StatusOK, map[string]string{"message": "Reset email sent to " + entUser.Email})
+		return
+	}
+
+	// Set password directly
+	if req.Password == "" {
+		respondError(w, http.StatusBadRequest, "password or send_email required", "validation_error")
+		return
+	}
+	if err := validatePasswordStrength(req.Password); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error(), "validation_error")
+		return
+	}
+	hashedPassword, err := auth.HashPassword(req.Password)
+	if err != nil {
+		s.logger.Error("Failed to hash password", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to set password", "internal_error")
+		return
+	}
+	if err := s.db.Client.User.UpdateOneID(targetUserID).SetPasswordHash(hashedPassword).Exec(ctx); err != nil {
+		s.logger.Error("Failed to update password", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to set password", "internal_error")
+		return
+	}
+	s.logger.Info("Admin set password for user", zap.Int64("admin_id", adminID), zap.Int64("target_user_id", targetUserID))
+	respondJSON(w, http.StatusOK, map[string]string{"message": "Password updated successfully"})
 }
