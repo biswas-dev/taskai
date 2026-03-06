@@ -240,9 +240,6 @@ func main() {
 		// Swagger UI (public)
 		r.Get("/docs", server.HandleSwaggerUI)
 
-		// go-wiki annotation module (public static JS, no auth needed)
-		r.Get("/wiki/annotations.js", server.HandleWikiAnnotationsJS)
-
 		// Build OAuth login handler before registering routes (needed for callback dispatch).
 		var loginOAuthHandler *gologin.Handler
 		if (cfg.GoogleClientID != "" || cfg.LoginGitHubClientID != "") && cfg.OAuthStateSecret != "" {

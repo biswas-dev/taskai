@@ -81,14 +81,6 @@ type wikiPreviewResponse struct {
 	HTML string `json:"html"`
 }
 
-// HandleWikiAnnotationsJS serves the go-wiki annotations JavaScript module.
-// GET /api/wiki/annotations.js
-func (s *Server) HandleWikiAnnotationsJS(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	fmt.Fprint(w, gowiki.AnnotationsJS())
-}
-
 // HandleWikiPreview renders markdown content to HTML using the go-wiki renderer.
 func (s *Server) HandleWikiPreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
