@@ -39,7 +39,7 @@ export default function Wiki() {
     } else {
       setAnnotations([])
     }
-  }, [selectedPageId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedPageId])
 
   const loadProject = async () => {
     try {
