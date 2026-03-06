@@ -12,15 +12,16 @@ import (
 
 // UserProfileInfo holds basic user info for a profile page.
 type UserProfileInfo struct {
-	ID        int64   `json:"id"`
-	Name      *string `json:"name,omitempty"`
-	UserName  *string `json:"user_name,omitempty"`
-	Email     string  `json:"email"`
+	ID        int64     `json:"id"`
+	Name      *string   `json:"name,omitempty"`
+	UserName  *string   `json:"user_name,omitempty"`
+	Email     string    `json:"email"`
+	JoinedAt  time.Time `json:"joined_at"`
 }
 
 // UserActivityItem represents a single activity entry.
 type UserActivityItem struct {
-	Type        string    `json:"type"`         // task_comment, wiki_page, wiki_edit, annotation_comment, task_created
+	Type        string    `json:"type"`         // task_comment, wiki_page, wiki_edit, annotation_comment, task_created, annotation_created
 	EntityID    int64     `json:"entity_id"`
 	EntityTitle string    `json:"entity_title"`
 	ProjectID   int64     `json:"project_id"`
@@ -48,22 +49,24 @@ func (s *Server) HandleGetUserProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify viewer shares at least one project with target user
-	var sharedCount int
-	if err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM project_members pm1
-		JOIN project_members pm2 ON pm2.project_id = pm1.project_id AND pm2.user_id = $2
-		WHERE pm1.user_id = $1
-	`, viewerID, targetUserID).Scan(&sharedCount); err != nil || sharedCount == 0 {
-		respondError(w, http.StatusForbidden, "access denied", "forbidden")
-		return
+	// Viewer can always view their own profile; otherwise check shared project
+	if viewerID != targetUserID {
+		var sharedCount int
+		if err := s.db.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM project_members pm1
+			JOIN project_members pm2 ON pm2.project_id = pm1.project_id AND pm2.user_id = $2
+			WHERE pm1.user_id = $1
+		`, viewerID, targetUserID).Scan(&sharedCount); err != nil || sharedCount == 0 {
+			respondError(w, http.StatusForbidden, "access denied", "forbidden")
+			return
+		}
 	}
 
-	// Fetch user info
+	// Fetch user info including created_at
 	var u UserProfileInfo
 	if err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, user_name, email FROM users WHERE id = $1 AND deleted_at IS NULL
-	`, targetUserID).Scan(&u.ID, &u.Name, &u.UserName, &u.Email); err != nil {
+		SELECT id, name, user_name, email, created_at FROM users WHERE id = $1 AND deleted_at IS NULL
+	`, targetUserID).Scan(&u.ID, &u.Name, &u.UserName, &u.Email, &u.JoinedAt); err != nil {
 		respondError(w, http.StatusNotFound, "user not found", "not_found")
 		return
 	}
@@ -125,7 +128,7 @@ func (s *Server) fetchUserActivity(ctx context.Context, viewerID, targetUserID i
 			var item UserActivityItem
 			if wikiRows.Scan(&item.EntityID, &item.EntityTitle, &item.ProjectID, &item.ProjectName, &item.CreatedAt) == nil {
 				item.Type = "wiki_page"
-				item.Link = "/app/projects/" + int64ToStr(item.ProjectID) + "?tab=wiki"
+				item.Link = "/app/projects/" + int64ToStr(item.ProjectID) + "/wiki?page=" + int64ToStr(item.EntityID)
 				items = append(items, item)
 			}
 		}
@@ -149,16 +152,87 @@ func (s *Server) fetchUserActivity(ctx context.Context, viewerID, targetUserID i
 			var item UserActivityItem
 			if annRows.Scan(&item.EntityID, &item.EntityTitle, &item.ProjectID, &item.ProjectName, &item.CreatedAt) == nil {
 				item.Type = "annotation_comment"
-				item.Link = "/app/projects/" + int64ToStr(item.ProjectID) + "?tab=wiki"
+				item.Link = "/app/projects/" + int64ToStr(item.ProjectID) + "/wiki?page=" + int64ToStr(item.EntityID)
 				items = append(items, item)
 			}
 		}
 	}
 
-	// Sort by created_at descending and take top 30
+	// Tasks created
+	taskCreatedRows, err := s.db.QueryContext(ctx, `
+		SELECT t.id, t.title, t.project_id, p.name, t.task_number, t.created_at
+		FROM tasks t
+		JOIN projects p ON p.id = t.project_id
+		JOIN project_members pm ON pm.project_id = t.project_id AND pm.user_id = $1
+		WHERE t.created_by = $2
+		ORDER BY t.created_at DESC
+		LIMIT 20
+	`, viewerID, targetUserID)
+	if err == nil {
+		defer taskCreatedRows.Close()
+		for taskCreatedRows.Next() {
+			var item UserActivityItem
+			var taskNumber int64
+			if taskCreatedRows.Scan(&item.EntityID, &item.EntityTitle, &item.ProjectID, &item.ProjectName, &taskNumber, &item.CreatedAt) == nil {
+				item.Type = "task_created"
+				item.Link = "/app/projects/" + int64ToStr(item.ProjectID) + "/tasks/" + int64ToStr(taskNumber)
+				items = append(items, item)
+			}
+		}
+	}
+
+	// Wiki annotations created
+	waRows, err := s.db.QueryContext(ctx, `
+		SELECT wa.id, wp.title, wp.project_id, p.name, wp.id, wa.created_at
+		FROM wiki_annotations wa
+		JOIN wiki_pages wp ON wp.id = wa.wiki_page_id
+		JOIN projects p ON p.id = wp.project_id
+		JOIN project_members pm ON pm.project_id = wp.project_id AND pm.user_id = $1
+		WHERE wa.author_id = $2
+		ORDER BY wa.created_at DESC
+		LIMIT 20
+	`, viewerID, targetUserID)
+	if err == nil {
+		defer waRows.Close()
+		for waRows.Next() {
+			var item UserActivityItem
+			var pageID int64
+			if waRows.Scan(&item.EntityID, &item.EntityTitle, &item.ProjectID, &item.ProjectName, &pageID, &item.CreatedAt) == nil {
+				item.Type = "annotation_created"
+				item.Link = "/app/projects/" + int64ToStr(item.ProjectID) + "/wiki?page=" + int64ToStr(pageID)
+				items = append(items, item)
+			}
+		}
+	}
+
+	// Wiki edits (most recent edit per page, compatible with both SQLite and Postgres)
+	weRows, err := s.db.QueryContext(ctx, `
+		SELECT yu.page_id, wp.title, wp.project_id, p.name, MAX(yu.created_at)
+		FROM yjs_updates yu
+		JOIN wiki_pages wp ON wp.id = yu.page_id
+		JOIN projects p ON p.id = wp.project_id
+		JOIN project_members pm ON pm.project_id = wp.project_id AND pm.user_id = $1
+		WHERE yu.created_by = $2
+		GROUP BY yu.page_id, wp.title, wp.project_id, p.name
+		ORDER BY MAX(yu.created_at) DESC
+		LIMIT 20
+	`, viewerID, targetUserID)
+	if err == nil {
+		defer weRows.Close()
+		for weRows.Next() {
+			var item UserActivityItem
+			if weRows.Scan(&item.EntityID, &item.EntityTitle, &item.ProjectID, &item.ProjectName, &item.CreatedAt) == nil {
+				item.Type = "wiki_edit"
+				item.Link = "/app/projects/" + int64ToStr(item.ProjectID) + "/wiki?page=" + int64ToStr(item.EntityID)
+				items = append(items, item)
+			}
+		}
+	}
+
+	// Sort by created_at descending and take top 50
 	sortActivityItems(items)
-	if len(items) > 30 {
-		items = items[:30]
+	if len(items) > 50 {
+		items = items[:50]
 	}
 	return items, nil
 }

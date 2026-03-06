@@ -170,6 +170,7 @@ export interface UserProfile {
     name?: string | null
     user_name?: string | null
     email: string
+    joined_at?: string | null
   }
   recent_activity: UserProfileActivity[]
 }

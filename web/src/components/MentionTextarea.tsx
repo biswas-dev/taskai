@@ -39,7 +39,7 @@ const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaProps>(fu
     onChange(val)
     const pos = e.target.selectionStart ?? val.length
     const before = val.slice(0, pos)
-    const match = before.match(/@([\w.\-]*)$/)
+    const match = before.match(/@([\w.-]*)$/)
     if (match) {
       setAtPos(pos - match[0].length)
       setMenuFilter(match[1])

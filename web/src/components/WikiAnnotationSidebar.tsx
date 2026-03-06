@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, WikiAnnotation, AnnotationComment, AnnotationColor } from '../lib/api'
 import { useAuth } from '../state/AuthContext'
 import MentionTextarea from './MentionTextarea'
@@ -212,7 +213,13 @@ function AnnotationCard({
               "{annotation.selected_text}"
             </blockquote>
             <div className="flex items-center gap-2 mt-1.5 text-xs text-dark-text-tertiary">
-              <span>{annotation.author_name ?? 'Unknown'}</span>
+              <Link
+                to={`/app/users/${annotation.author_id}`}
+                className="hover:text-primary-400 transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {annotation.author_name ?? 'Unknown'}
+              </Link>
               <span>·</span>
               <span>{new Date(annotation.created_at).toLocaleDateString()}</span>
             </div>
@@ -356,7 +363,12 @@ function CommentThread({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
-            <span className="font-medium text-dark-text-primary">{comment.author_name ?? 'Unknown'}</span>
+            <Link
+              to={`/app/users/${comment.author_id}`}
+              className="font-medium text-dark-text-primary hover:text-primary-400 transition-colors"
+            >
+              {comment.author_name ?? 'Unknown'}
+            </Link>
             <span className="text-dark-text-tertiary">{new Date(comment.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
             {comment.resolved && <span className="text-green-400 text-[10px]">resolved</span>}
           </div>

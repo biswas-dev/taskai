@@ -5,8 +5,10 @@ import { apiClient, UserProfile as UserProfileType, UserProfileActivity } from '
 const activityIcon: Record<string, string> = {
   task_comment: '💬',
   wiki_page: '📄',
-  annotation_comment: '✏️',
+  annotation_comment: '💭',
   task_created: '✅',
+  annotation_created: '📌',
+  wiki_edit: '✏️',
 }
 
 const activityLabel: Record<string, string> = {
@@ -14,6 +16,17 @@ const activityLabel: Record<string, string> = {
   wiki_page: 'Created wiki page',
   annotation_comment: 'Commented on annotation',
   task_created: 'Created task',
+  annotation_created: 'Created annotation',
+  wiki_edit: 'Edited wiki page',
+}
+
+function getDateGroup(date: Date): string {
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+  if (diffDays < 1) return 'Today'
+  if (diffDays < 7) return 'This week'
+  return 'Earlier'
 }
 
 function ActivityItem({ item }: { item: UserProfileActivity }) {
@@ -33,6 +46,24 @@ function ActivityItem({ item }: { item: UserProfileActivity }) {
         </p>
       </div>
     </Link>
+  )
+}
+
+function ActivitySummary({ activities }: { activities: UserProfileActivity[] }) {
+  const counts: Record<string, number> = {}
+  for (const a of activities) {
+    counts[a.type] = (counts[a.type] ?? 0) + 1
+  }
+  const parts: string[] = []
+  if (counts.task_comment) parts.push(`${counts.task_comment} comment${counts.task_comment !== 1 ? 's' : ''}`)
+  if (counts.task_created) parts.push(`${counts.task_created} task${counts.task_created !== 1 ? 's' : ''} created`)
+  if (counts.wiki_page) parts.push(`${counts.wiki_page} wiki page${counts.wiki_page !== 1 ? 's' : ''}`)
+  if (counts.annotation_created) parts.push(`${counts.annotation_created} annotation${counts.annotation_created !== 1 ? 's' : ''}`)
+  if (counts.annotation_comment) parts.push(`${counts.annotation_comment} annotation comment${counts.annotation_comment !== 1 ? 's' : ''}`)
+  if (counts.wiki_edit) parts.push(`${counts.wiki_edit} wiki edit${counts.wiki_edit !== 1 ? 's' : ''}`)
+  if (!parts.length) return null
+  return (
+    <p className="text-xs text-dark-text-tertiary mt-1">{parts.join(' · ')}</p>
   )
 }
 
@@ -75,6 +106,20 @@ export default function UserProfile() {
   const { user, recent_activity } = profile
   const displayName = user.name ?? user.user_name ?? user.email
 
+  // Group activities by date
+  const groups: { label: string; items: UserProfileActivity[] }[] = []
+  const groupMap = new Map<string, UserProfileActivity[]>()
+  const groupOrder = ['Today', 'This week', 'Earlier']
+  for (const item of recent_activity) {
+    const label = getDateGroup(new Date(item.created_at))
+    if (!groupMap.has(label)) groupMap.set(label, [])
+    groupMap.get(label)!.push(item)
+  }
+  for (const label of groupOrder) {
+    const items = groupMap.get(label)
+    if (items?.length) groups.push({ label, items })
+  }
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <button onClick={() => navigate(-1)} className="text-sm text-dark-text-tertiary hover:text-dark-text-secondary mb-6 flex items-center gap-1">
@@ -93,6 +138,12 @@ export default function UserProfile() {
               <p className="text-sm text-dark-text-tertiary">@{user.user_name}</p>
             )}
             <p className="text-sm text-dark-text-tertiary">{user.email}</p>
+            {user.joined_at && (
+              <p className="text-xs text-dark-text-tertiary mt-1">
+                Joined {new Date(user.joined_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })}
+              </p>
+            )}
+            <ActivitySummary activities={recent_activity} />
           </div>
         </div>
       </div>
@@ -106,8 +157,15 @@ export default function UserProfile() {
           <p className="px-4 py-6 text-sm text-center text-dark-text-tertiary">No recent activity</p>
         ) : (
           <div className="py-2">
-            {recent_activity.map((item, idx) => (
-              <ActivityItem key={`${item.type}-${item.entity_id}-${idx}`} item={item} />
+            {groups.map(group => (
+              <div key={group.label}>
+                <p className="px-4 pt-3 pb-1 text-xs font-semibold text-dark-text-tertiary uppercase tracking-wide">
+                  {group.label}
+                </p>
+                {group.items.map((item, idx) => (
+                  <ActivityItem key={`${item.type}-${item.entity_id}-${idx}`} item={item} />
+                ))}
+              </div>
             ))}
           </div>
         )}

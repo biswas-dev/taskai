@@ -6,6 +6,8 @@ const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ projectId: '7', taskNumber: '1' }),
   useNavigate: () => mockNavigate,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Link: ({ children, to, className, onClick }: any) => <a href={to} className={className} onClick={onClick}>{children}</a>,
 }))
 
 // Mock ReactMarkdown

@@ -517,6 +517,11 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Set created_by via raw SQL after commit (not in ent schema)
+	if _, err := s.db.ExecContext(ctx, `UPDATE tasks SET created_by = $1 WHERE id = $2`, userID, newTask.ID); err != nil {
+		s.logger.Warn("Failed to set created_by on task", zap.Error(err), zap.Int64("task_id", newTask.ID))
+	}
+
 	// Fetch the created task with all related entities
 	createdTask, err := s.db.Client.Task.Query().
 		Where(task.ID(newTask.ID)).

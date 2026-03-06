@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useMemo, lazy, Suspense } from 'react'
-import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom'
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { api, Project, Task, type SwimLane, type Sprint, type Tag } from '../lib/api'
 import { useLocalTasks } from '../hooks/useLocalTasks'
@@ -859,14 +859,12 @@ function TaskCard({ task, isDragging }: {
         <h4 className="text-sm font-medium text-dark-text-primary hover:text-primary-400 transition-colors">{task.title}</h4>
       </div>
       {(() => {
-        const names = task.assignees?.length
-          ? task.assignees.map(a => a.user_name)
-          : task.assignee_name
-            ? [task.assignee_name]
-            : task.assignee_id
-              ? [`User ${task.assignee_id}`]
-              : []
-        if (!names.length) return null
+        const assignees: { id: number; name: string }[] = task.assignees?.length
+          ? task.assignees.filter(a => a.user_id != null).map(a => ({ id: a.user_id as number, name: a.user_name ?? `User ${a.user_id}` }))
+          : task.assignee_id
+            ? [{ id: task.assignee_id, name: task.assignee_name ?? `User ${task.assignee_id}` }]
+            : []
+        if (!assignees.length) return null
         return (
           <div className="flex items-center gap-1.5 text-xs text-dark-text-tertiary mt-2">
             <div className="w-4 h-4 rounded-full bg-primary-500/10 flex items-center justify-center flex-shrink-0">
@@ -874,7 +872,20 @@ function TaskCard({ task, isDragging }: {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </div>
-            <span>{names.join(', ')}</span>
+            <span>
+              {assignees.map((a, i) => (
+                <span key={a.id}>
+                  {i > 0 && ', '}
+                  <Link
+                    to={`/app/users/${a.id}`}
+                    className="hover:text-primary-400 transition-colors"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {a.name}
+                  </Link>
+                </span>
+              ))}
+            </span>
           </div>
         )
       })()}

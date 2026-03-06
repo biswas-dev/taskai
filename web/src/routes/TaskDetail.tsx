@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
@@ -969,9 +969,12 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-sm font-medium text-dark-text-primary">
+                            <Link
+                              to={`/app/users/${comment.user_id}`}
+                              className="text-sm font-medium text-dark-text-primary hover:text-primary-400 transition-colors"
+                            >
                               {comment.user_name || `User ${comment.user_id}`}
-                            </span>
+                            </Link>
                             <span className="text-xs text-dark-text-tertiary">
                               {new Date(comment.created_at).toLocaleString()}
                             </span>
