@@ -6,7 +6,7 @@ require (
 	entgo.io/ent v0.14.5
 	github.com/anchoo2kewl/go-draw v0.6.0
 	github.com/anchoo2kewl/go-login v0.2.0
-	github.com/anchoo2kewl/go-wiki v0.1.1-0.20260306022150-da80d868fd88
+	github.com/anchoo2kewl/go-wiki v0.1.2
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1

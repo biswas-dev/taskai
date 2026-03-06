@@ -12,6 +12,8 @@ github.com/anchoo2kewl/go-login v0.2.0 h1:olRxEfpw17ZpPT2YYB3TJAidZ6yUgAkjBj3Bit
 github.com/anchoo2kewl/go-login v0.2.0/go.mod h1:EyE+DCIMUFTm95JcDtlgqYBOypCBmok/0gO15fCvHvY=
 github.com/anchoo2kewl/go-wiki v0.1.1-0.20260306022150-da80d868fd88 h1:pkLR/QUAebVADq38XY6ii6KmABHov4hfa+UTUT7CY/U=
 github.com/anchoo2kewl/go-wiki v0.1.1-0.20260306022150-da80d868fd88/go.mod h1:SdNfnXOnrAfDdswO14eYvIb12gA5eacOtz+cz3lAnQw=
+github.com/anchoo2kewl/go-wiki v0.1.2 h1:EaOYqmr+z3x3A1lWfY5KsTimUKA+vT52lUo2Tr7/mjs=
+github.com/anchoo2kewl/go-wiki v0.1.2/go.mod h1:SdNfnXOnrAfDdswO14eYvIb12gA5eacOtz+cz3lAnQw=
 github.com/apparentlymart/go-textseg/v15 v15.0.0 h1:uYvfpb3DyLSCGWnctWKGj857c6ew1u1fNQOlOtuGxQY=
 github.com/apparentlymart/go-textseg/v15 v15.0.0/go.mod h1:K8XmNZdhEBkdlyDdvbmmsvpAG721bKi0joRfFdHIWJ4=
 github.com/bmatcuk/doublestar v1.3.4 h1:gPypJ5xD31uhX6Tf54sDPUOBXTqKH4c9aPY66CyQrS0=

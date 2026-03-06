@@ -1090,6 +1090,15 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
     }
   }, [isFullscreen, fsPreviewHTML, previewUpdateContent])
 
+  // ── Mermaid diagram rendering ─────────────────────────────────
+  useEffect(() => {
+    if (previewRef.current) window.GoWikiMermaid?.run(previewRef.current)
+  }, [previewHTML])
+
+  useEffect(() => {
+    if (fsPreviewRef.current) window.GoWikiMermaid?.run(fsPreviewRef.current)
+  }, [fsPreviewHTML])
+
   // Handle clicks on graph link chips rendered in preview HTML.
   useEffect(() => {
     const containers = [previewRef.current, fsPreviewRef.current].filter(Boolean)
