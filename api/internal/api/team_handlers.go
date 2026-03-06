@@ -733,6 +733,53 @@ func (s *Server) HandleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// TeamMembership represents a team the user is a member of but doesn't own
+type TeamMembership struct {
+	TeamID   int64     `json:"team_id"`
+	TeamName string    `json:"team_name"`
+	OwnerID  int64     `json:"owner_id"`
+	Role     string    `json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
+}
+
+// HandleGetMyTeamMemberships returns teams the user is a member of but does not own
+func (s *Server) HandleGetMyTeamMemberships(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	userID := r.Context().Value(UserIDKey).(int64)
+
+	entMembers, err := s.db.Client.TeamMember.Query().
+		Where(
+			teammember.UserID(userID),
+			teammember.Status("active"),
+		).
+		WithTeam().
+		Order(ent.Asc(teammember.FieldJoinedAt)).
+		All(ctx)
+	if err != nil {
+		s.logger.Error("Failed to get team memberships", zap.Error(err), zap.Int64("user_id", userID))
+		respondError(w, http.StatusInternalServerError, "failed to fetch memberships", "internal_error")
+		return
+	}
+
+	memberships := make([]TeamMembership, 0)
+	for _, em := range entMembers {
+		if em.Edges.Team == nil || em.Edges.Team.OwnerID == userID {
+			continue
+		}
+		memberships = append(memberships, TeamMembership{
+			TeamID:   em.TeamID,
+			TeamName: em.Edges.Team.Name,
+			OwnerID:  em.Edges.Team.OwnerID,
+			Role:     em.Role,
+			JoinedAt: em.JoinedAt,
+		})
+	}
+
+	respondJSON(w, http.StatusOK, memberships)
+}
+
 // HandleGetTeamSentInvitations returns all pending invitations sent by the team
 func (s *Server) HandleGetTeamSentInvitations(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

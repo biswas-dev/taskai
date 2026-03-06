@@ -459,6 +459,7 @@ func main() {
 			// Team routes
 			r.Get("/team", server.HandleGetMyTeam)
 			r.Patch("/team", server.HandleUpdateTeam)
+			r.Get("/team/memberships", server.HandleGetMyTeamMemberships)
 			r.Get("/team/members", server.HandleGetTeamMembers)
 			r.Post("/team/members", server.HandleAddTeamMember)
 			r.Post("/team/invite", server.HandleInviteTeamMember)

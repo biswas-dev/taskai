@@ -5,7 +5,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
-import { apiClient, type CloudinaryCredentialResponse, type APIKey, type Team, type TeamMember, type TeamInvitation, type SentInvitation, type UserSearchResult, type Invite, type ProjectInvitation } from '../lib/api'
+import { apiClient, type CloudinaryCredentialResponse, type APIKey, type Team, type TeamMember, type TeamInvitation, type TeamMembership, type SentInvitation, type UserSearchResult, type Invite, type ProjectInvitation } from '../lib/api'
 
 export default function Settings() {
   const navigate = useNavigate()
@@ -85,6 +85,7 @@ export default function Settings() {
   const [isSearching, setIsSearching] = useState(false)
   const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null)
   const [showSearchDropdown, setShowSearchDropdown] = useState(false)
+  const [otherTeams, setOtherTeams] = useState<TeamMembership[]>([])
 
   // Project invitations (received)
   const [projectInvitations, setProjectInvitations] = useState<ProjectInvitation[]>([])
@@ -530,16 +531,18 @@ export default function Settings() {
 
   const loadTeamData = async () => {
     try {
-      const [teamData, membersData, invitationsData, sentInvData] = await Promise.all([
+      const [teamData, membersData, invitationsData, sentInvData, otherTeamsData] = await Promise.all([
         apiClient.getMyTeam(),
         apiClient.getTeamMembers(),
         apiClient.getMyInvitations(),
         apiClient.getTeamSentInvitations(),
+        apiClient.getMyTeamMemberships(),
       ])
       setTeam(teamData)
       setTeamMembers(membersData)
       setInvitations(invitationsData)
       setSentInvitations(sentInvData)
+      setOtherTeams(otherTeamsData)
     } catch (error) {
       console.error('Failed to load data:', error)
     }
@@ -2129,6 +2132,31 @@ print(response.json())`}
                     </div>
                   </div>
                 </div>
+
+                {/* Other Teams (member of, but not owner) */}
+                {otherTeams.length > 0 && (
+                  <div className="mt-8 pt-8 border-t border-dark-border-subtle">
+                    <h3 className="text-sm font-semibold text-dark-text-primary mb-1">Other Teams</h3>
+                    <p className="text-xs text-dark-text-tertiary mb-4">Teams you've joined as a member</p>
+                    <div className="space-y-3">
+                      {otherTeams.map((membership) => (
+                        <div key={membership.team_id} className="p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium text-dark-text-primary">{membership.team_name}</p>
+                              <p className="text-xs text-dark-text-tertiary mt-0.5">
+                                Joined {new Date(membership.joined_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <span className="px-2 py-0.5 text-xs font-medium bg-dark-bg-tertiary text-dark-text-secondary rounded capitalize">
+                              {membership.role}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </Card>

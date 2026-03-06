@@ -425,6 +425,14 @@ export interface UserSearchResult {
   name?: string
 }
 
+export interface TeamMembership {
+  team_id: number
+  team_name: string
+  owner_id: number
+  role: string
+  joined_at: string
+}
+
 export interface TokenInvitationInfo {
   invitation_id: number
   team_name: string
@@ -1257,6 +1265,10 @@ class ApiClient {
 
   async getMyInvitations(): Promise<TeamInvitation[]> {
     return this.request<TeamInvitation[]>('/api/team/invitations')
+  }
+
+  async getMyTeamMemberships(): Promise<TeamMembership[]> {
+    return this.request<TeamMembership[]>('/api/team/memberships')
   }
 
   async acceptInvitation(invitationId: number): Promise<void> {
