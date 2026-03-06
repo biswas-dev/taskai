@@ -46,107 +46,8 @@ interface WikiEditorProps {
   onAnnotationClick?: (annotationId: number) => void
 }
 
-// ── Annotation highlight helpers ──────────────────────────────────
-
-const ANNOTATION_HIGHLIGHT_COLORS: Record<AnnotationColor, string> = {
-  yellow: 'rgba(253,224,71,0.35)',
-  blue: 'rgba(147,197,253,0.35)',
-  green: 'rgba(134,239,172,0.35)',
-  red: 'rgba(252,165,165,0.35)',
-}
-
-const ANNOTATION_HIGHLIGHT_SELECTED: Record<AnnotationColor, string> = {
-  yellow: 'rgba(253,224,71,0.6)',
-  blue: 'rgba(147,197,253,0.6)',
-  green: 'rgba(134,239,172,0.6)',
-  red: 'rgba(252,165,165,0.6)',
-}
-
-/**
- * Returns the character offset of (targetNode, targetOffset) within the
- * text content of `root`, counting only TEXT_NODE characters.
- */
-function getTextOffset(root: Element, targetNode: Node, targetOffset: number): number {
-  let count = 0
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  while (walker.nextNode()) {
-    const node = walker.currentNode
-    if (node === targetNode) return count + targetOffset
-    count += (node.textContent ?? '').length
-  }
-  return count
-}
-
-/**
- * Injects <mark> elements for all annotations into the preview container.
- * Annotations are applied in reverse order to preserve earlier offsets.
- */
-function applyAnnotationHighlights(
-  container: HTMLElement,
-  annotations: WikiAnnotation[],
-  selectedId?: number | null,
-) {
-  // Remove previous marks
-  container.querySelectorAll('mark[data-ann-id]').forEach(mark => {
-    const parent = mark.parentNode
-    if (!parent) return
-    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark)
-    parent.removeChild(mark)
-  })
-
-  if (!annotations.length) return
-
-  // Apply in reverse start_offset order so earlier offsets stay valid after DOM edits
-  const sorted = [...annotations].sort((a, b) => b.start_offset - a.start_offset)
-
-  for (const ann of sorted) {
-    if (ann.resolved) continue // skip resolved — they render with low opacity in sidebar
-    try {
-      let charCount = 0
-      let startNode: Node | null = null
-      let startOff = 0
-      let endNode: Node | null = null
-      let endOff = 0
-
-      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-      while (walker.nextNode()) {
-        const node = walker.currentNode
-        const len = (node.textContent ?? '').length
-        if (!startNode && charCount + len > ann.start_offset) {
-          startNode = node
-          startOff = ann.start_offset - charCount
-        }
-        if (!endNode && charCount + len >= ann.end_offset) {
-          endNode = node
-          endOff = ann.end_offset - charCount
-          break
-        }
-        charCount += len
-      }
-
-      if (!startNode || !endNode) continue
-
-      const range = document.createRange()
-      range.setStart(startNode, startOff)
-      range.setEnd(endNode, endOff)
-
-      const mark = document.createElement('mark')
-      mark.dataset.annId = String(ann.id)
-      mark.style.background = selectedId === ann.id
-        ? ANNOTATION_HIGHLIGHT_SELECTED[ann.color]
-        : ANNOTATION_HIGHLIGHT_COLORS[ann.color]
-      mark.style.borderRadius = '2px'
-      mark.style.cursor = 'pointer'
-      mark.style.transition = 'background 0.15s'
-
-      const fragment = range.extractContents()
-      mark.appendChild(fragment)
-      range.insertNode(mark)
-    } catch {
-      // Range may be invalid if content changed since annotation was created
-    }
-  }
-}
+// Annotation highlight helpers are provided by window.GoWikiAnnotations (go-wiki package).
+// See web/src/lib/goWikiAnnotations.d.ts for types.
 
 // ── Toolbar helpers ──────────────────────────────────────────────
 
@@ -962,81 +863,26 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, on
   const [versionsLoading, setVersionsLoading] = useState(false)
   const [viewingVersion, setViewingVersion] = useState<WikiPageVersionWithContent | null>(null)
 
-  // ── Annotation state ─────────────────────────────────────────
-  const [annotationPopup, setAnnotationPopup] = useState<{
-    x: number; y: number
-    startOffset: number; endOffset: number; selectedText: string
-  } | null>(null)
-  const annotationPopupRef = useRef(annotationPopup)
-  useEffect(() => { annotationPopupRef.current = annotationPopup }, [annotationPopup])
-
-  // Native mouseup listener on the preview div — more reliable than React onMouseUp
-  // on dangerouslySetInnerHTML content
+  // ── Annotation: delegate to window.GoWikiAnnotations (go-wiki package) ──
+  // Attach/detach the color picker and click handler whenever preview is active.
   useEffect(() => {
     const el = previewRef.current
-    if (!el || !isPreview) return
-
-    const handleMouseUp = (e: MouseEvent) => {
-      // Click on an existing annotation mark → select it
-      const target = e.target as HTMLElement
-      const mark = target.closest('mark[data-ann-id]') as HTMLElement | null
-      if (mark) {
-        const annId = Number(mark.dataset.annId)
-        if (!isNaN(annId) && onAnnotationClick) {
-          onAnnotationClick(annId)
-          return
-        }
-      }
-
-      if (!onAnnotationCreate) return
-
-      const selection = window.getSelection()
-      if (!selection || selection.isCollapsed || !selection.rangeCount) {
-        setAnnotationPopup(null)
-        return
-      }
-      const range = selection.getRangeAt(0)
-      if (!el.contains(range.commonAncestorContainer)) {
-        setAnnotationPopup(null)
-        return
-      }
-      const selectedText = selection.toString().trim()
-      if (!selectedText) return
-
-      const startOffset = getTextOffset(el, range.startContainer, range.startOffset)
-      const endOffset = getTextOffset(el, range.endContainer, range.endOffset)
-
-      // Position popup above the selection using its bounding rect
-      const rect = range.getBoundingClientRect()
-      const x = Math.max(8, rect.left + rect.width / 2 - 120)
-      const y = Math.max(8, rect.top - 52)
-
-      setAnnotationPopup({ x, y, startOffset, endOffset, selectedText })
-    }
-
-    el.addEventListener('mouseup', handleMouseUp)
-    return () => el.removeEventListener('mouseup', handleMouseUp)
-  }, [isPreview, onAnnotationCreate, onAnnotationClick, previewHTML]) // re-bind when html changes
+    if (!el || !isPreview || !window.GoWikiAnnotations) return
+    const detach = window.GoWikiAnnotations.attach(el, {
+      onAnnotationCreate: onAnnotationCreate
+        ? (data) => onAnnotationCreate({ startOffset: data.startOffset, endOffset: data.endOffset, selectedText: data.selectedText, color: data.color as AnnotationColor })
+        : undefined,
+      onAnnotationClick,
+    })
+    return detach
+  }, [isPreview, onAnnotationCreate, onAnnotationClick, previewHTML])
 
   // Apply highlights after previewHTML renders or annotations change
   useEffect(() => {
     const el = previewRef.current
-    if (!el) return
-    applyAnnotationHighlights(el, annotations ?? [], selectedAnnotationId)
+    if (!el || !window.GoWikiAnnotations) return
+    window.GoWikiAnnotations.apply(el, annotations ?? [], selectedAnnotationId)
   }, [previewHTML, annotations, selectedAnnotationId])
-
-  const handleAnnotationColorPick = useCallback((color: AnnotationColor) => {
-    const popup = annotationPopupRef.current
-    if (!popup || !onAnnotationCreate) return
-    onAnnotationCreate({
-      startOffset: popup.startOffset,
-      endOffset: popup.endOffset,
-      selectedText: popup.selectedText,
-      color,
-    })
-    setAnnotationPopup(null)
-    window.getSelection()?.removeAllRanges()
-  }, [onAnnotationCreate])
 
   // ── Keep contentRef in sync ──────────────────────────────────
   useEffect(() => { contentRef.current = content }, [content])
@@ -1635,36 +1481,8 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, on
           {/* Content */}
           <div className="flex-1 overflow-hidden flex flex-col">
             {isPreview ? (
-              <div className="h-full overflow-y-auto px-6 py-4 relative">
+              <div className="h-full overflow-y-auto px-6 py-4">
                 <PreviewContent previewHTML={previewHTML} content={content} previewRef={previewRef} />
-                {/* Annotation color picker popup */}
-                {annotationPopup && (
-                  <div
-                    className="fixed z-50 flex items-center gap-1.5 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg px-3 py-2 shadow-xl"
-                    style={{ left: annotationPopup.x, top: annotationPopup.y }}
-                  >
-                    <span className="text-xs text-dark-text-tertiary mr-1">Highlight:</span>
-                    {(['yellow', 'blue', 'green', 'red'] as const).map(color => (
-                      <button
-                        key={color}
-                        onClick={() => handleAnnotationColorPick(color)}
-                        className="w-5 h-5 rounded-full transition-transform hover:scale-125 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-dark-bg-secondary"
-                        style={{ background: ANNOTATION_HIGHLIGHT_COLORS[color], border: `2px solid ${ANNOTATION_HIGHLIGHT_SELECTED[color]}` }}
-                        title={color}
-                        aria-label={`Highlight ${color}`}
-                      />
-                    ))}
-                    <button
-                      onClick={() => setAnnotationPopup(null)}
-                      className="ml-1 text-dark-text-tertiary hover:text-dark-text-primary transition-colors"
-                      aria-label="Cancel"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                )}
               </div>
             ) : (
               <>
