@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { api, WikiPage } from '../lib/api'
+import { api, WikiPage, WikiAnnotation, AnnotationColor, AnnotationComment } from '../lib/api'
 import WikiEditor from './WikiEditor'
+import WikiAnnotationSidebar from './WikiAnnotationSidebar'
 
 interface WikiContentProps {
   projectId: string
@@ -19,9 +20,24 @@ export default function WikiContent({ projectId }: WikiContentProps) {
   const [showNewPageInput, setShowNewPageInput] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
+  const [annotations, setAnnotations] = useState<WikiAnnotation[]>([])
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<number | null>(null)
+  const [showAnnotationSidebar, setShowAnnotationSidebar] = useState(false)
+
   useEffect(() => {
     if (projectId) loadPages()
   }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (selectedPageId) {
+      api.listWikiAnnotations(Number(selectedPageId))
+        .then(data => setAnnotations(data))
+        .catch(() => setAnnotations([]))
+      setSelectedAnnotationId(null)
+    } else {
+      setAnnotations([])
+    }
+  }, [selectedPageId])
 
   const loadPages = async () => {
     try {
@@ -72,6 +88,59 @@ export default function WikiContent({ projectId }: WikiContentProps) {
       alert(err instanceof Error ? err.message : 'Failed to delete page')
     }
   }
+
+  const handleAnnotationCreate = useCallback(async (info: {
+    startOffset: number; endOffset: number; selectedText: string; color: AnnotationColor
+  }) => {
+    if (!selectedPageId) return
+    try {
+      const annotation = await api.createWikiAnnotation(Number(selectedPageId), {
+        start_offset: info.startOffset,
+        end_offset: info.endOffset,
+        selected_text: info.selectedText,
+        color: info.color,
+      })
+      setAnnotations(prev => [...prev, annotation])
+      setSelectedAnnotationId(annotation.id)
+      setShowAnnotationSidebar(true)
+    } catch { /* ignore */ }
+  }, [selectedPageId])
+
+  const handleAnnotationClick = useCallback((annotationId: number) => {
+    setSelectedAnnotationId(prev => prev === annotationId ? null : annotationId)
+    setShowAnnotationSidebar(true)
+  }, [])
+
+  const handleAnnotationUpdate = useCallback((updated: WikiAnnotation) => {
+    setAnnotations(prev => prev.map(a => a.id === updated.id ? updated : a))
+  }, [])
+
+  const handleAnnotationDelete = useCallback((annotationId: number) => {
+    setAnnotations(prev => prev.filter(a => a.id !== annotationId))
+    if (selectedAnnotationId === annotationId) setSelectedAnnotationId(null)
+  }, [selectedAnnotationId])
+
+  const handleCommentCreate = useCallback((annotationId: number, comment: AnnotationComment) => {
+    setAnnotations(prev => prev.map(a =>
+      a.id === annotationId ? { ...a, comments: [...a.comments, comment] } : a
+    ))
+  }, [])
+
+  const handleCommentUpdate = useCallback((updated: AnnotationComment) => {
+    setAnnotations(prev => prev.map(a =>
+      a.id === updated.annotation_id
+        ? { ...a, comments: a.comments.map(c => c.id === updated.id ? updated : c) }
+        : a
+    ))
+  }, [])
+
+  const handleCommentDelete = useCallback((annotationId: number, commentId: number) => {
+    setAnnotations(prev => prev.map(a =>
+      a.id === annotationId
+        ? { ...a, comments: a.comments.filter(c => c.id !== commentId) }
+        : a
+    ))
+  }, [])
 
   const selectedPage = pages.find(p => p.id === Number(selectedPageId))
   const filteredPages = searchQuery
@@ -182,9 +251,17 @@ export default function WikiContent({ projectId }: WikiContentProps) {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden">
         {selectedPage ? (
-          <WikiEditor key={selectedPage.id} page={selectedPage} />
+          <WikiEditor
+            key={selectedPage.id}
+            page={selectedPage}
+            annotations={annotations}
+            selectedAnnotationId={selectedAnnotationId}
+            onAnnotationCreate={handleAnnotationCreate}
+            onAnnotationClick={handleAnnotationClick}
+          />
         ) : (
           <div className="flex-1 flex items-center justify-center text-dark-text-tertiary">
             <div className="text-center">
@@ -194,6 +271,20 @@ export default function WikiContent({ projectId }: WikiContentProps) {
               <p className="text-lg">Select a page or create a new one</p>
             </div>
           </div>
+        )}
+        </div>
+        {selectedPage && showAnnotationSidebar && (
+          <WikiAnnotationSidebar
+            annotations={annotations}
+            selectedAnnotationId={selectedAnnotationId}
+            onAnnotationSelect={setSelectedAnnotationId}
+            onAnnotationUpdate={handleAnnotationUpdate}
+            onAnnotationDelete={handleAnnotationDelete}
+            onCommentCreate={handleCommentCreate}
+            onCommentUpdate={handleCommentUpdate}
+            onCommentDelete={handleCommentDelete}
+            onClose={() => setShowAnnotationSidebar(false)}
+          />
         )}
       </div>
     </div>
