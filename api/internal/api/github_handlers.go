@@ -1115,9 +1115,8 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 	// Force full sync: delete all GitHub-sourced tasks and sprints, clear last-sync timestamp
 	if req.ForceFullSync {
 		progress("reset", "Clearing GitHub-imported tasks and sprints...", 0, 0)
-		// Explicitly delete comments first — do not rely on FK cascade.
-		// SQLite PRAGMA foreign_keys is per-connection; pool connections may not have it set,
-		// leaving orphaned task_comments rows with github_comment_id values that block re-import.
+		// Explicitly delete comments first — FK cascade may not fire reliably
+		// across all DB drivers. Belt-and-suspenders cleanup before re-import.
 		_, _ = s.db.ExecContext(ctx, `
 			DELETE FROM task_comments
 			WHERE task_id IN (
@@ -1685,11 +1684,16 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 					err := s.db.QueryRowContext(ctx, `
 						INSERT INTO task_comments (task_id, user_id, comment, github_comment_id)
 						VALUES ($1, $2, $3, $4)
-						ON CONFLICT (github_comment_id) DO NOTHING
+						ON CONFLICT (github_comment_id) WHERE github_comment_id IS NOT NULL DO NOTHING
 						RETURNING id
 					`, tr.taskID, ownerID, body, gc.ID).Scan(&newCID)
 					if err == nil {
 						result.CreatedComments++
+					} else if err != sql.ErrNoRows {
+						s.logger.Warn("Failed to insert GitHub comment",
+							zap.Int64("task_id", tr.taskID),
+							zap.Int64("github_comment_id", gc.ID),
+							zap.Error(err))
 					}
 				}
 			}
@@ -2816,11 +2820,16 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 					err := s.db.QueryRowContext(ctx, `
 						INSERT INTO task_comments (task_id, user_id, comment, github_comment_id)
 						VALUES ($1, $2, $3, $4)
-						ON CONFLICT (github_comment_id) DO NOTHING
+						ON CONFLICT (github_comment_id) WHERE github_comment_id IS NOT NULL DO NOTHING
 						RETURNING id
 					`, tr.taskID, ownerID, body, gc.ID).Scan(&newCID)
 					if err == nil {
 						result.CreatedComments++
+					} else if err != sql.ErrNoRows {
+						s.logger.Warn("Failed to insert GitHub comment",
+							zap.Int64("task_id", tr.taskID),
+							zap.Int64("github_comment_id", gc.ID),
+							zap.Error(err))
 					}
 				}
 			}
