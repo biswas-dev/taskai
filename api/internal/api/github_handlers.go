@@ -31,6 +31,7 @@ type ghLabel struct {
 }
 
 type ghUser struct {
+	ID    int64  `json:"id"`
 	Login string `json:"login"`
 	Name  string `json:"name"`
 }
@@ -1030,6 +1031,29 @@ func (s *Server) HandleGitHubPull(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleGitHubSync imports GitHub data, updating already-imported items.
+// resolveGitHubCommentAuthor returns the TaskAI user ID and comment body for a GitHub comment.
+// If the commenter has linked their GitHub account via OAuth, their TaskAI user ID is used
+// and the body is returned as-is. Otherwise falls back to fallbackUserID with an attribution prefix.
+func (s *Server) resolveGitHubCommentAuthor(ctx context.Context, gc ghIssueComment, fallbackUserID int64) (userID int64, body string) {
+	if gc.User == nil || gc.User.ID == 0 {
+		return fallbackUserID, gc.Body
+	}
+	var linkedUserID int64
+	_ = s.db.QueryRowContext(ctx, `
+		SELECT user_id FROM oauth_providers
+		WHERE provider = 'github' AND provider_user_id = $1
+		LIMIT 1
+	`, strconv.FormatInt(gc.User.ID, 10)).Scan(&linkedUserID)
+	if linkedUserID != 0 {
+		return linkedUserID, gc.Body
+	}
+	body = gc.Body
+	if gc.User.Login != "" {
+		body = "**@" + gc.User.Login + "** (GitHub):\n\n" + gc.Body
+	}
+	return fallbackUserID, body
+}
+
 // POST /api/projects/{id}/github/sync
 func (s *Server) HandleGitHubSync(w http.ResponseWriter, r *http.Request) {
 	s.handleGitHubImport(w, r, true)
@@ -1661,32 +1685,24 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 						break
 					}
 				}
+				// Resolve owner once per task for unlinked GitHub users
+				var ownerID int64
+				_ = s.db.QueryRowContext(ctx, `SELECT user_id FROM project_members WHERE project_id = $1 AND role = 'owner' LIMIT 1`, projectID).Scan(&ownerID)
+				if ownerID == 0 {
+					_ = s.db.QueryRowContext(ctx, `SELECT user_id FROM project_members WHERE project_id = $1 LIMIT 1`, projectID).Scan(&ownerID)
+				}
 				for _, gc := range ghComments {
 					if gc.Body == "" {
 						continue
 					}
-					// Format: prefix with GitHub username for attribution
-					login := ""
-					if gc.User != nil {
-						login = gc.User.Login
-					}
-					body := gc.Body
-					if login != "" {
-						body = "**@" + login + "** (GitHub):\n\n" + gc.Body
-					}
-					// Use the first project user as comment author (system import)
-					var ownerID int64
-					_ = s.db.QueryRowContext(ctx, `SELECT user_id FROM project_members WHERE project_id = $1 AND role = 'owner' LIMIT 1`, projectID).Scan(&ownerID)
-					if ownerID == 0 {
-						_ = s.db.QueryRowContext(ctx, `SELECT user_id FROM project_members WHERE project_id = $1 LIMIT 1`, projectID).Scan(&ownerID)
-					}
+					commentUserID, body := s.resolveGitHubCommentAuthor(ctx, gc, ownerID)
 					var newCID int64
 					err := s.db.QueryRowContext(ctx, `
 						INSERT INTO task_comments (task_id, user_id, comment, github_comment_id)
 						VALUES ($1, $2, $3, $4)
 						ON CONFLICT (github_comment_id) WHERE github_comment_id IS NOT NULL DO NOTHING
 						RETURNING id
-					`, tr.taskID, ownerID, body, gc.ID).Scan(&newCID)
+					`, tr.taskID, commentUserID, body, gc.ID).Scan(&newCID)
 					if err == nil {
 						result.CreatedComments++
 					} else if err != sql.ErrNoRows {
@@ -2808,21 +2824,14 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 					if gc.Body == "" {
 						continue
 					}
-					login := ""
-					if gc.User != nil {
-						login = gc.User.Login
-					}
-					body := gc.Body
-					if login != "" {
-						body = "**@" + login + "** (GitHub):\n\n" + gc.Body
-					}
+					commentUserID, body := s.resolveGitHubCommentAuthor(ctx, gc, ownerID)
 					var newCID int64
 					err := s.db.QueryRowContext(ctx, `
 						INSERT INTO task_comments (task_id, user_id, comment, github_comment_id)
 						VALUES ($1, $2, $3, $4)
 						ON CONFLICT (github_comment_id) WHERE github_comment_id IS NOT NULL DO NOTHING
 						RETURNING id
-					`, tr.taskID, ownerID, body, gc.ID).Scan(&newCID)
+					`, tr.taskID, commentUserID, body, gc.ID).Scan(&newCID)
 					if err == nil {
 						result.CreatedComments++
 					} else if err != sql.ErrNoRows {
