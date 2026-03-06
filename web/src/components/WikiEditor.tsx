@@ -795,7 +795,7 @@ function PreviewContent({ previewHTML, content, previewRef }: Readonly<{
     return (
       <div
         ref={previewRef}
-        className="prose dark:prose-invert max-w-none"
+        className="prose prose-invert max-w-none"
         dangerouslySetInnerHTML={{ __html: previewHTML }}
       />
     )
