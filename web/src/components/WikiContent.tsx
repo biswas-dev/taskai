@@ -23,6 +23,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
   const [annotations, setAnnotations] = useState<WikiAnnotation[]>([])
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<number | null>(null)
   const [showAnnotationSidebar, setShowAnnotationSidebar] = useState(false)
+  const [pinnedAnnotations, setPinnedAnnotations] = useState(false)
   const [showResolved, setShowResolved] = useState(false)
 
   useEffect(() => {
@@ -252,7 +253,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex flex-col overflow-hidden">
         {selectedPage ? (
           <WikiEditor
@@ -260,8 +261,16 @@ export default function WikiContent({ projectId }: WikiContentProps) {
             page={selectedPage}
             annotations={annotations}
             selectedAnnotationId={selectedAnnotationId}
+            showAnnotationHighlights={pinnedAnnotations || showAnnotationSidebar}
             onAnnotationCreate={handleAnnotationCreate}
             onAnnotationClick={handleAnnotationClick}
+            onAnnotationUpdate={handleAnnotationUpdate}
+            onAnnotationDelete={handleAnnotationDelete}
+            onCommentCreate={handleCommentCreate}
+            onCommentUpdate={handleCommentUpdate}
+            onCommentDelete={handleCommentDelete}
+            showResolved={showResolved}
+            onToggleShowResolved={() => setShowResolved(v => !v)}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-dark-text-tertiary">
@@ -274,19 +283,63 @@ export default function WikiContent({ projectId }: WikiContentProps) {
           </div>
         )}
         </div>
-        {selectedPage && showAnnotationSidebar && (
-          <WikiAnnotationSidebar
-            annotations={annotations}
-            selectedAnnotationId={selectedAnnotationId}
-            showResolved={showResolved}
-            onAnnotationSelect={setSelectedAnnotationId}
-            onAnnotationUpdate={handleAnnotationUpdate}
-            onAnnotationDelete={handleAnnotationDelete}
-            onCommentCreate={handleCommentCreate}
-            onCommentUpdate={handleCommentUpdate}
-            onCommentDelete={handleCommentDelete}
-            onToggleShowResolved={() => setShowResolved(v => !v)}
-          />
+
+        {/* Pen icon: reveal sidebar when not visible */}
+        {selectedPage && !pinnedAnnotations && !showAnnotationSidebar && (
+          <button
+            onClick={() => setShowAnnotationSidebar(true)}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-1.5 bg-dark-bg-secondary border border-r-0 border-dark-border-subtle rounded-l-lg text-dark-text-tertiary hover:text-primary-400 hover:bg-primary-500/10 transition-colors"
+            title="Show annotations"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            </svg>
+          </button>
+        )}
+
+        {/* Annotation sidebar with pin/close controls */}
+        {selectedPage && (pinnedAnnotations || showAnnotationSidebar) && (
+          <div className="flex flex-col border-l border-dark-border-subtle w-80 flex-shrink-0">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-dark-border-subtle bg-dark-bg-secondary">
+              <span className="text-xs font-semibold text-dark-text-secondary uppercase tracking-wide">Annotations</span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPinnedAnnotations(v => !v)}
+                  className={`p-1 rounded transition-colors ${pinnedAnnotations ? 'text-primary-400 bg-primary-500/10' : 'text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary'}`}
+                  title={pinnedAnnotations ? 'Unpin sidebar' : 'Pin sidebar'}
+                >
+                  <svg className="w-3.5 h-3.5" fill={pinnedAnnotations ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                  </svg>
+                </button>
+                {!pinnedAnnotations && (
+                  <button
+                    onClick={() => setShowAnnotationSidebar(false)}
+                    className="p-1 rounded text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary transition-colors"
+                    title="Hide annotations"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <WikiAnnotationSidebar
+                annotations={annotations}
+                selectedAnnotationId={selectedAnnotationId}
+                showResolved={showResolved}
+                onAnnotationSelect={setSelectedAnnotationId}
+                onAnnotationUpdate={handleAnnotationUpdate}
+                onAnnotationDelete={handleAnnotationDelete}
+                onCommentCreate={handleCommentCreate}
+                onCommentUpdate={handleCommentUpdate}
+                onCommentDelete={handleCommentDelete}
+                onToggleShowResolved={() => setShowResolved(v => !v)}
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>

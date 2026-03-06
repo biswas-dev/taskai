@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { WikiPage, WikiPageVersion, WikiPageVersionWithContent, WikiAnnotation, AnnotationColor, apiClient } from '../lib/api'
+import { WikiPage, WikiPageVersion, WikiPageVersionWithContent, WikiAnnotation, AnnotationColor, AnnotationComment, apiClient } from '../lib/api'
+import WikiAnnotationSidebar from './WikiAnnotationSidebar'
 import { useAuth } from '../state/AuthContext'
 import SearchSelect from './ui/SearchSelect'
 import ImagePickerModal from './ImagePickerModal'
@@ -45,6 +46,14 @@ interface WikiEditorProps {
   showAnnotationHighlights?: boolean
   onAnnotationCreate?: (info: { startOffset: number; endOffset: number; selectedText: string; color: AnnotationColor }) => void
   onAnnotationClick?: (annotationId: number) => void
+  // Sidebar callbacks threaded through for fullscreen support
+  onAnnotationUpdate?: (annotation: WikiAnnotation) => void
+  onAnnotationDelete?: (annotationId: number) => void
+  onCommentCreate?: (annotationId: number, comment: AnnotationComment) => void
+  onCommentUpdate?: (comment: AnnotationComment) => void
+  onCommentDelete?: (annotationId: number, commentId: number) => void
+  showResolved?: boolean
+  onToggleShowResolved?: () => void
 }
 
 // Annotation highlight helpers are provided by window.GoWikiAnnotations (go-wiki package).
@@ -823,7 +832,7 @@ function PreviewContent({ previewHTML, content, previewRef }: Readonly<{
 
 // ── Component ────────────────────────────────────────────────────
 
-export default function WikiEditor({ page, annotations, selectedAnnotationId, showAnnotationHighlights = true, onAnnotationCreate, onAnnotationClick }: Readonly<WikiEditorProps>) {
+export default function WikiEditor({ page, annotations, selectedAnnotationId, showAnnotationHighlights = true, onAnnotationCreate, onAnnotationClick, onAnnotationUpdate, onAnnotationDelete, onCommentCreate, onCommentUpdate, onCommentDelete, showResolved = false, onToggleShowResolved }: Readonly<WikiEditorProps>) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [content, setContent] = useState('')
@@ -839,6 +848,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
   const isSavingRef = useRef(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [fsPreviewHTML, setFsPreviewHTML] = useState('')
+  const [fsAnnotationsVisible, setFsAnnotationsVisible] = useState(false)
 
   const ydocRef = useRef<Y.Doc | null>(null)
   const providerRef = useRef<WebsocketProvider | null>(null)
@@ -903,8 +913,8 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
   useEffect(() => {
     const el = fsPreviewRef.current
     if (!el || !window.GoWikiAnnotations) return
-    window.GoWikiAnnotations.apply(el, showAnnotationHighlights ? (annotations ?? []) : [], selectedAnnotationId)
-  }, [fsPreviewHTML, annotations, selectedAnnotationId, showAnnotationHighlights])
+    window.GoWikiAnnotations.apply(el, fsAnnotationsVisible ? (annotations ?? []) : [], selectedAnnotationId)
+  }, [fsPreviewHTML, annotations, selectedAnnotationId, fsAnnotationsVisible])
 
   // ── Keep contentRef in sync ──────────────────────────────────
   useEffect(() => { contentRef.current = content }, [content])
@@ -1351,6 +1361,27 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
           >
             Save
           </button>
+          {onAnnotationUpdate && (
+            <button
+              onClick={() => setFsAnnotationsVisible(v => !v)}
+              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                fsAnnotationsVisible
+                  ? 'bg-primary-500/20 text-primary-400 hover:bg-primary-500/30'
+                  : 'bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80'
+              }`}
+              title="Toggle annotations"
+            >
+              <svg className="w-3.5 h-3.5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              Annotations
+              {(annotations ?? []).filter(a => !a.resolved).length > 0 && (
+                <span className="ml-1 px-1 py-0.5 bg-primary-500/30 text-primary-300 rounded-full text-xs">
+                  {(annotations ?? []).filter(a => !a.resolved).length}
+                </span>
+              )}
+            </button>
+          )}
           <button
             onClick={() => setIsFullscreen(false)}
             className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-dark-bg-tertiary text-dark-text-secondary hover:bg-red-500/20 hover:text-red-400"
@@ -1361,7 +1392,8 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
         </div>
       </div>
 
-      {/* Split panes */}
+      {/* Split panes + optional annotation sidebar */}
+      <div className="flex flex-1 overflow-hidden">
       <div ref={fsContainerRef} className="flex flex-1 overflow-hidden">
         {/* Left: editor */}
         <section
@@ -1399,6 +1431,24 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
         <div style={{ width: `${100 - fsSplitPct}%` }} className="overflow-y-auto p-4">
           <PreviewContent previewHTML={fsPreviewHTML} content={content} previewRef={fsPreviewRef} />
         </div>
+      </div>
+      {/* Fullscreen annotation sidebar */}
+      {fsAnnotationsVisible && onAnnotationUpdate && onAnnotationDelete && onCommentCreate && onCommentUpdate && onCommentDelete && (
+        <div className="w-80 flex-shrink-0 border-l border-dark-border-subtle flex flex-col overflow-hidden">
+          <WikiAnnotationSidebar
+            annotations={annotations ?? []}
+            selectedAnnotationId={selectedAnnotationId ?? null}
+            showResolved={showResolved}
+            onAnnotationSelect={(id) => onAnnotationClick?.(id ?? 0)}
+            onAnnotationUpdate={onAnnotationUpdate}
+            onAnnotationDelete={onAnnotationDelete}
+            onCommentCreate={onCommentCreate}
+            onCommentUpdate={onCommentUpdate}
+            onCommentDelete={onCommentDelete}
+            onToggleShowResolved={onToggleShowResolved ?? (() => {})}
+          />
+        </div>
+      )}
       </div>
     </div>
   )
