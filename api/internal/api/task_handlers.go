@@ -60,6 +60,7 @@ type Task struct {
 	ActualHours         *float64           `json:"actual_hours,omitempty"`
 	Tags                []Tag              `json:"tags,omitempty"`
 	GithubIssueNumber   *int64             `json:"github_issue_number,omitempty"`
+	GithubReactions     []GitHubReaction   `json:"github_reactions,omitempty"`
 	CreatedAt           time.Time          `json:"created_at"`
 	UpdatedAt           time.Time          `json:"updated_at"`
 }
@@ -1118,6 +1119,21 @@ func (s *Server) HandleGetTaskByNumber(w http.ResponseWriter, r *http.Request) {
 		if ghIssueNum.Valid {
 			t.GithubIssueNumber = &ghIssueNum.Int64
 		}
+	}
+
+	// Load GitHub reactions for this task
+	reactionRows, err := s.db.QueryContext(ctx, `
+		SELECT reaction, count FROM github_reactions
+		WHERE task_id = $1 AND count > 0
+	`, taskEntity.ID)
+	if err == nil {
+		for reactionRows.Next() {
+			var gr GitHubReaction
+			if reactionRows.Scan(&gr.Reaction, &gr.Count) == nil {
+				t.GithubReactions = append(t.GithubReactions, gr)
+			}
+		}
+		reactionRows.Close()
 	}
 
 	respondJSON(w, http.StatusOK, t)

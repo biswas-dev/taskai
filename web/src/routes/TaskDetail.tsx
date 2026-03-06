@@ -7,8 +7,30 @@ import Button from '../components/ui/Button'
 import SearchSelect from '../components/ui/SearchSelect'
 import MultiSelectDropdown from '../components/ui/MultiSelectDropdown'
 import ImagePickerModal from '../components/ImagePickerModal'
-import { apiClient, Task, type UpdateTaskRequest, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment, type GitHubPushTaskResponse, type Tag } from '../lib/api'
+import { apiClient, Task, type UpdateTaskRequest, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment, type GitHubPushTaskResponse, type Tag, type GitHubReaction } from '../lib/api'
 import { preprocessGraphLinks, parseGraphLinkUrl } from '../lib/graphLinks'
+
+const REACTION_EMOJI: Record<string, string> = {
+  '+1': '👍', '-1': '👎', laugh: '😄', hooray: '🎉',
+  confused: '😕', heart: '❤️', rocket: '🚀', eyes: '👀',
+}
+const REACTION_ORDER = ['+1', '-1', 'laugh', 'hooray', 'confused', 'heart', 'rocket', 'eyes']
+
+function ReactionBar({ reactions }: { reactions?: GitHubReaction[] }) {
+  const byType = Object.fromEntries((reactions ?? []).map(r => [r.reaction, r.count]))
+  const nonZero = REACTION_ORDER.filter(r => byType[r] > 0)
+  if (!nonZero.length) return null
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      {nonZero.map(r => (
+        <span key={r}
+          className="inline-flex items-center gap-1 text-xs bg-dark-bg-secondary border border-dark-border-subtle rounded-full px-2 py-0.5 text-dark-text-secondary">
+          {REACTION_EMOJI[r]} {byType[r]}
+        </span>
+      ))}
+    </div>
+  )
+}
 
 interface TaskDetailProps {
   isModal?: boolean
@@ -639,6 +661,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                   >
                     {preprocessGraphLinks(task.description)}
                   </ReactMarkdown>
+                  <ReactionBar reactions={task.github_reactions} />
                 </div>
               ) : (
                 <p
@@ -823,6 +846,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                             <ReactMarkdown remarkPlugins={[remarkGfm, remarkEmoji]}>
                               {comment.comment}
                             </ReactMarkdown>
+                            <ReactionBar reactions={comment.github_reactions} />
                           </div>
                         </div>
                       </div>

@@ -7,8 +7,14 @@ export type AuthResponse = components['schemas']['AuthResponse']
 export type SignupRequest = components['schemas']['SignupRequest']
 export type LoginRequest = components['schemas']['LoginRequest']
 export type Project = components['schemas']['Project']
-export type Task = components['schemas']['Task'] & { task_number?: number; github_issue_number?: number | null; start_date?: string | null }
+export type Task = components['schemas']['Task'] & { task_number?: number; github_issue_number?: number | null; start_date?: string | null; github_reactions?: GitHubReaction[] }
 export type ApiError = components['schemas']['Error']
+
+export interface GitHubReaction {
+  reaction: string
+  count: number
+}
+
 // Types with required fields for commonly used API responses
 export interface TaskComment {
   id: number
@@ -18,6 +24,7 @@ export interface TaskComment {
   comment: string
   created_at: string
   updated_at: string
+  github_reactions?: GitHubReaction[]
 }
 
 export interface Sprint {

@@ -13,14 +13,20 @@ import (
 	"taskai/ent/taskcomment"
 )
 
+type GitHubReaction struct {
+	Reaction string `json:"reaction"`
+	Count    int    `json:"count"`
+}
+
 type TaskComment struct {
-	ID        int64     `json:"id"`
-	TaskID    int64     `json:"task_id"`
-	UserID    int64     `json:"user_id"`
-	UserName  *string   `json:"user_name,omitempty"`
-	Comment   string    `json:"comment"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID              int64            `json:"id"`
+	TaskID          int64            `json:"task_id"`
+	UserID          int64            `json:"user_id"`
+	UserName        *string          `json:"user_name,omitempty"`
+	Comment         string           `json:"comment"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+	GithubReactions []GitHubReaction `json:"github_reactions,omitempty"`
 }
 
 type CreateCommentRequest struct {
@@ -90,6 +96,30 @@ func (s *Server) HandleListTaskComments(w http.ResponseWriter, r *http.Request) 
 		}
 
 		comments = append(comments, c)
+	}
+
+	// Bulk-fetch GitHub reactions for all comments via task_id join
+	if len(comments) > 0 {
+		reactionRows, rErr := s.db.QueryContext(ctx, `
+			SELECT gr.task_comment_id, gr.reaction, gr.count
+			FROM github_reactions gr
+			JOIN task_comments tc ON tc.id = gr.task_comment_id
+			WHERE tc.task_id = $1 AND gr.count > 0
+		`, taskID)
+		if rErr == nil {
+			reactionMap := map[int64][]GitHubReaction{}
+			for reactionRows.Next() {
+				var cid int64
+				var gr GitHubReaction
+				if reactionRows.Scan(&cid, &gr.Reaction, &gr.Count) == nil {
+					reactionMap[cid] = append(reactionMap[cid], gr)
+				}
+			}
+			reactionRows.Close()
+			for i := range comments {
+				comments[i].GithubReactions = reactionMap[comments[i].ID]
+			}
+		}
 	}
 
 	respondJSON(w, http.StatusOK, comments)

@@ -48,6 +48,7 @@ type ghIssue struct {
 	Labels      []ghLabel    `json:"labels"`
 	Milestone   *ghMilestone `json:"milestone"`
 	PullRequest *struct{}    `json:"pull_request"` // non-nil means this is a PR, not an issue
+	Reactions   *ghReactions `json:"reactions"`
 }
 
 // --- GitHub Projects V2 GraphQL types ---
@@ -94,12 +95,24 @@ type ghProjectItemStatus struct {
 	DueDate    string // "YYYY-MM-DD", may be empty
 }
 
+type ghReactions struct {
+	PlusOne  int `json:"+1"`
+	MinusOne int `json:"-1"`
+	Laugh    int `json:"laugh"`
+	Hooray   int `json:"hooray"`
+	Confused int `json:"confused"`
+	Heart    int `json:"heart"`
+	Rocket   int `json:"rocket"`
+	Eyes     int `json:"eyes"`
+}
+
 // ghIssueComment is a comment on a GitHub issue.
 type ghIssueComment struct {
-	ID        int64   `json:"id"`
-	Body      string  `json:"body"`
-	User      *ghUser `json:"user"`
-	CreatedAt string  `json:"created_at"`
+	ID        int64        `json:"id"`
+	Body      string       `json:"body"`
+	User      *ghUser      `json:"user"`
+	CreatedAt string       `json:"created_at"`
+	Reactions *ghReactions `json:"reactions"`
 }
 
 type ghProjectItemContent struct {
@@ -1054,6 +1067,34 @@ func (s *Server) resolveGitHubCommentAuthor(ctx context.Context, gc ghIssueComme
 	return fallbackUserID, body
 }
 
+func (s *Server) upsertReactions(ctx context.Context, taskID, commentID int64, r *ghReactions) {
+	if r == nil {
+		return
+	}
+	counts := map[string]int{
+		"+1": r.PlusOne, "-1": r.MinusOne, "laugh": r.Laugh,
+		"hooray": r.Hooray, "confused": r.Confused, "heart": r.Heart,
+		"rocket": r.Rocket, "eyes": r.Eyes,
+	}
+	for reaction, count := range counts {
+		if taskID != 0 {
+			_, _ = s.db.ExecContext(ctx, `
+				INSERT INTO github_reactions (task_id, reaction, count)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (task_id, reaction) WHERE task_id IS NOT NULL
+				DO UPDATE SET count = EXCLUDED.count, updated_at = NOW()
+			`, taskID, reaction, count)
+		} else {
+			_, _ = s.db.ExecContext(ctx, `
+				INSERT INTO github_reactions (task_comment_id, reaction, count)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (task_comment_id, reaction) WHERE task_comment_id IS NOT NULL
+				DO UPDATE SET count = EXCLUDED.count, updated_at = NOW()
+			`, commentID, reaction, count)
+		}
+	}
+}
+
 // POST /api/projects/{id}/github/sync
 func (s *Server) HandleGitHubSync(w http.ResponseWriter, r *http.Request) {
 	s.handleGitHubImport(w, r, true)
@@ -1570,6 +1611,7 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 						nextNumber++
 						result.CreatedTasks++
 						s.insertTaskTags(ctx, existingID, issue.Labels, labelToTagID)
+						s.upsertReactions(ctx, existingID, 0, issue.Reactions)
 					} else {
 						result.SkippedTasks++
 					}
@@ -1582,6 +1624,7 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 					`, issue.Title, description, taskStatus, assigneeID, sprintID, swimLaneID, ghItemID, nullableStr(ghStartDate), nullableStr(ghDueDate), existingID)
 					_, _ = s.db.ExecContext(ctx, `DELETE FROM task_tags WHERE task_id = $1`, existingID)
 					s.insertTaskTags(ctx, existingID, issue.Labels, labelToTagID)
+					s.upsertReactions(ctx, existingID, 0, issue.Reactions)
 					result.UpdatedTasks++
 				}
 			} else {
@@ -1596,6 +1639,7 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 					nextNumber++
 					result.CreatedTasks++
 					s.insertTaskTags(ctx, newID, issue.Labels, labelToTagID)
+					s.upsertReactions(ctx, newID, 0, issue.Reactions)
 				} else {
 					result.SkippedTasks++
 				}
@@ -1711,6 +1755,11 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 							zap.Int64("github_comment_id", gc.ID),
 							zap.Error(err))
 					}
+					commentDBID := newCID
+					if commentDBID == 0 && gc.ID != 0 {
+						_ = s.db.QueryRowContext(ctx, `SELECT id FROM task_comments WHERE github_comment_id = $1`, gc.ID).Scan(&commentDBID)
+					}
+					s.upsertReactions(ctx, 0, commentDBID, gc.Reactions)
 				}
 			}
 		}
@@ -2748,6 +2797,7 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 				if err == nil {
 					nextNumber++
 					result.CreatedTasks++
+					s.upsertReactions(ctx, existingID, 0, issue.Reactions)
 				} else {
 					result.SkippedTasks++
 				}
@@ -2758,6 +2808,7 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 					start_date = COALESCE($6, start_date), due_date = COALESCE($7, due_date)
 					WHERE id = $8
 				`, issue.Title, issue.Body, taskStatus, swimLaneID, ghItemID, nullableStr(ghStartDate), nullableStr(ghDueDate), existingID)
+				s.upsertReactions(ctx, existingID, 0, issue.Reactions)
 				result.UpdatedTasks++
 			}
 		}
@@ -2840,6 +2891,11 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 							zap.Int64("github_comment_id", gc.ID),
 							zap.Error(err))
 					}
+					commentDBID := newCID
+					if commentDBID == 0 && gc.ID != 0 {
+						_ = s.db.QueryRowContext(ctx, `SELECT id FROM task_comments WHERE github_comment_id = $1`, gc.ID).Scan(&commentDBID)
+					}
+					s.upsertReactions(ctx, 0, commentDBID, gc.Reactions)
 				}
 			}
 		}
