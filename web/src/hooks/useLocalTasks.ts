@@ -63,7 +63,7 @@ export function useLocalTasks(projectId: number) {
     due_date?: string
   }) => {
     const newTask = await api.createTask(projectId, data)
-    setTasks(prev => [newTask, ...prev])
+    setTasks(prev => prev.some(t => t.id === newTask.id) ? prev : [newTask, ...prev])
   }
 
   const updateTask = async (taskId: number, updates: UpdateTaskRequest) => {
