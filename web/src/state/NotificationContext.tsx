@@ -1,12 +1,17 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
-import { apiClient, ProjectInvitation } from '../lib/api'
+import { apiClient, ProjectInvitation, AppNotification } from '../lib/api'
 
 interface NotificationContextType {
   count: number
   invitations: ProjectInvitation[]
+  notifications: AppNotification[]
+  unreadNotifCount: number
   refreshInvitations: () => Promise<void>
+  refreshNotifications: () => Promise<void>
   acceptInvitation: (id: number) => Promise<void>
   rejectInvitation: (id: number) => Promise<void>
+  markNotificationRead: (id: number) => Promise<void>
+  markAllNotificationsRead: () => Promise<void>
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
@@ -24,6 +29,7 @@ function getWSBase(): string {
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [invitations, setInvitations] = useState<ProjectInvitation[]>([])
+  const [notifications, setNotifications] = useState<AppNotification[]>([])
   const mountedRef = useRef(true)
 
   const refreshInvitations = useCallback(async () => {
@@ -34,6 +40,17 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       // ignore — will retry on next poll or WS event
+    }
+  }, [])
+
+  const refreshNotifications = useCallback(async () => {
+    try {
+      const data = await apiClient.getNotifications()
+      if (mountedRef.current) {
+        setNotifications(data)
+      }
+    } catch {
+      // ignore
     }
   }, [])
 
@@ -65,6 +82,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
             refreshInvitations()
           } else if (msg.type === 'task_created' || msg.type === 'task_updated' || msg.type === 'task_deleted') {
             window.dispatchEvent(new CustomEvent(msg.type, { detail: msg.payload }))
+          } else if (msg.type === 'notification') {
+            refreshNotifications()
           }
         } catch {
           // ignore malformed messages
@@ -86,10 +105,14 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     }
 
     refreshInvitations()
+    refreshNotifications()
     connect()
 
     // Polling fallback every 60s
-    const pollInterval = setInterval(refreshInvitations, 60_000)
+    const pollInterval = setInterval(() => {
+      refreshInvitations()
+      refreshNotifications()
+    }, 60_000)
 
     return () => {
       mountedRef.current = false
@@ -100,7 +123,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         ws.close()
       }
     }
-  }, [refreshInvitations])
+  }, [refreshInvitations, refreshNotifications])
 
   const acceptInvitation = useCallback(async (id: number) => {
     await apiClient.acceptProjectInvitation(id)
@@ -113,13 +136,34 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     await refreshInvitations()
   }, [refreshInvitations])
 
+  const markNotificationRead = useCallback(async (id: number) => {
+    await apiClient.markNotificationsRead([id])
+    if (mountedRef.current) {
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n))
+    }
+  }, [])
+
+  const markAllNotificationsRead = useCallback(async () => {
+    await apiClient.markAllNotificationsRead()
+    if (mountedRef.current) {
+      setNotifications(prev => prev.map(n => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })))
+    }
+  }, [])
+
+  const unreadNotifCount = notifications.filter(n => !n.read_at).length
+
   return (
     <NotificationContext.Provider value={{
-      count: invitations.length,
+      count: invitations.length + unreadNotifCount,
       invitations,
+      notifications,
+      unreadNotifCount,
       refreshInvitations,
+      refreshNotifications,
       acceptInvitation,
       rejectInvitation,
+      markNotificationRead,
+      markAllNotificationsRead,
     }}>
       {children}
     </NotificationContext.Provider>

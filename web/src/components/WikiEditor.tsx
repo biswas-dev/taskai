@@ -1439,6 +1439,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
             annotations={annotations ?? []}
             selectedAnnotationId={selectedAnnotationId ?? null}
             showResolved={showResolved}
+            projectId={page.project_id}
             onAnnotationSelect={(id) => onAnnotationClick?.(id ?? 0)}
             onAnnotationUpdate={onAnnotationUpdate}
             onAnnotationDelete={onAnnotationDelete}

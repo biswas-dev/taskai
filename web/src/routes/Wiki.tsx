@@ -361,6 +361,7 @@ export default function Wiki() {
               annotations={annotations}
               selectedAnnotationId={selectedAnnotationId}
               showResolved={showResolved}
+              projectId={Number(projectId)}
               onAnnotationSelect={setSelectedAnnotationId}
               onAnnotationUpdate={handleAnnotationUpdate}
               onAnnotationDelete={handleAnnotationDelete}

@@ -139,6 +139,41 @@ export interface WikiPage {
   updated_at: string
 }
 
+export interface AppNotification {
+  id: number
+  sender_id?: number | null
+  sender_name?: string | null
+  type: string
+  entity_type: string
+  entity_id: number
+  project_id: number
+  project_name?: string | null
+  message: string
+  link: string
+  read_at?: string | null
+  created_at: string
+}
+
+export interface UserProfileActivity {
+  type: string
+  entity_id: number
+  entity_title: string
+  project_id: number
+  project_name: string
+  link: string
+  created_at: string
+}
+
+export interface UserProfile {
+  user: {
+    id: number
+    name?: string | null
+    user_name?: string | null
+    email: string
+  }
+  recent_activity: UserProfileActivity[]
+}
+
 export type AnnotationColor = 'yellow' | 'blue' | 'green' | 'red'
 
 export interface AnnotationComment {
@@ -1645,6 +1680,31 @@ class ApiClient {
 
   async deleteAnnotationComment(commentId: number): Promise<void> {
     return this.request<void>(`/api/wiki/annotation-comments/${commentId}`, { method: 'DELETE' })
+  }
+
+  // Notification endpoints
+  async getNotifications(): Promise<AppNotification[]> {
+    return this.request<AppNotification[]>('/api/notifications')
+  }
+
+  async getNotificationCount(): Promise<{ count: number }> {
+    return this.request<{ count: number }>('/api/notifications/count')
+  }
+
+  async markNotificationsRead(ids: number[]): Promise<void> {
+    return this.request<void>('/api/notifications/mark-read', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    return this.request<void>('/api/notifications/mark-all-read', { method: 'POST' })
+  }
+
+  // User profile
+  async getUserProfile(userId: number): Promise<UserProfile> {
+    return this.request<UserProfile>(`/api/users/${userId}/profile`)
   }
 
   // Version endpoint

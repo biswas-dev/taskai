@@ -330,6 +330,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
                 annotations={annotations}
                 selectedAnnotationId={selectedAnnotationId}
                 showResolved={showResolved}
+                projectId={Number(projectId)}
                 onAnnotationSelect={setSelectedAnnotationId}
                 onAnnotationUpdate={handleAnnotationUpdate}
                 onAnnotationDelete={handleAnnotationDelete}

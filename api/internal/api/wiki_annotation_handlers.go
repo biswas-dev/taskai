@@ -394,6 +394,10 @@ func (s *Server) HandleCreateAnnotationComment(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Fetch project_id for notifications
+	var projectID int64
+	_ = s.db.QueryRowContext(ctx, `SELECT project_id FROM wiki_pages WHERE id = $1`, pageID).Scan(&projectID)
+
 	var commentID int64
 	err = s.db.QueryRowContext(ctx, `
 		INSERT INTO wiki_annotation_comments (annotation_id, author_id, parent_comment_id, content)
@@ -411,6 +415,17 @@ func (s *Server) HandleCreateAnnotationComment(w http.ResponseWriter, r *http.Re
 		respondError(w, http.StatusInternalServerError, "failed to fetch created comment", "internal_error")
 		return
 	}
+
+	// Notifications (best-effort, non-blocking)
+	if projectID > 0 {
+		commenterName := ""
+		if comment.AuthorName != nil {
+			commenterName = *comment.AuthorName
+		}
+		annLink := "/app/projects/" + int64ToStr(projectID) + "?tab=wiki"
+		go s.notifyAnnotationComment(context.Background(), annotationID, projectID, userID, commentID, req.Content, commenterName, annLink, req.ParentCommentID)
+	}
+
 	respondJSON(w, http.StatusCreated, comment)
 }
 

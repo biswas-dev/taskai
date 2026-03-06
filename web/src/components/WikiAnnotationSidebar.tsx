@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api, WikiAnnotation, AnnotationComment, AnnotationColor } from '../lib/api'
 import { useAuth } from '../state/AuthContext'
+import MentionTextarea from './MentionTextarea'
 
 const COLOR_LABELS: Record<AnnotationColor, string> = {
   yellow: 'Note',
@@ -27,6 +28,7 @@ interface WikiAnnotationSidebarProps {
   annotations: WikiAnnotation[]
   selectedAnnotationId: number | null
   showResolved: boolean
+  projectId: number
   onAnnotationSelect: (id: number | null) => void
   onAnnotationUpdate: (annotation: WikiAnnotation) => void
   onAnnotationDelete: (annotationId: number) => void
@@ -40,6 +42,7 @@ export default function WikiAnnotationSidebar({
   annotations,
   selectedAnnotationId,
   showResolved,
+  projectId,
   onAnnotationSelect,
   onAnnotationUpdate,
   onAnnotationDelete,
@@ -94,6 +97,7 @@ export default function WikiAnnotationSidebar({
                 annotation={annotation}
                 isSelected={selectedAnnotationId === annotation.id}
                 currentUserId={user?.id ?? 0}
+                projectId={projectId}
                 onSelect={() => onAnnotationSelect(
                   selectedAnnotationId === annotation.id ? null : annotation.id
                 )}
@@ -117,6 +121,7 @@ interface AnnotationCardProps {
   annotation: WikiAnnotation
   isSelected: boolean
   currentUserId: number
+  projectId: number
   onSelect: () => void
   onUpdate: (annotation: WikiAnnotation) => void
   onDelete: (annotationId: number) => void
@@ -129,6 +134,7 @@ function AnnotationCard({
   annotation,
   isSelected,
   currentUserId,
+  projectId,
   onSelect,
   onUpdate,
   onDelete,
@@ -264,16 +270,17 @@ function AnnotationCard({
               </div>
             )}
             <div className="flex gap-2">
-              <textarea
+              <MentionTextarea
                 value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
+                onChange={setReplyText}
+                projectId={projectId}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     handleSubmitReply()
                   }
                 }}
-                placeholder="Add a comment..."
+                placeholder="Add a comment... (@ to mention)"
                 rows={2}
                 className="flex-1 px-2 py-1.5 bg-dark-bg-primary border border-dark-border-subtle rounded text-xs text-dark-text-primary placeholder-dark-text-tertiary/50 focus:outline-none focus:border-primary-500 resize-none"
               />

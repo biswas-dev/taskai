@@ -10,6 +10,7 @@ import ImagePickerModal from '../components/ImagePickerModal'
 import { apiClient, Task, type UpdateTaskRequest, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment, type GitHubPushTaskResponse, type Tag, type GitHubReaction } from '../lib/api'
 import { preprocessGraphLinks, parseGraphLinkUrl } from '../lib/graphLinks'
 import { REACTION_EMOJI, REACTION_ORDER } from '../lib/reactionUtils'
+import MentionTextarea from '../components/MentionTextarea'
 
 function ReactionBar({
   reactions,
@@ -925,13 +926,14 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                     Insert image
                   </button>
                 </div>
-                <textarea
+                <MentionTextarea
                   ref={commentRef}
                   value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
+                  onChange={setNewComment}
+                  projectId={Number(projectId)}
                   rows={3}
                   className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm placeholder-dark-text-tertiary"
-                  placeholder="Add a comment..."
+                  placeholder="Add a comment... (type @ to mention someone)"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && newComment.trim()) {
                       e.preventDefault()

@@ -222,5 +222,13 @@ func (s *Server) HandleCreateTaskComment(w http.ResponseWriter, r *http.Request)
 	}
 	go s.tryPushCommentToGitHub(context.Background(), taskID, c.ID, c.Comment, displayName)
 
+	// Notify task assignee and previous commenters (best-effort, non-blocking)
+	taskNum := 0
+	if taskEntity.TaskNumber != nil {
+		taskNum = *taskEntity.TaskNumber
+	}
+	taskLink := "/app/projects/" + int64ToStr(projectID) + "/tasks/" + strconv.Itoa(taskNum)
+	go s.notifyTaskComment(context.Background(), taskID, projectID, userID, c.ID, taskEntity.Title, c.Comment, displayName, taskLink, taskEntity.AssigneeID)
+
 	respondJSON(w, http.StatusCreated, c)
 }

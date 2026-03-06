@@ -531,6 +531,15 @@ func main() {
 			// Admin backup/restore routes
 			r.Get("/admin/backup/export", server.HandleExportData)
 			r.Post("/admin/backup/import", server.HandleImportData)
+
+			// Notification routes
+			r.Get("/notifications", server.HandleListNotifications)
+			r.Get("/notifications/count", server.HandleGetNotificationCount)
+			r.Post("/notifications/mark-read", server.HandleMarkNotificationsRead)
+			r.Post("/notifications/mark-all-read", server.HandleMarkAllNotificationsRead)
+
+			// User profile routes
+			r.Get("/users/{userId}/profile", server.HandleGetUserProfile)
 		})
 	})
 
