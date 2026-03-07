@@ -229,8 +229,10 @@ func main() {
 	r.Handle("/draw/*", drawHandler.Handler())
 
 	// Backup manager (Google Drive scheduled backups)
+	// Reuses the existing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET OAuth app.
+	// The backup OAuth flow requests Drive scope via a separate redirect URI.
 	var backupMgr *backup.Manager
-	if cfg.BackupGoogleClientID != "" && database.Driver == "postgres" {
+	if cfg.GoogleClientID != "" && database.Driver == "postgres" {
 		var encKey []byte
 		if cfg.BackupEncryptionKey != "" {
 			var decErr error
@@ -245,8 +247,8 @@ func main() {
 			logger.Fatal("failed to create backup dumper", zap.Error(dumperErr))
 		}
 		gdriveAuth := backupgdrive.NewAuth(
-			cfg.BackupGoogleClientID,
-			cfg.BackupGoogleClientSecret,
+			cfg.GoogleClientID,
+			cfg.GoogleClientSecret,
 			cfg.AppURL+"/api/admin/backup/oauth/callback",
 		)
 		gdriveProvider := backupgdrive.NewProvider(gdriveAuth)

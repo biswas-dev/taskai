@@ -57,10 +57,8 @@ type Config struct {
 	OAuthSuccessURL         string
 	OAuthErrorURL           string
 
-	// Backup (Google Drive)
-	BackupEncryptionKey      string // 64-char hex-encoded 32-byte AES key
-	BackupGoogleClientID     string
-	BackupGoogleClientSecret string
+	// Backup (Google Drive) — reuses GOOGLE_CLIENT_ID/SECRET from OAuth login
+	BackupEncryptionKey string // 64-char hex-encoded 32-byte AES key
 }
 
 // Load reads configuration from environment variables
@@ -95,9 +93,7 @@ func Load() *Config {
 		OAuthSuccessURL:         getEnv("OAUTH_SUCCESS_URL", "http://localhost:5173/oauth/callback"),
 		OAuthErrorURL:           getEnv("OAUTH_ERROR_URL", "http://localhost:5173/login"),
 
-		BackupEncryptionKey:      getEnv("BACKUP_ENCRYPTION_KEY", ""),
-		BackupGoogleClientID:     getEnv("BACKUP_GOOGLE_CLIENT_ID", ""),
-		BackupGoogleClientSecret: getEnv("BACKUP_GOOGLE_CLIENT_SECRET", ""),
+		BackupEncryptionKey: getEnv("BACKUP_ENCRYPTION_KEY", ""),
 	}
 
 	// Validate critical configuration
