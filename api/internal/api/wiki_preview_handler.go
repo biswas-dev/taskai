@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"regexp"
@@ -27,6 +28,26 @@ var drawEditSrcRe = regexp.MustCompile(`(data-src="[^"]+)/edit"`)
 
 // graphLinkPreRe matches [[wiki:ID|Label]] and [[task:ID|Label]] for preview rendering.
 var graphLinkPreRe = regexp.MustCompile(`\[\[(wiki|task):(\d+)(?:\|([^\]]*))?\]\]`)
+
+// figmaShortcodeRe matches [figma:URL] or [figma:URL:s/m/l] shortcodes.
+var figmaShortcodeRe = regexp.MustCompile(`\[figma:([^\]]+?)(?::([sml]))?\]`)
+
+// preprocessFigmaShortcodes replaces [figma:URL:size] shortcodes with placeholder divs
+// before markdown rendering, so the URL is not mangled by the auto-linker.
+func preprocessFigmaShortcodes(content string) string {
+	return figmaShortcodeRe.ReplaceAllStringFunc(content, func(match string) string {
+		m := figmaShortcodeRe.FindStringSubmatch(match)
+		if len(m) < 2 {
+			return match
+		}
+		u := html.EscapeString(m[1])
+		size := "m"
+		if len(m) >= 3 && m[2] != "" {
+			size = m[2]
+		}
+		return fmt.Sprintf(`<div class="figma-embed" data-url="%s" data-size="%s"></div>`, u, size)
+	})
+}
 
 // preprocessGraphLinksForPreview converts [[wiki:ID|Label]] / [[task:ID|Label]] syntax
 // into styled inline HTML elements before markdown rendering.
@@ -101,7 +122,7 @@ func (s *Server) HandleWikiPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html := stripDrawEditMode(wiki.RenderContent(preprocessGraphLinksForPreview(req.Content)))
+	html := stripDrawEditMode(wiki.RenderContent(preprocessFigmaShortcodes(preprocessGraphLinksForPreview(req.Content))))
 
 	respondJSON(w, http.StatusOK, wikiPreviewResponse{HTML: html})
 }

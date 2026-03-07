@@ -289,48 +289,17 @@ function initFigmaEmbeds(container: HTMLElement | null): () => void {
 
   const roots: ReturnType<typeof createRoot>[] = []
 
-  // Collect text nodes that contain [figma:...] shortcodes
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
-  const textNodes: Text[] = []
-  let n: Node | null
-  while ((n = walker.nextNode())) {
-    if (/\[figma:[^\]]+\]/.test((n as Text).textContent || '')) {
-      textNodes.push(n as Text)
-    }
-  }
-
-  for (const textNode of textNodes) {
-    const text = textNode.textContent || ''
-    const parent = textNode.parentNode
-    if (!parent) continue
-
-    const re = /\[figma:([^\]]+?)(?::([sml]))?\]/g
-    const parts: Array<string | { url: string; size: 's' | 'm' | 'l' }> = []
-    let lastIndex = 0
-    let m
-    while ((m = re.exec(text)) !== null) {
-      if (m.index > lastIndex) parts.push(text.substring(lastIndex, m.index))
-      parts.push({ url: m[1], size: (m[2] || 'm') as 's' | 'm' | 'l' })
-      lastIndex = m.index + m[0].length
-    }
-    if (lastIndex < text.length) parts.push(text.substring(lastIndex))
-
-    const fragment = document.createDocumentFragment()
-    for (const part of parts) {
-      if (typeof part === 'string') {
-        fragment.appendChild(document.createTextNode(part))
-      } else {
-        const placeholder = document.createElement('div')
-        placeholder.className = 'figma-embed-placeholder'
-        fragment.appendChild(placeholder)
-        const root = createRoot(placeholder)
-        root.render(<FigmaEmbed url={part.url} size={part.size} />)
-        roots.push(root)
-      }
-    }
-
-    parent.replaceChild(fragment, textNode)
-  }
+  // The backend preprocesses [figma:url:size] into <div class="figma-embed" data-url="..." data-size="...">
+  // before markdown rendering, so we just need to find those divs and mount React components into them.
+  const placeholders = container.querySelectorAll<HTMLElement>('div.figma-embed')
+  placeholders.forEach(el => {
+    const url = el.dataset.url
+    const size = (el.dataset.size || 'm') as 's' | 'm' | 'l'
+    if (!url) return
+    const root = createRoot(el)
+    root.render(<FigmaEmbed url={url} size={size} />)
+    roots.push(root)
+  })
 
   return () => { roots.forEach(r => { try { r.unmount() } catch { /* ignore */ } }) }
 }
