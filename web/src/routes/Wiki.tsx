@@ -41,7 +41,7 @@ export default function Wiki() {
       setAnnotations([])
       setSelectedAnnotationId(null)
     }
-  }, [selectedPageId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedPageId])
 
   // Deep-link to a specific annotation from ?annotation=X (e.g. from notifications)
   useEffect(() => {
