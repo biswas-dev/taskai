@@ -603,6 +603,50 @@ export interface FigmaEmbedInfo {
   configured: boolean
 }
 
+export interface BackupStatus {
+  running: boolean
+  enabled: boolean
+  provider_connected: boolean
+  provider_name?: string
+  connected_email?: string
+  next_run?: string
+  last_backup?: {
+    id: string
+    status: string
+    filename: string
+    size_bytes: number
+    started_at: string
+    finished_at?: string
+  }
+}
+
+export interface BackupSettings {
+  enabled: boolean
+  cron_expression: string
+  folder_id: string
+  provider_name: string
+  retention: {
+    full_days: number
+    alternate_days: number
+    weekly_days: number
+  }
+  updated_at: string
+}
+
+export interface BackupRecord {
+  id: string
+  status: 'running' | 'success' | 'failed'
+  triggered_by: string
+  filename: string
+  size_bytes: number
+  provider_name: string
+  file_id: string
+  file_url: string
+  error_message: string
+  started_at: string
+  finished_at?: string
+}
+
 export interface Asset {
   id: number
   task_id: number
@@ -1422,6 +1466,38 @@ class ApiClient {
 
   async getFigmaEmbed(figmaUrl: string): Promise<FigmaEmbedInfo> {
     return this.request<FigmaEmbedInfo>(`/api/figma/embed?url=${encodeURIComponent(figmaUrl)}`)
+  }
+
+  // Backup endpoints (go-backup / Google Drive)
+  async getBackupStatus(): Promise<BackupStatus> {
+    return this.request<BackupStatus>('/api/admin/backup/status')
+  }
+
+  async getBackupSettings(): Promise<BackupSettings> {
+    return this.request<BackupSettings>('/api/admin/backup/settings')
+  }
+
+  async updateBackupSettings(settings: { enabled?: boolean; cron_expression?: string; folder_id?: string }): Promise<BackupSettings> {
+    return this.request<BackupSettings>('/api/admin/backup/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    })
+  }
+
+  async triggerBackup(): Promise<BackupRecord> {
+    return this.request<BackupRecord>('/api/admin/backup/trigger', { method: 'POST' })
+  }
+
+  async listBackupHistory(limit = 20): Promise<BackupRecord[]> {
+    return this.request<BackupRecord[]>(`/api/admin/backup/history?limit=${limit}`)
+  }
+
+  async deleteBackupRecord(id: string): Promise<void> {
+    return this.request<void>(`/api/admin/backup/history/${id}`, { method: 'DELETE' })
+  }
+
+  async disconnectBackup(): Promise<void> {
+    return this.request<void>('/api/admin/backup/oauth/disconnect', { method: 'DELETE' })
   }
 
   // Task attachment endpoints

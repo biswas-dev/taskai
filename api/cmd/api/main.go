@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/pprof"
@@ -13,6 +14,9 @@ import (
 
 	godraw "github.com/anchoo2kewl/go-draw"
 	godrawstore "github.com/anchoo2kewl/go-draw/store"
+	backup "github.com/anchoo2kewl/go-backup"
+	backupgdrive "github.com/anchoo2kewl/go-backup/gdrive"
+	backuppgstore "github.com/anchoo2kewl/go-backup/pgstore"
 	gologin "github.com/anchoo2kewl/go-login"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -137,11 +141,13 @@ func main() {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// SSE endpoints use streaming — no fixed timeout
+			// SSE endpoints and long-running operations — no fixed timeout
 			if strings.HasSuffix(r.URL.Path, "/github/preview") ||
 				strings.HasSuffix(r.URL.Path, "/github/pull") ||
 				strings.HasSuffix(r.URL.Path, "/github/sync") ||
-				strings.HasSuffix(r.URL.Path, "/github/push-all") {
+				strings.HasSuffix(r.URL.Path, "/github/push-all") ||
+				strings.HasSuffix(r.URL.Path, "/admin/backup/trigger") ||
+				strings.HasSuffix(r.URL.Path, "/download") {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -222,6 +228,48 @@ func main() {
 	}
 	r.Handle("/draw/*", drawHandler.Handler())
 
+	// Backup manager (Google Drive scheduled backups)
+	var backupMgr *backup.Manager
+	if cfg.BackupGoogleClientID != "" && database.Driver == "postgres" {
+		var encKey []byte
+		if cfg.BackupEncryptionKey != "" {
+			var decErr error
+			encKey, decErr = hex.DecodeString(cfg.BackupEncryptionKey)
+			if decErr != nil || len(encKey) != 32 {
+				logger.Fatal("BACKUP_ENCRYPTION_KEY must be a 64-char hex string (32 bytes)",
+					zap.Int("decoded_len", len(encKey)))
+			}
+		}
+		dumper, dumperErr := backup.NewPostgresDumper(cfg.DBDSN)
+		if dumperErr != nil {
+			logger.Fatal("failed to create backup dumper", zap.Error(dumperErr))
+		}
+		gdriveAuth := backupgdrive.NewAuth(
+			cfg.BackupGoogleClientID,
+			cfg.BackupGoogleClientSecret,
+			cfg.AppURL+"/api/admin/backup/oauth/callback",
+		)
+		gdriveProvider := backupgdrive.NewProvider(gdriveAuth)
+		backupStore := backuppgstore.New(database.DB)
+		var mgErr error
+		backupMgr, mgErr = backup.New(
+			backup.WithStore(backupStore),
+			backup.WithDumper(dumper),
+			backup.WithProvider(gdriveProvider),
+			backup.WithBasePath("/admin/backup"),
+			backup.WithOAuthSuccessRedirect(cfg.AppURL+"/app/settings"),
+			backup.WithEncryptionKey(encKey),
+		)
+		if mgErr != nil {
+			logger.Fatal("failed to create backup manager", zap.Error(mgErr))
+		}
+		if startErr := backupMgr.Start(); startErr != nil {
+			logger.Fatal("failed to start backup manager", zap.Error(startErr))
+		}
+		defer backupMgr.Stop()
+		logger.Info("Backup manager initialized (Google Drive)")
+	}
+
 	// API routes
 	r.Route("/api", func(r chi.Router) {
 		// Legacy health endpoint
@@ -280,6 +328,11 @@ func main() {
 			)
 		} else if cfg.GoogleClientID != "" || cfg.LoginGitHubClientID != "" {
 			logger.Warn("OAUTH_STATE_SECRET not set — OAuth login routes not registered")
+		}
+
+		// Public backup OAuth routes (Google redirects back here — no auth header)
+		if backupMgr != nil {
+			r.Handle("/admin/backup/oauth/*", backupMgr.PublicHandler())
 		}
 
 		// Auth routes (public) with rate limiting
@@ -534,9 +587,14 @@ func main() {
 			r.Post("/admin/team-invitations/{id}/resolve", server.HandleAdminResolveTeamInvitation)
 			r.Post("/admin/project-invitations/{id}/resolve", server.HandleAdminResolveProjectInvitation)
 
-			// Admin backup/restore routes
+			// Admin backup/restore routes (legacy export/import)
 			r.Get("/admin/backup/export", server.HandleExportData)
 			r.Post("/admin/backup/import", server.HandleImportData)
+
+			// go-backup scheduled backup routes
+			if backupMgr != nil {
+				r.Handle("/admin/backup/*", backupMgr.Handler())
+			}
 
 			// Notification routes
 			r.Get("/notifications", server.HandleListNotifications)
