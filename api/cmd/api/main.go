@@ -147,6 +147,7 @@ func main() {
 				strings.HasSuffix(r.URL.Path, "/github/sync") ||
 				strings.HasSuffix(r.URL.Path, "/github/push-all") ||
 				strings.HasSuffix(r.URL.Path, "/admin/backup/trigger") ||
+			strings.HasSuffix(r.URL.Path, "/admin/backup/copy-from-env") ||
 				strings.HasSuffix(r.URL.Path, "/download") {
 				next.ServeHTTP(w, r)
 				return
@@ -258,7 +259,7 @@ func main() {
 			backup.WithStore(backupStore),
 			backup.WithDumper(dumper),
 			backup.WithProvider(gdriveProvider),
-			backup.WithBasePath("/admin/backup"),
+			backup.WithBasePath("/api/admin/backup"),
 			backup.WithOAuthSuccessRedirect(cfg.AppURL+"/app/settings"),
 			backup.WithEncryptionKey(encKey),
 		)
@@ -592,6 +593,7 @@ func main() {
 			// Admin backup/restore routes (legacy export/import)
 			r.Get("/admin/backup/export", server.HandleExportData)
 			r.Post("/admin/backup/import", server.HandleImportData)
+			r.Post("/admin/backup/copy-from-env", server.HandleCopyFromEnv)
 
 			// go-backup scheduled backup routes
 			if backupMgr != nil {

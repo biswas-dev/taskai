@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -138,78 +140,167 @@ func (s *Server) HandleImportData(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 	defer cancel()
 
-	var backup BackupData
-	if err := json.NewDecoder(r.Body).Decode(&backup); err != nil {
+	var data BackupData
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid backup file", "validation_error")
-		return
-	}
-
-	// Verify migration version matches
-	currentVersion, err := s.getCurrentMigrationVersion(ctx)
-	if err != nil {
-		s.logger.Error("Failed to get migration version", zap.Error(err))
-		respondError(w, http.StatusInternalServerError, "failed to get schema version", "internal_error")
-		return
-	}
-
-	if backup.Version != currentVersion {
-		s.logger.Warn("Migration version mismatch",
-			zap.Int("backup_version", backup.Version),
-			zap.Int("current_version", currentVersion))
-		respondError(w, http.StatusBadRequest,
-			fmt.Sprintf("migration version mismatch: backup is v%d, database is v%d", backup.Version, currentVersion),
-			"version_mismatch")
 		return
 	}
 
 	s.logger.Info("Starting data import",
 		zap.Int64("user_id", userID),
-		zap.Int("version", backup.Version),
-		zap.Time("backup_date", backup.ExportedAt))
+		zap.Int("version", data.Version),
+		zap.Time("backup_date", data.ExportedAt))
 
-	// Import all tables in dependency order
-	tables := []struct {
-		name string
-		data []map[string]interface{}
-	}{
-		{"users", backup.Tables.Users},
-		{"teams", backup.Tables.Teams},
-		{"team_members", backup.Tables.TeamMembers},
-		{"projects", backup.Tables.Projects},
-		{"project_members", backup.Tables.ProjectMembers},
-		{"project_invitations", backup.Tables.ProjectInvitations},
-		{"sprints", backup.Tables.Sprints},
-		{"swim_lanes", backup.Tables.SwimLanes},
-		{"tasks", backup.Tables.Tasks},
-		{"task_comments", backup.Tables.TaskComments},
-		{"task_attachments", backup.Tables.TaskAttachments},
-		{"tags", backup.Tables.Tags},
-		{"task_tags", backup.Tables.TaskTags},
-		{"invites", backup.Tables.Invites},
-		{"team_invitations", backup.Tables.TeamInvitations},
-		{"user_activity", backup.Tables.UserActivity},
-		{"api_keys", backup.Tables.APIKeys},
-		{"cloudinary_credentials", backup.Tables.CloudinaryCredentials},
-		{"email_provider", backup.Tables.EmailProvider},
-	}
-
-	for _, table := range tables {
-		if len(table.data) > 0 {
-			if err := s.importTable(ctx, table.name, table.data); err != nil {
-				s.logger.Error("Failed to import table", zap.String("table", table.name), zap.Error(err))
-				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to import %s", table.name), "internal_error")
-				return
-			}
-			s.logger.Info("Imported table", zap.String("table", table.name), zap.Int("rows", len(table.data)))
-		}
+	rows, err := s.importBackupData(ctx, &data)
+	if err != nil {
+		s.logger.Error("Import failed", zap.Error(err))
+		respondError(w, http.StatusBadRequest, err.Error(), "import_error")
+		return
 	}
 
 	s.logger.Info("Import completed", zap.Int64("user_id", userID))
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Data imported successfully",
-		"version": backup.Version,
-		"rows":    countTotalRows(backup.Tables),
+		"version": data.Version,
+		"rows":    rows,
+	})
+}
+
+// importBackupData verifies the migration version and imports all tables.
+func (s *Server) importBackupData(ctx context.Context, data *BackupData) (int, error) {
+	currentVersion, err := s.getCurrentMigrationVersion(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get schema version: %w", err)
+	}
+	if data.Version != currentVersion {
+		return 0, fmt.Errorf("migration version mismatch: backup is v%d, database is v%d", data.Version, currentVersion)
+	}
+
+	tables := []struct {
+		name string
+		data []map[string]interface{}
+	}{
+		{"users", data.Tables.Users},
+		{"teams", data.Tables.Teams},
+		{"team_members", data.Tables.TeamMembers},
+		{"projects", data.Tables.Projects},
+		{"project_members", data.Tables.ProjectMembers},
+		{"project_invitations", data.Tables.ProjectInvitations},
+		{"sprints", data.Tables.Sprints},
+		{"swim_lanes", data.Tables.SwimLanes},
+		{"tasks", data.Tables.Tasks},
+		{"task_comments", data.Tables.TaskComments},
+		{"task_attachments", data.Tables.TaskAttachments},
+		{"tags", data.Tables.Tags},
+		{"task_tags", data.Tables.TaskTags},
+		{"invites", data.Tables.Invites},
+		{"team_invitations", data.Tables.TeamInvitations},
+		{"user_activity", data.Tables.UserActivity},
+		{"api_keys", data.Tables.APIKeys},
+		{"cloudinary_credentials", data.Tables.CloudinaryCredentials},
+		{"email_provider", data.Tables.EmailProvider},
+	}
+
+	totalRows := 0
+	for _, table := range tables {
+		if len(table.data) > 0 {
+			if err := s.importTable(ctx, table.name, table.data); err != nil {
+				return 0, fmt.Errorf("failed to import %s: %w", table.name, err)
+			}
+			s.logger.Info("Imported table", zap.String("table", table.name), zap.Int("rows", len(table.data)))
+			totalRows += len(table.data)
+		}
+	}
+	return totalRows, nil
+}
+
+// HandleCopyFromEnv copies database from another environment (non-production only).
+// POST /api/admin/backup/copy-from-env
+// Body: {"source_url": "https://...", "source_api_key": "..."}
+func (s *Server) HandleCopyFromEnv(w http.ResponseWriter, r *http.Request) {
+	userID, ok := GetUserID(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "user not authenticated", "unauthorized")
+		return
+	}
+	if !s.isAdmin(r.Context(), userID) {
+		respondError(w, http.StatusForbidden, "admin access required", "forbidden")
+		return
+	}
+	if os.Getenv("ENV") == "production" {
+		respondError(w, http.StatusForbidden, "copy from environment is not available on production", "forbidden")
+		return
+	}
+
+	var req struct {
+		SourceURL    string `json:"source_url"`
+		SourceAPIKey string `json:"source_api_key"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "validation_error")
+		return
+	}
+	if !strings.HasPrefix(req.SourceURL, "https://") {
+		respondError(w, http.StatusBadRequest, "source_url must start with https://", "validation_error")
+		return
+	}
+	if req.SourceAPIKey == "" {
+		respondError(w, http.StatusBadRequest, "source_api_key is required", "validation_error")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	// Fetch backup export from the source environment
+	exportURL := req.SourceURL + "/api/admin/backup/export"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, exportURL, nil)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid source URL", "validation_error")
+		return
+	}
+	httpReq.Header.Set("Authorization", "ApiKey "+req.SourceAPIKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		s.logger.Error("Failed to fetch backup from source environment", zap.Error(err), zap.String("source_url", req.SourceURL))
+		respondError(w, http.StatusBadGateway, "failed to reach source environment", "upstream_error")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respondError(w, http.StatusBadGateway,
+			fmt.Sprintf("source environment returned status %d", resp.StatusCode), "upstream_error")
+		return
+	}
+
+	var data BackupData
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		respondError(w, http.StatusBadGateway, "failed to parse backup from source environment", "upstream_error")
+		return
+	}
+
+	s.logger.Info("Starting copy from environment",
+		zap.Int64("user_id", userID),
+		zap.String("source_url", req.SourceURL),
+		zap.Int("version", data.Version))
+
+	rows, err := s.importBackupData(ctx, &data)
+	if err != nil {
+		s.logger.Error("Copy from environment failed", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, err.Error(), "import_error")
+		return
+	}
+
+	s.logger.Info("Copy from environment completed", zap.Int64("user_id", userID), zap.Int("rows", rows))
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Database copied successfully",
+		"version": data.Version,
+		"rows":    rows,
 	})
 }
 

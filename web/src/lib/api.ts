@@ -1500,6 +1500,13 @@ class ApiClient {
     return this.request<void>('/api/admin/backup/oauth/disconnect', { method: 'DELETE' })
   }
 
+  async copyFromEnv(sourceUrl: string, sourceApiKey: string): Promise<{ message: string; version: number; rows: number }> {
+    return this.request<{ message: string; version: number; rows: number }>('/api/admin/backup/copy-from-env', {
+      method: 'POST',
+      body: JSON.stringify({ source_url: sourceUrl, source_api_key: sourceApiKey }),
+    })
+  }
+
   // Task attachment endpoints
   async getTaskAttachments(taskId: number): Promise<Attachment[]> {
     return this.request<Attachment[]>(`/api/tasks/${taskId}/attachments`)
