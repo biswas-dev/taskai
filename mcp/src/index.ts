@@ -361,8 +361,12 @@ function createServer(client: TaskAIClient, cachedUser?: User): McpServer {
       verbose: z.boolean().optional().describe("Pretty print JSON (default: false)"),
     },
     async ({ page_id, verbose }) => {
-      const page = await client.getWikiPage(page_id);
-      return { content: [{ type: "text", text: formatResponse(page, verbose) }] };
+      const [page, pageContent] = await Promise.all([
+        client.getWikiPage(page_id),
+        client.getWikiPageContent(page_id),
+      ]);
+      const result = { ...page, content: pageContent.content };
+      return { content: [{ type: "text", text: formatResponse(result, verbose) }] };
     }
   );
 

@@ -31,8 +31,8 @@ RUN CGO_ENABLED=1 go build \
 # Production stage
 FROM alpine:3.19
 
-# Install CA certificates and create non-root user
-RUN apk --no-cache add ca-certificates tzdata && \
+# Install CA certificates, pg_dump (for backup), and create non-root user
+RUN apk --no-cache add ca-certificates tzdata postgresql-client && \
     addgroup -g 1001 -S taskai && \
     adduser -u 1001 -S taskai -G taskai
 
