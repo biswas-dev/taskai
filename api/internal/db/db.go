@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/XSAM/otelsql"
+	"go.opentelemetry.io/otel/attribute"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.uber.org/zap"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
@@ -107,8 +110,17 @@ func New(cfg Config, logger *zap.Logger) (*DB, error) {
 		}
 
 	case "postgres", "pgx":
-		// Open Postgres connection
-		sqlDB, err = sql.Open("pgx", cfg.DSN)
+		// Open Postgres connection with OpenTelemetry SQL instrumentation.
+		// When APM is disabled the global tracer is a noop — zero overhead.
+		sqlDB, err = otelsql.Open("pgx", cfg.DSN,
+			otelsql.WithAttributes(
+				semconv.DBSystemPostgreSQL,
+				attribute.String("db.name", "taskai"),
+			),
+			otelsql.WithSpanOptions(otelsql.SpanOptions{
+				DisableErrSkip: true,
+			}),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open Postgres database: %w", err)
 		}
@@ -118,6 +130,14 @@ func New(cfg Config, logger *zap.Logger) (*DB, error) {
 		sqlDB.SetMaxIdleConns(5)
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 		sqlDB.SetConnMaxIdleTime(time.Minute)
+
+		// Emit DB connection pool metrics via OpenTelemetry.
+		// Noop when APM is disabled.
+		if _, err := otelsql.RegisterDBStatsMetrics(sqlDB,
+			otelsql.WithAttributes(semconv.DBSystemPostgreSQL),
+		); err != nil {
+			return nil, fmt.Errorf("failed to register DB stats metrics: %w", err)
+		}
 
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s (expected 'sqlite' or 'postgres')", driver)

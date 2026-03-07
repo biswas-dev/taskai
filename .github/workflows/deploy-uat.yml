@@ -76,6 +76,8 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.UAT_GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.UAT_GOOGLE_CLIENT_SECRET }}
           BACKUP_ENCRYPTION_KEY: ${{ secrets.UAT_BACKUP_ENCRYPTION_KEY }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_SITE: ${{ secrets.DD_SITE }}
           APP_URL: https://uat.taskai.cc
         run: |
           mkdir -p ~/.ssh
@@ -117,6 +119,12 @@ jobs:
             BACKUP_ENC_KEY='$BACKUP_ENCRYPTION_KEY'
             if [ -n "\$BACKUP_ENC_KEY" ]; then
               export BACKUP_ENCRYPTION_KEY="\$BACKUP_ENC_KEY"
+            fi
+            DD_KEY='$DD_API_KEY'
+            if [ -n "\$DD_KEY" ]; then
+              export DD_API_KEY="\$DD_KEY"
+              export DD_SITE='${DD_SITE:-datadoghq.com}'
+              export APM_ENABLED=true
             fi
             export APP_URL='https://uat.taskai.cc'
             export OAUTH_SUCCESS_URL='https://uat.taskai.cc/oauth/callback'

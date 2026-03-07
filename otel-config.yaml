@@ -1,0 +1,34 @@
+# OpenTelemetry Collector configuration.
+# Receives OTLP traces and metrics from the taskai-api and exports to Datadog APM.
+#
+# DD_API_KEY and DD_SITE are injected via environment variables when the
+# collector starts. To switch APM providers, replace the datadog exporter
+# and update OTEL_EXPORTER_OTLP_ENDPOINT in docker-compose.yml — no app
+# code changes required.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+exporters:
+  datadog:
+    api:
+      key: ${env:DD_API_KEY}
+      site: ${env:DD_SITE}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [datadog]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [datadog]

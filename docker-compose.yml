@@ -1,4 +1,59 @@
 services:
+  # Standalone OpenTelemetry Collector — receives OTLP traces from the API and
+  # exports directly to Datadog APM.
+  #
+  # The dd-agent's built-in OTLP ingest pipeline fails on cgroupv2 hosts.
+  # This standalone collector has no such requirement and works on all kernels.
+  #
+  # To switch APM providers: replace the datadog exporter in otel-config.yaml
+  # with a different OTLP-compatible backend — no application code changes needed.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: taskai-otel-collector
+    command: ["--config", "/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+    networks:
+      - taskai
+    restart: unless-stopped
+
+  dd-agent:
+    image: gcr.io/datadoghq/agent:7
+    container_name: taskai-dd-agent
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE:-datadoghq.com}
+      # APM port for native Datadog traces (OTLP goes via otel-collector above)
+      - DD_APM_ENABLED=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+      # Log collection from containers
+      - DD_LOGS_ENABLED=true
+      - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=false
+      # Process and container monitoring
+      - DD_PROCESS_AGENT_ENABLED=true
+      - DD_CONTAINER_EXCLUDE=name:taskai-dd-agent
+      # DogStatsD for custom metrics
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_LOG_LEVEL=warn
+      # Unified tags applied to all data sent by this agent
+      - DD_ENV=${ENV:-production}
+      - DD_SERVICE=taskai
+      - DD_VERSION=${VERSION:-dev}
+      # Exposed for postgres autodiscovery check (%%env_POSTGRES_PASSWORD%%)
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-taskai-dev-password}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
+      - /etc/passwd:/etc/passwd:ro
+    privileged: true
+    networks:
+      - taskai
+    restart: unless-stopped
+
   api:
     build:
       context: ./api
@@ -40,6 +95,20 @@ services:
       - OAUTH_STATE_SECRET=${OAUTH_STATE_SECRET:-}
       - OAUTH_SUCCESS_URL=${OAUTH_SUCCESS_URL:-}
       - OAUTH_ERROR_URL=${OAUTH_ERROR_URL:-}
+      # APM — set APM_ENABLED=true to activate tracing.
+      # Change OTEL_EXPORTER_OTLP_ENDPOINT to switch providers (no code changes).
+      - APM_ENABLED=${APM_ENABLED:-false}
+      - OTEL_SERVICE_NAME=taskai
+      - OTEL_SERVICE_VERSION=${VERSION:-dev}
+      - OTEL_ENVIRONMENT=${ENV:-production}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=otel-collector:4317
+    labels:
+      # Unified Service Tagging — links APM traces, logs, and infra metrics
+      com.datadoghq.tags.service: "taskai"
+      com.datadoghq.tags.env: "${ENV:-production}"
+      com.datadoghq.tags.version: "${VERSION:-dev}"
+      # Ship Go app logs to Datadog Logs
+      com.datadoghq.ad.logs: '[{"source":"go","service":"taskai"}]'
     volumes:
       # Mount SQLite database for persistence
       - taskai-data:/data
@@ -79,6 +148,17 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    labels:
+      # Unified Service Tagging — links metrics, logs, and traces in Datadog
+      com.datadoghq.tags.service: "taskai-postgres"
+      com.datadoghq.tags.env: "${ENV:-production}"
+      # Ship postgres logs to Datadog Logs
+      com.datadoghq.ad.logs: '[{"source":"postgresql","service":"taskai-postgres"}]'
+      # PostgreSQL integration — autodiscovered by the DD agent
+      # Exposes query metrics, connection pool stats, replication lag, etc.
+      com.datadoghq.ad.check_names: '["postgres"]'
+      com.datadoghq.ad.init_configs: '[{}]'
+      com.datadoghq.ad.instances: '[{"host":"%%host%%","port":5432,"username":"${POSTGRES_USER:-taskai}","password":"%%env_POSTGRES_PASSWORD%%","dbname":"${POSTGRES_DB:-taskai}","tags":["env:${ENV:-production}"]}]'
 
   yjs-processor:
     build:

@@ -22,13 +22,16 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/golang-jwt/jwt/v5"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 
+	"taskai/apm"
 	"taskai/internal/api"
 	"taskai/internal/auth"
 	"taskai/internal/collab"
 	"taskai/internal/config"
 	"taskai/internal/db"
+	"taskai/internal/version"
 	"taskai/internal/yjs"
 )
 
@@ -76,6 +79,26 @@ func main() {
 		zap.String("port", cfg.Port),
 	)
 
+	// Initialize APM (OpenTelemetry → Datadog via otel-collector).
+	// When APM_ENABLED != "true" this is a zero-cost noop.
+	apmCfg := apm.ConfigFromEnv(version.Version)
+	apmShutdown, err := apm.Init(context.Background(), apmCfg)
+	if err != nil {
+		logger.Fatal("failed to init APM tracer", zap.Error(err))
+	}
+	defer func() {
+		if err := apmShutdown(context.Background()); err != nil {
+			logger.Warn("APM shutdown error", zap.Error(err))
+		}
+	}()
+	if apmCfg.Enabled {
+		logger.Info("APM enabled",
+			zap.String("service", apmCfg.ServiceName),
+			zap.String("endpoint", apmCfg.Endpoint),
+			zap.String("env", apmCfg.Environment),
+		)
+	}
+
 	// Initialize database with auto-migrations
 	dbCfg := db.Config{
 		Driver:         cfg.DBDriver,
@@ -119,6 +142,9 @@ func main() {
 	// Middleware stack
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
+	// APM tracing — instruments every HTTP request with an OpenTelemetry span.
+	// Zero-overhead noop when APM_ENABLED != "true".
+	r.Use(otelhttp.NewMiddleware("taskai.http"))
 	// Gzip compression — skip for WebSocket upgrades (gzip wrapper strips http.Hijacker)
 	r.Use(func(next http.Handler) http.Handler {
 		gz := middleware.Compress(5)

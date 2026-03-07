@@ -75,6 +75,8 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
           BACKUP_ENCRYPTION_KEY: ${{ secrets.STAGING_BACKUP_ENCRYPTION_KEY }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_SITE: ${{ secrets.DD_SITE }}
           APP_URL: https://staging.taskai.cc
           DB_DRIVER: postgres
           DB_DSN: ${{ secrets.STAGING_DB_DSN }}
@@ -123,6 +125,12 @@ jobs:
             BACKUP_ENC_KEY='$BACKUP_ENCRYPTION_KEY'
             if [ -n "\$BACKUP_ENC_KEY" ]; then
               export BACKUP_ENCRYPTION_KEY="\$BACKUP_ENC_KEY"
+            fi
+            DD_KEY='$DD_API_KEY'
+            if [ -n "\$DD_KEY" ]; then
+              export DD_API_KEY="\$DD_KEY"
+              export DD_SITE='${DD_SITE:-datadoghq.com}'
+              export APM_ENABLED=true
             fi
 
             # Login to Docker Hub to avoid rate limiting

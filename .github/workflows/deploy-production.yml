@@ -84,6 +84,8 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.PRODUCTION_GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.PRODUCTION_GOOGLE_CLIENT_SECRET }}
           BACKUP_ENCRYPTION_KEY: ${{ secrets.PRODUCTION_BACKUP_ENCRYPTION_KEY }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_SITE: ${{ secrets.DD_SITE }}
           APP_URL: https://taskai.cc
         run: |
           mkdir -p ~/.ssh
@@ -122,6 +124,11 @@ jobs:
             export GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET"
             if [ -n "$BACKUP_ENCRYPTION_KEY" ]; then
               export BACKUP_ENCRYPTION_KEY="$BACKUP_ENCRYPTION_KEY"
+            fi
+            if [ -n "$DD_API_KEY" ]; then
+              export DD_API_KEY="$DD_API_KEY"
+              export DD_SITE="${DD_SITE:-datadoghq.com}"
+              export APM_ENABLED=true
             fi
 
             # Login to Docker Hub
