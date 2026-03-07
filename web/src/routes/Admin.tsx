@@ -45,6 +45,43 @@ function scheduleDesc(freq: ScheduleFreq, hour: number, minute: number, dow: num
   }
 }
 
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+function buildCalendarGrid(year: number, month: number): (number | null)[] {
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells: (number | null)[] = []
+  for (let i = 0; i < firstDay; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+  return cells
+}
+
+function getCronScheduledDays(cron: string, year: number, month: number): Set<number> {
+  const s = new Set<number>()
+  const parts = cron.trim().split(/\s+/)
+  if (parts.length !== 5) return s
+  const [, hr, dom, , dow] = parts
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month, d)
+    const matchDow = dow === '*' || date.getDay() === Number(dow)
+    const matchDom = dom === '*' || date.getDate() === Number(dom)
+    if (matchDow && matchDom) {
+      if (hr === '*') { s.add(d) } else { s.add(d) }
+    }
+  }
+  return s
+}
+
+function getRetentionTier(backupDate: string, now: Date, fullDays: number, alternateDays: number, weeklyDays: number): 'full' | 'alternate' | 'weekly' | 'expired' {
+  const ageDays = Math.floor((now.getTime() - new Date(backupDate).getTime()) / (1000 * 60 * 60 * 24))
+  if (ageDays < fullDays) return 'full'
+  if (ageDays < alternateDays) return 'alternate'
+  if (ageDays < weeklyDays) return 'weekly'
+  return 'expired'
+}
+
 function relativeTime(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const secs = Math.floor(diff / 1000)
@@ -198,6 +235,15 @@ export default function Admin() {
   const [selectedFolderId, setSelectedFolderId] = useState('')
   const [selectedFolderName, setSelectedFolderName] = useState('')
   const [isDownloadingRecord, setIsDownloadingRecord] = useState<string | null>(null)
+  // Retention settings
+  const [retFullDays, setRetFullDays] = useState(30)
+  const [retAlternateDays, setRetAlternateDays] = useState(60)
+  const [retWeeklyDays, setRetWeeklyDays] = useState(365)
+  // Folder search
+  const [folderSearch, setFolderSearch] = useState('')
+  // Calendar navigation
+  const [calYear, setCalYear] = useState(() => new Date().getFullYear())
+  const [calMonth, setCalMonth] = useState(() => new Date().getMonth())
 
   // System/version state
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null)
@@ -527,6 +573,10 @@ export default function Admin() {
       setSchedDayOfWeek(parsed.dow)
       setSchedDayOfMonth(parsed.dom)
       setSchedCustomCron(cron)
+      // Initialise retention
+      setRetFullDays(settings.retention?.FullDays || 30)
+      setRetAlternateDays(settings.retention?.AlternateDays || 60)
+      setRetWeeklyDays(settings.retention?.WeeklyDays || 365)
       // Initialise folder selection
       setSelectedFolderId(settings.folder_id || '')
       setSelectedFolderName(settings.folder_id ? `Folder: ${settings.folder_id}` : '')
@@ -563,6 +613,7 @@ export default function Admin() {
         enabled: autoBackupEnabled,
         cron_expression: cron,
         folder_id: selectedFolderId,
+        retention: { FullDays: retFullDays, AlternateDays: retAlternateDays, WeeklyDays: retWeeklyDays },
       })
       setAutoBackupSettings(updated)
       setAutoBackupSuccess('Settings saved')
@@ -1776,15 +1827,61 @@ export default function Admin() {
                             )}
 
                             {/* Cron preview */}
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs text-dark-text-tertiary font-mono">
-                                {scheduleToCron(schedFreq, schedHour, schedMinute, schedDayOfWeek, schedDayOfMonth, schedCustomCron)}
+                            <p className="text-xs text-dark-text-tertiary font-mono mb-5">
+                              {scheduleToCron(schedFreq, schedHour, schedMinute, schedDayOfWeek, schedDayOfMonth, schedCustomCron)}
+                            </p>
+
+                            {/* Retention */}
+                            <div className="border-t border-dark-border-subtle pt-4">
+                              <p className="text-xs font-medium text-dark-text-secondary mb-3">Retention Policy</p>
+                              <div className="grid grid-cols-3 gap-4 mb-3">
+                                {([
+                                  { label: 'Daily (full)', key: 'full', value: retFullDays, setter: setRetFullDays, color: 'text-teal-400', max: retAlternateDays - 1 },
+                                  { label: 'Alternate days', key: 'alt', value: retAlternateDays, setter: setRetAlternateDays, color: 'text-amber-400', max: retWeeklyDays - 1 },
+                                  { label: 'Weekly', key: 'weekly', value: retWeeklyDays, setter: setRetWeeklyDays, color: 'text-blue-400', max: 3650 },
+                                ] as const).map(({ label, key, value, setter, color, max }) => (
+                                  <div key={key}>
+                                    <label className={`block text-xs font-medium ${color} mb-1`}>{label}</label>
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        max={max}
+                                        value={value}
+                                        onChange={e => setter(Math.max(1, Math.min(max, Number(e.target.value))))}
+                                        className="w-16 px-2 py-1 bg-dark-bg-primary border border-dark-border-subtle rounded text-sm text-dark-text-primary text-center focus:outline-none focus:border-dark-accent-primary"
+                                      />
+                                      <span className="text-xs text-dark-text-tertiary">days</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              {/* Retention timeline bar */}
+                              <div className="relative h-3 rounded-full overflow-hidden flex">
+                                <div
+                                  className="bg-teal-500/60 h-full"
+                                  style={{ width: `${(retFullDays / retWeeklyDays) * 100}%` }}
+                                  title={`Daily: 0–${retFullDays}d`}
+                                />
+                                <div
+                                  className="bg-amber-500/60 h-full"
+                                  style={{ width: `${((retAlternateDays - retFullDays) / retWeeklyDays) * 100}%` }}
+                                  title={`Alternate: ${retFullDays}–${retAlternateDays}d`}
+                                />
+                                <div
+                                  className="bg-blue-500/60 h-full flex-1"
+                                  title={`Weekly: ${retAlternateDays}–${retWeeklyDays}d`}
+                                />
+                              </div>
+                              <div className="flex justify-between text-xs text-dark-text-tertiary mt-1">
+                                <span>0</span>
+                                <span className="text-teal-400">{retFullDays}d</span>
+                                <span className="text-amber-400">{retAlternateDays}d</span>
+                                <span className="text-blue-400">{retWeeklyDays}d</span>
+                              </div>
+                              <p className="text-xs text-dark-text-tertiary mt-2">
+                                Keep every backup for {retFullDays} days, then every other day until day {retAlternateDays}, then weekly until day {retWeeklyDays}.
                               </p>
-                              {autoBackupSettings && (
-                                <p className="text-xs text-dark-text-tertiary">
-                                  Retention: {autoBackupSettings.retention.full_days}d full · {autoBackupSettings.retention.alternate_days}d alternate · {autoBackupSettings.retention.weekly_days}d weekly
-                                </p>
-                              )}
                             </div>
                           </div>
 
@@ -1830,14 +1927,25 @@ export default function Admin() {
                                   ))}
                                 </div>
 
+                                {/* Search */}
+                                <div className="px-3 py-2 border-b border-dark-border-subtle">
+                                  <input
+                                    type="text"
+                                    value={folderSearch}
+                                    onChange={e => setFolderSearch(e.target.value)}
+                                    placeholder="Search folders…"
+                                    className="w-full px-2 py-1 text-xs bg-dark-bg-primary border border-dark-border-subtle rounded text-dark-text-primary placeholder-dark-text-tertiary focus:outline-none focus:border-dark-accent-primary"
+                                  />
+                                </div>
+
                                 {/* Folder list */}
                                 <div className="max-h-48 overflow-y-auto">
                                   {isFolderLoading ? (
                                     <div className="p-4 text-center text-xs text-dark-text-tertiary">Loading…</div>
-                                  ) : folderList.length === 0 ? (
-                                    <div className="p-4 text-center text-xs text-dark-text-tertiary">No folders here</div>
+                                  ) : folderList.filter(f => f.name.toLowerCase().includes(folderSearch.toLowerCase())).length === 0 ? (
+                                    <div className="p-4 text-center text-xs text-dark-text-tertiary">{folderSearch ? 'No matches' : 'No folders here'}</div>
                                   ) : (
-                                    folderList.map(folder => (
+                                    folderList.filter(f => f.name.toLowerCase().includes(folderSearch.toLowerCase())).map(folder => (
                                       <div key={folder.id} className="flex items-center px-3 py-2 hover:bg-dark-bg-tertiary/50 border-b border-dark-border-subtle last:border-0 group">
                                         <svg className="w-3.5 h-3.5 text-amber-400 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
                                         <span className="flex-1 text-xs text-dark-text-primary truncate">{folder.name}</span>
@@ -1979,6 +2087,157 @@ export default function Admin() {
                             ))}
                           </div>
                         )}
+                      </div>
+
+                      {/* Card 5 — Backup Calendar */}
+                      <div className="bg-dark-bg-secondary rounded-xl border border-dark-border-subtle overflow-hidden">
+                        <div className="flex items-center gap-3 px-5 py-4 border-b border-dark-border-subtle">
+                          <div className="w-9 h-9 rounded-lg bg-purple-500/15 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          </div>
+                          <h3 className="text-sm font-semibold text-dark-text-primary flex-1">Backup Calendar</h3>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                const d = new Date(calYear, calMonth - 1, 1)
+                                setCalYear(d.getFullYear())
+                                setCalMonth(d.getMonth())
+                              }}
+                              className="p-1.5 rounded text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary transition-colors"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                            </button>
+                            <span className="text-xs font-medium text-dark-text-primary min-w-[110px] text-center">
+                              {MONTH_NAMES[calMonth]} {calYear}
+                            </span>
+                            <button
+                              onClick={() => {
+                                const d = new Date(calYear, calMonth + 1, 1)
+                                setCalYear(d.getFullYear())
+                                setCalMonth(d.getMonth())
+                              }}
+                              className="p-1.5 rounded text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary transition-colors"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                            </button>
+                            <button
+                              onClick={() => { setCalYear(new Date().getFullYear()); setCalMonth(new Date().getMonth()) }}
+                              className="ml-1 px-2 py-1 text-xs text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary border border-dark-border-subtle rounded transition-colors"
+                            >
+                              Today
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="p-4">
+                          {/* Day-of-week headers */}
+                          <div className="grid grid-cols-7 mb-1">
+                            {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                              <div key={d} className="text-center text-xs font-medium text-dark-text-tertiary py-1">{d}</div>
+                            ))}
+                          </div>
+
+                          {/* Calendar grid */}
+                          {(() => {
+                            const now = new Date()
+                            const grid = buildCalendarGrid(calYear, calMonth)
+                            const cronExpr = schedFreq === 'custom' ? schedCustomCron : scheduleToCron(schedFreq, schedHour, schedMinute, schedDayOfWeek, schedDayOfMonth, schedCustomCron)
+                            const scheduledDays = autoBackupSettings?.enabled ? getCronScheduledDays(cronExpr, calYear, calMonth) : new Set<number>()
+                            const today = now.getFullYear() === calYear && now.getMonth() === calMonth ? now.getDate() : -1
+
+                            // Build a map: day → record for that day (prefer success over failed)
+                            const dayRecordMap = new Map<number, typeof autoBackupHistory[0]>()
+                            for (const rec of autoBackupHistory) {
+                              const d = new Date(rec.started_at)
+                              if (d.getFullYear() === calYear && d.getMonth() === calMonth) {
+                                const day = d.getDate()
+                                const existing = dayRecordMap.get(day)
+                                if (!existing || (rec.status === 'success' && existing.status !== 'success')) {
+                                  dayRecordMap.set(day, rec)
+                                }
+                              }
+                            }
+
+                            return (
+                              <div className="grid grid-cols-7 gap-0.5">
+                                {grid.map((day, idx) => {
+                                  if (day === null) {
+                                    return <div key={`empty-${idx}`} className="aspect-square" />
+                                  }
+                                  const rec = dayRecordMap.get(day)
+                                  const isFuture = new Date(calYear, calMonth, day) > now
+                                  const isToday = day === today
+                                  const isScheduled = scheduledDays.has(day)
+
+                                  let bgClass = ''
+                                  let dotColor = ''
+                                  let title = ''
+
+                                  if (rec) {
+                                    if (rec.status === 'success') {
+                                      const tier = getRetentionTier(rec.started_at, now, retFullDays, retAlternateDays, retWeeklyDays)
+                                      if (tier === 'full') { bgClass = 'bg-teal-500/20 hover:bg-teal-500/30'; dotColor = 'bg-teal-400'; title = 'Daily backup (full retention)' }
+                                      else if (tier === 'alternate') { bgClass = 'bg-amber-500/20 hover:bg-amber-500/30'; dotColor = 'bg-amber-400'; title = 'Alternate-day retention' }
+                                      else if (tier === 'weekly') { bgClass = 'bg-blue-500/20 hover:bg-blue-500/30'; dotColor = 'bg-blue-400'; title = 'Weekly retention' }
+                                      else { bgClass = 'bg-red-500/10 hover:bg-red-500/15'; dotColor = 'bg-red-400'; title = 'Expired (will be pruned)' }
+                                    } else if (rec.status === 'failed') {
+                                      bgClass = 'bg-red-500/15 hover:bg-red-500/25'
+                                      dotColor = 'bg-red-400'
+                                      title = `Failed: ${rec.error_message || 'unknown error'}`
+                                    }
+                                  }
+
+                                  return (
+                                    <div
+                                      key={day}
+                                      title={title || (isFuture && isScheduled ? 'Scheduled' : '')}
+                                      className={`aspect-square rounded flex flex-col items-center justify-center relative cursor-default transition-colors ${bgClass || (isScheduled && isFuture ? 'bg-dark-bg-tertiary/40' : '')}`}
+                                    >
+                                      <span className={`text-xs font-medium ${
+                                        isToday ? 'text-primary-400 font-bold' :
+                                        rec ? 'text-dark-text-primary' :
+                                        isFuture ? 'text-dark-text-tertiary' :
+                                        'text-dark-text-secondary'
+                                      }`}>
+                                        {day}
+                                      </span>
+                                      {/* Dot for past backup */}
+                                      {rec && <span className={`w-1 h-1 rounded-full ${dotColor} mt-0.5`} />}
+                                      {/* Ring for future scheduled */}
+                                      {!rec && isScheduled && isFuture && (
+                                        <span className="w-1 h-1 rounded-full border border-dark-text-tertiary mt-0.5 opacity-50" />
+                                      )}
+                                      {/* Today indicator */}
+                                      {isToday && (
+                                        <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary-400" />
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })()}
+
+                          {/* Legend */}
+                          <div className="flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-dark-border-subtle">
+                            <span className="text-xs text-dark-text-tertiary font-medium">Legend:</span>
+                            {[
+                              { color: 'bg-teal-400', label: `Daily (0–${retFullDays}d)` },
+                              { color: 'bg-amber-400', label: `Alternate (${retFullDays}–${retAlternateDays}d)` },
+                              { color: 'bg-blue-400', label: `Weekly (${retAlternateDays}–${retWeeklyDays}d)` },
+                              { color: 'bg-red-400', label: 'Expired' },
+                            ].map(({ color, label }) => (
+                              <div key={label} className="flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${color}`} />
+                                <span className="text-xs text-dark-text-secondary">{label}</span>
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full border border-dark-text-tertiary opacity-50" />
+                              <span className="text-xs text-dark-text-secondary">Scheduled</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </>
                   )}

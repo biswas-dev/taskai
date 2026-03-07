@@ -626,9 +626,9 @@ export interface BackupSettings {
   folder_id: string
   provider_name: string
   retention: {
-    full_days: number
-    alternate_days: number
-    weekly_days: number
+    FullDays: number      // PascalCase — Go struct has no json tags
+    AlternateDays: number
+    WeeklyDays: number
   }
   updated_at: string
 }
@@ -1483,7 +1483,7 @@ class ApiClient {
     return this.request<BackupSettings>('/api/admin/backup/settings')
   }
 
-  async updateBackupSettings(settings: { enabled?: boolean; cron_expression?: string; folder_id?: string }): Promise<BackupSettings> {
+  async updateBackupSettings(settings: { enabled?: boolean; cron_expression?: string; folder_id?: string; retention?: { FullDays: number; AlternateDays: number; WeeklyDays: number } }): Promise<BackupSettings> {
     return this.request<BackupSettings>('/api/admin/backup/settings', {
       method: 'PUT',
       body: JSON.stringify(settings),
