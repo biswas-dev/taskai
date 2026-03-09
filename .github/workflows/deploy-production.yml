@@ -138,13 +138,13 @@ jobs:
             chmod +x source/deployment/scripts/ensure-draw-route.sh
             sudo source/deployment/scripts/ensure-draw-route.sh taskai.cc
 
-            docker compose down || true
+            docker compose -f source/docker-compose.yml -p taskai down || true
             docker builder prune -f || true
             docker image prune -f || true
-            docker compose build --build-arg VERSION="\$VERSION" --build-arg GIT_COMMIT="\$GIT_COMMIT" --build-arg BUILD_TIME="\$BUILD_TIME"
-            docker compose up -d --force-recreate --remove-orphans
+            docker compose -f source/docker-compose.yml -p taskai build --build-arg VERSION="$VERSION" --build-arg GIT_COMMIT="$GIT_COMMIT" --build-arg BUILD_TIME="$BUILD_TIME"
+            docker compose -f source/docker-compose.yml -p taskai up -d --force-recreate --remove-orphans
             sleep 15
-            docker compose ps
+            docker compose -f source/docker-compose.yml -p taskai ps
           ENDSSH
 
       - name: Capture container logs on failure
@@ -154,8 +154,8 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key ubuntu@31.97.102.48 bash -s << 'ENDSSH'
             cd /home/ubuntu/taskai
-            docker compose ps -a
-            docker compose logs --tail=100 api
+            docker compose -f source/docker-compose.yml -p taskai ps -a
+            docker compose -f source/docker-compose.yml -p taskai logs --tail=100 api
           ENDSSH
 
       - name: Verify deployment
