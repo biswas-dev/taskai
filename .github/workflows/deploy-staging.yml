@@ -126,6 +126,9 @@ jobs:
             if [ -n "\$BACKUP_ENC_KEY" ]; then
               export BACKUP_ENCRYPTION_KEY="\$BACKUP_ENC_KEY"
             fi
+            export ENV=staging
+            export OAUTH_SUCCESS_URL='https://staging.taskai.cc/oauth/callback'
+            export OAUTH_ERROR_URL='https://staging.taskai.cc/login'
             DD_KEY='$DD_API_KEY'
             if [ -n "\$DD_KEY" ]; then
               export DD_API_KEY="\$DD_KEY"
