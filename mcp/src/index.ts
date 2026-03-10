@@ -530,6 +530,16 @@ app.post("/mcp", async (req, res) => {
     if (entry?.agentName) client.agentName = entry.agentName;
   }
 
+  // Fallback: check incoming HTTP X-Agent-Name header (sent by MCP clients via custom headers config)
+  if (!client.agentName) {
+    const headerAgent = req.headers["x-agent-name"] as string | undefined;
+    if (headerAgent) {
+      client.agentName = normalizeAgentName(headerAgent);
+      const entry = apiKeyCache.get(apiKey);
+      if (entry) entry.agentName = client.agentName;
+    }
+  }
+
   // Create MCP server with authenticated client and cached user
   const server = createServer(client, cachedUser);
 
