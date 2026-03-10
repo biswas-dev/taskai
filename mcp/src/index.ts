@@ -22,7 +22,7 @@ function normalizeAgentName(raw: string): string {
 }
 
 // --- API key validation cache (5-minute TTL) ---
-interface CacheEntry { user: User; validUntil: number }
+interface CacheEntry { user: User; validUntil: number; agentName?: string }
 const apiKeyCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -517,8 +517,17 @@ app.post("/mcp", async (req, res) => {
   for (const msg of messages) {
     if (msg?.method === "initialize" && msg?.params?.clientInfo?.name) {
       client.agentName = normalizeAgentName(msg.params.clientInfo.name);
+      // Persist in cache so subsequent stateless requests retain it
+      const entry = apiKeyCache.get(apiKey);
+      if (entry) entry.agentName = client.agentName;
       break;
     }
+  }
+
+  // Apply cached agent name if not found in current request
+  if (!client.agentName) {
+    const entry = apiKeyCache.get(apiKey);
+    if (entry?.agentName) client.agentName = entry.agentName;
   }
 
   // Create MCP server with authenticated client and cached user
