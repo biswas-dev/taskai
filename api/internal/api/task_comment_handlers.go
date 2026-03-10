@@ -224,15 +224,16 @@ func (s *Server) HandleCreateTaskComment(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Best-effort push to GitHub (non-blocking)
-	// Prefix display name with agent name for AI attribution
+	// Use clean user name for GitHub (agent attribution is TaskAI-internal)
 	displayName := ""
 	if c.UserName != nil {
 		displayName = *c.UserName
 	}
+	ghDisplayName := displayName
 	if c.AgentName != nil {
 		displayName = *c.AgentName + " for " + displayName
 	}
-	go s.tryPushCommentToGitHub(context.Background(), taskID, c.ID, c.Comment, displayName)
+	go s.tryPushCommentToGitHub(context.Background(), taskID, c.ID, c.Comment, ghDisplayName)
 
 	// Notify task assignee and previous commenters (best-effort, non-blocking)
 	taskNum := 0

@@ -193,6 +193,7 @@ type GitHubPullResponse struct {
 	UpdatedTasks    int `json:"updated_tasks"`
 	SkippedTasks    int `json:"skipped_tasks"`
 	CreatedComments int `json:"created_comments"`
+	PushedComments  int `json:"pushed_comments"`
 }
 
 // --- Helper ---
@@ -1223,10 +1224,10 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 			_, _ = s.db.ExecContext(context.Background(), `
 				UPDATE github_sync_logs
 				SET completed_at = $1, status = $2, error_message = $3,
-				    created_tasks = $4, updated_tasks = $5, created_comments = $6, skipped_tasks = $7
-				WHERE id = $8
+				    created_tasks = $4, updated_tasks = $5, created_comments = $6, skipped_tasks = $7, pushed_comments = $8
+				WHERE id = $9
 			`, time.Now(), status, errMsg,
-				result.CreatedTasks, result.UpdatedTasks, result.CreatedComments, result.SkippedTasks,
+				result.CreatedTasks, result.UpdatedTasks, result.CreatedComments, result.SkippedTasks, result.PushedComments,
 				syncLogID)
 			// Purge old logs — keep last 100 per project
 			_, _ = s.db.ExecContext(context.Background(), `
@@ -1800,6 +1801,9 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request, doUp
 		}
 	}
 
+	// --- Push Unpushed TaskAI Comments to GitHub ---
+	s.pushUnpushedComments(ctx, projectID, owner, repo, token, &result)
+
 	// Update last sync timestamp
 	_, _ = s.db.ExecContext(ctx, `UPDATE projects SET github_last_sync = $1 WHERE id = $2`, time.Now(), projectID)
 
@@ -1943,6 +1947,71 @@ func (s *Server) tryPushCommentToGitHub(ctx context.Context, taskID, commentID i
 		return
 	}
 	_, _ = s.db.ExecContext(ctx, `UPDATE task_comments SET github_comment_id = $1 WHERE id = $2`, ghCommentID, commentID)
+}
+
+// pushUnpushedComments pushes all TaskAI comments that haven't been synced to GitHub yet.
+// Called during both manual and auto sync. Only pushes if github_push_enabled is true.
+func (s *Server) pushUnpushedComments(ctx context.Context, projectID int, owner, repo, token string, result *GitHubPullResponse) {
+	var pushEnabled bool
+	_ = s.db.QueryRowContext(ctx, `SELECT github_push_enabled FROM projects WHERE id = $1`, projectID).Scan(&pushEnabled)
+	if !pushEnabled || owner == "" || token == "" {
+		return
+	}
+
+	type unpushedComment struct {
+		commentID   int64
+		taskID      int64
+		userID      int64
+		comment     string
+		issueNumber int64
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT tc.id, tc.task_id, tc.user_id, tc.comment, t.github_issue_number
+		FROM task_comments tc
+		JOIN tasks t ON t.id = tc.task_id
+		WHERE t.project_id = $1
+		  AND t.github_issue_number IS NOT NULL
+		  AND tc.github_comment_id IS NULL
+	`, projectID)
+	if err != nil {
+		s.logger.Warn("Failed to query unpushed comments", zap.Int("project_id", projectID), zap.Error(err))
+		return
+	}
+	var unpushed []unpushedComment
+	for rows.Next() {
+		var uc unpushedComment
+		if err := rows.Scan(&uc.commentID, &uc.taskID, &uc.userID, &uc.comment, &uc.issueNumber); err == nil {
+			unpushed = append(unpushed, uc)
+		}
+	}
+	rows.Close()
+
+	for _, uc := range unpushed {
+		// Get user display name (no agent prefix — that's TaskAI-internal)
+		var firstName, lastName, name sql.NullString
+		_ = s.db.QueryRowContext(ctx, `SELECT first_name, last_name, name FROM users WHERE id = $1`, uc.userID).Scan(&firstName, &lastName, &name)
+		displayName := ""
+		if full := strings.TrimSpace(firstName.String + " " + lastName.String); full != "" {
+			displayName = full
+		} else if name.Valid && name.String != "" {
+			displayName = name.String
+		}
+
+		ghBody := uc.comment
+		if displayName != "" {
+			ghBody = "**" + displayName + "** (via TaskAI):\n\n" + uc.comment
+		}
+		ghCommentID, err := pushCommentToGitHub(ctx, token, owner, repo, uc.issueNumber, ghBody)
+		if err != nil {
+			s.logger.Warn("Failed to push unpushed comment to GitHub",
+				zap.Int64("comment_id", uc.commentID),
+				zap.Int64("task_id", uc.taskID),
+				zap.Error(err))
+			continue
+		}
+		_, _ = s.db.ExecContext(ctx, `UPDATE task_comments SET github_comment_id = $1 WHERE id = $2`, ghCommentID, uc.commentID)
+		result.PushedComments++
+	}
 }
 
 // pushReactionToGitHub adds a reaction to a GitHub issue or comment.
@@ -2642,6 +2711,7 @@ type GitHubSyncLog struct {
 	UpdatedTasks    int        `json:"updated_tasks"`
 	CreatedComments int        `json:"created_comments"`
 	SkippedTasks    int        `json:"skipped_tasks"`
+	PushedComments  int        `json:"pushed_comments"`
 	ErrorMessage    *string    `json:"error_message,omitempty"`
 }
 
@@ -2666,7 +2736,7 @@ func (s *Server) HandleGetGitHubSyncLogs(w http.ResponseWriter, r *http.Request)
 
 	rows, err := s.db.QueryContext(r.Context(), `
 		SELECT id, project_id, started_at, completed_at, status, triggered_by,
-		       created_tasks, updated_tasks, created_comments, skipped_tasks, error_message
+		       created_tasks, updated_tasks, created_comments, skipped_tasks, COALESCE(pushed_comments, 0), error_message
 		FROM github_sync_logs
 		WHERE project_id = $1
 		ORDER BY started_at DESC
@@ -2685,7 +2755,7 @@ func (s *Server) HandleGetGitHubSyncLogs(w http.ResponseWriter, r *http.Request)
 		var completedAt sql.NullTime
 		var errMsg sql.NullString
 		if err := rows.Scan(&l.ID, &l.ProjectID, &l.StartedAt, &completedAt, &l.Status, &l.TriggeredBy,
-			&l.CreatedTasks, &l.UpdatedTasks, &l.CreatedComments, &l.SkippedTasks, &errMsg); err != nil {
+			&l.CreatedTasks, &l.UpdatedTasks, &l.CreatedComments, &l.SkippedTasks, &l.PushedComments, &errMsg); err != nil {
 			continue
 		}
 		if completedAt.Valid {
@@ -2864,9 +2934,9 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 			_, _ = s.db.ExecContext(context.Background(), s.db.Rebind(`
 				UPDATE github_sync_logs
 				SET completed_at = ?, status = 'success',
-				    created_tasks = ?, updated_tasks = ?, created_comments = ?, skipped_tasks = ?
+				    created_tasks = ?, updated_tasks = ?, created_comments = ?, skipped_tasks = ?, pushed_comments = ?
 				WHERE id = ?
-			`), time.Now(), result.CreatedTasks, result.UpdatedTasks, result.CreatedComments, result.SkippedTasks, syncLogID)
+			`), time.Now(), result.CreatedTasks, result.UpdatedTasks, result.CreatedComments, result.SkippedTasks, result.PushedComments, syncLogID)
 			_, _ = s.db.ExecContext(context.Background(), s.db.Rebind(`
 				DELETE FROM github_sync_logs WHERE project_id = ? AND id NOT IN (
 					SELECT id FROM github_sync_logs WHERE project_id = ? ORDER BY started_at DESC LIMIT 100
@@ -3153,6 +3223,9 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 			}
 		}
 	}
+
+	// --- Push Unpushed TaskAI Comments to GitHub ---
+	s.pushUnpushedComments(ctx, projectID, owner, repo, token, result)
 
 	// Update last sync timestamp
 	_, _ = s.db.ExecContext(ctx, `UPDATE projects SET github_last_sync = $1 WHERE id = $2`, time.Now(), projectID)
