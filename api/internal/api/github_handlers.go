@@ -2938,6 +2938,24 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 			statusAssignmentsLower[strings.ToLower(k)] = v
 		}
 
+		// Build milestone_number→sprint_id map for sprint resolution
+		milestoneToSprintID := map[int]int64{}
+		{
+			msRows, msErr := s.db.QueryContext(ctx, `
+				SELECT github_milestone_number, id FROM sprints
+				WHERE project_id = $1 AND github_milestone_number IS NOT NULL
+			`, projectID)
+			if msErr == nil {
+				for msRows.Next() {
+					var mnum int
+					var sid int64
+					if err := msRows.Scan(&mnum, &sid); err == nil {
+						milestoneToSprintID[mnum] = sid
+					}
+				}
+				msRows.Close()
+			}
+		}
 
 		var maxNumber sql.NullInt64
 		_ = s.db.QueryRowContext(ctx, `SELECT MAX(task_number) FROM tasks WHERE project_id = $1`, projectID).Scan(&maxNumber)
@@ -2953,6 +2971,37 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 			taskStatus := "todo"
 			if issue.State == "closed" {
 				taskStatus = "done"
+			}
+
+			// Resolve assignees — collect all mapped user IDs from issue.Assignees.
+			var assigneeID *int64
+			var allAssigneeIDs []int64
+			seenAssignees := map[int64]bool{}
+			logins := make([]string, 0, len(issue.Assignees))
+			if issue.Assignee != nil {
+				logins = append(logins, issue.Assignee.Login)
+			}
+			for _, a := range issue.Assignees {
+				if a.Login != "" && (len(logins) == 0 || logins[0] != a.Login) {
+					logins = append(logins, a.Login)
+				}
+			}
+			for _, login := range logins {
+				if uid, ok := req.UserAssignments[login]; ok && uid != 0 && !seenAssignees[uid] {
+					seenAssignees[uid] = true
+					allAssigneeIDs = append(allAssigneeIDs, uid)
+					if assigneeID == nil {
+						assigneeID = &allAssigneeIDs[0]
+					}
+				}
+			}
+
+			// Resolve sprint from milestone
+			var sprintID *int64
+			if issue.Milestone != nil {
+				if sid, ok := milestoneToSprintID[issue.Milestone.Number]; ok {
+					sprintID = &sid
+				}
 			}
 
 			var swimLaneID *int64
@@ -2991,26 +3040,28 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 			err := s.db.QueryRowContext(ctx, `SELECT id FROM tasks WHERE project_id = $1 AND github_issue_number = $2`, projectID, issue.Number).Scan(&existingID)
 			if err == sql.ErrNoRows {
 				err = s.db.QueryRowContext(ctx, `
-					INSERT INTO tasks (project_id, task_number, title, description, status, priority, github_issue_number, swim_lane_id, github_project_item_id, start_date, due_date)
-					VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8, $9, $10)
+					INSERT INTO tasks (project_id, task_number, title, description, status, priority, assignee_id, sprint_id, github_issue_number, swim_lane_id, github_project_item_id, start_date, due_date)
+					VALUES ($1, $2, $3, $4, $5, 'medium', $6, $7, $8, $9, $10, $11, $12)
 					ON CONFLICT (project_id, github_issue_number) DO NOTHING
 					RETURNING id
-				`, projectID, nextNumber, issue.Title, issue.Body, taskStatus, issue.Number, swimLaneID, nullableStr(ghItemID), nullableStr(ghStartDate), nullableStr(ghDueDate)).Scan(&existingID)
+				`, projectID, nextNumber, issue.Title, issue.Body, taskStatus, assigneeID, sprintID, issue.Number, swimLaneID, nullableStr(ghItemID), nullableStr(ghStartDate), nullableStr(ghDueDate)).Scan(&existingID)
 				if err == nil {
 					nextNumber++
 					result.CreatedTasks++
 					s.upsertReactions(ctx, existingID, 0, issue.Reactions)
+					s.syncGitHubTaskAssignees(ctx, existingID, allAssigneeIDs)
 				} else {
 					result.SkippedTasks++
 				}
 			} else if err == nil {
 				_, _ = s.db.ExecContext(ctx, `
-					UPDATE tasks SET title = $1, description = $2, status = $3, swim_lane_id = $4,
-					github_project_item_id = COALESCE(NULLIF($5,''), github_project_item_id),
-					start_date = COALESCE($6, start_date), due_date = COALESCE($7, due_date)
-					WHERE id = $8
-				`, issue.Title, issue.Body, taskStatus, swimLaneID, ghItemID, nullableStr(ghStartDate), nullableStr(ghDueDate), existingID)
+					UPDATE tasks SET title = $1, description = $2, status = $3, assignee_id = $4, sprint_id = $5, swim_lane_id = $6,
+					github_project_item_id = COALESCE(NULLIF($7,''), github_project_item_id),
+					start_date = COALESCE($8, start_date), due_date = COALESCE($9, due_date)
+					WHERE id = $10
+				`, issue.Title, issue.Body, taskStatus, assigneeID, sprintID, swimLaneID, ghItemID, nullableStr(ghStartDate), nullableStr(ghDueDate), existingID)
 				s.upsertReactions(ctx, existingID, 0, issue.Reactions)
+				s.syncGitHubTaskAssignees(ctx, existingID, allAssigneeIDs)
 				result.UpdatedTasks++
 			}
 		}
