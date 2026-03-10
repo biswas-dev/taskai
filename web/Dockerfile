@@ -145,6 +145,11 @@ http {
             proxy_set_header X-Forwarded-Proto \$scheme;
         }
 
+        # Redirect /docs to /docs/
+        location = /docs {
+            return 301 /docs/;
+        }
+
         # Docusaurus documentation site
         location ^~ /docs/ {
             alias /usr/share/nginx/html/docs/;
