@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Welcome to TaskAI
 
-TaskAI is an **AI-native project management system** built for teams that work with AI tools. It combines traditional project management with first-class support for AI agents via the [Model Context Protocol (MCP)](/mcp/overview).
+TaskAI is an **AI-native project management platform** built for teams that work with AI tools. It combines traditional project management with first-class support for AI agents via the [Model Context Protocol (MCP)](/mcp/overview).
 
 ## Key Features
 
@@ -20,27 +20,12 @@ TaskAI is an **AI-native project management system** built for teams that work w
 
 ## Quick Start
 
-```bash
-# Clone and start with Docker
-git clone https://github.com/anchoo2kewl/taskai.git
-cd taskai
-docker compose up --build
-```
-
-Then open [http://localhost:8084](http://localhost:8084) to access TaskAI.
-
-## Architecture at a Glance
-
-| Component | Technology |
-|-----------|-----------|
-| Backend API | Go + Chi router |
-| Database | PostgreSQL |
-| Frontend | React + TypeScript + Vite |
-| MCP Server | Node.js + TypeScript |
-| Deployment | Docker Compose + Nginx |
+1. Sign up at [taskai.cc](https://taskai.cc/signup)
+2. Create your first project
+3. Start adding tasks, inviting teammates, and connecting AI agents
 
 ## Next Steps
 
-- [Installation Guide](/getting-started/installation) — Set up TaskAI locally
+- [Quickstart Guide](/getting-started/quickstart) — Get up and running in minutes
 - [API Reference](/api/authentication) — Integrate with the REST API
 - [MCP Integration](/mcp/overview) — Connect AI agents to TaskAI

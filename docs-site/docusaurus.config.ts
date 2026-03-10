@@ -30,7 +30,6 @@ const config: Config = {
         docs: {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
-          editUrl: 'https://github.com/anchoo2kewl/taskai/tree/main/docs-site/',
         },
         blog: false,
         theme: {
@@ -59,11 +58,6 @@ const config: Config = {
           label: 'App',
           position: 'right',
         },
-        {
-          href: 'https://github.com/anchoo2kewl/taskai',
-          label: 'GitHub',
-          position: 'right',
-        },
       ],
     },
     footer: {
@@ -72,16 +66,16 @@ const config: Config = {
         {
           title: 'Docs',
           items: [
-            {label: 'Getting Started', to: '/getting-started/installation'},
+            {label: 'Getting Started', to: '/getting-started/quickstart'},
             {label: 'API Reference', to: '/api/authentication'},
             {label: 'MCP Tools', to: '/mcp/overview'},
           ],
         },
         {
-          title: 'Community',
+          title: 'Product',
           items: [
-            {label: 'GitHub', href: 'https://github.com/anchoo2kewl/taskai'},
-            {label: 'Issues', href: 'https://github.com/anchoo2kewl/taskai/issues'},
+            {label: 'Sign Up', href: 'https://taskai.cc/signup'},
+            {label: 'Support', href: 'mailto:support@taskai.cc'},
           ],
         },
       ],

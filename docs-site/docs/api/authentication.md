@@ -75,7 +75,7 @@ curl https://taskai.cc/api/me \
 
 ## API Keys
 
-For programmatic access. Create keys in the web UI or via the API (see [API Keys guide](/guides/api-keys)).
+For programmatic access. Create keys in **Settings** → **API Keys** or via the API (see [API Keys guide](/guides/api-keys)).
 
 ```
 Authorization: ApiKey <key>
@@ -85,7 +85,7 @@ API keys have the same permissions as the user who created them.
 
 ## OAuth Login
 
-TaskAI supports social login via Google and GitHub. See [OAuth Setup](/guides/oauth-setup) for configuration details.
+TaskAI supports social login via Google and GitHub. See [OAuth Setup](/guides/oauth-setup) for details.
 
 ## Rate Limiting
 

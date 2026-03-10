@@ -6,25 +6,16 @@ sidebar_position: 2
 
 This guide walks you through creating a project and managing tasks in TaskAI.
 
-## 1. Create an Account
+## 1. Create a Project
 
-Sign up at the login page or via the API:
+From the dashboard, click **New Project**. Enter a name and optional description.
 
-```bash
-curl -X POST http://localhost:8080/api/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "you@example.com",
-    "password": "SecurePass123!"
-  }'
-```
+Every project automatically gets default swim lanes: **To Do**, **In Progress**, and **Done**. You can customize these later in project settings.
 
-Save the `token` from the response — you'll use it for authenticated requests.
-
-## 2. Create a Project
+### Via API
 
 ```bash
-curl -X POST http://localhost:8080/api/projects \
+curl -X POST https://taskai.cc/api/projects \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -33,12 +24,12 @@ curl -X POST http://localhost:8080/api/projects \
   }'
 ```
 
-Every project automatically gets default swim lanes: **To Do**, **In Progress**, and **Done**.
+## 2. Add Tasks
 
-## 3. Add Tasks
+Click **Add Task** on any swim lane, or use the API:
 
 ```bash
-curl -X POST http://localhost:8080/api/projects/1/tasks \
+curl -X POST https://taskai.cc/api/projects/1/tasks \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -48,23 +39,23 @@ curl -X POST http://localhost:8080/api/projects/1/tasks \
   }'
 ```
 
-## 4. Move Tasks Across the Board
+## 3. Move Tasks Across the Board
 
-Update a task's status or swim lane:
+Drag and drop tasks between swim lanes in the web UI, or update via API:
 
 ```bash
-curl -X PATCH http://localhost:8080/api/tasks/1 \
+curl -X PATCH https://taskai.cc/api/tasks/1 \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"status": "in_progress"}'
 ```
 
-## 5. Invite Team Members
+## 4. Invite Team Members
 
-Add collaborators to your project:
+Go to **Project Settings** → **Members** and invite collaborators by email:
 
 ```bash
-curl -X POST http://localhost:8080/api/projects/1/members \
+curl -X POST https://taskai.cc/api/projects/1/members \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -73,17 +64,17 @@ curl -X POST http://localhost:8080/api/projects/1/members \
   }'
 ```
 
-## Using the Web UI
+## 5. Using the Web UI
 
 The web interface provides a Kanban board view where you can:
 
-1. **Drag and drop** tasks between swim lanes
-2. **Click tasks** to view details, add comments, and change priority
-3. **Use the sidebar** to navigate between projects
-4. **Search tasks** with the search bar (supports full-text search)
+- **Drag and drop** tasks between swim lanes
+- **Click tasks** to view details, add comments, and change priority
+- **Use the sidebar** to navigate between projects
+- **Search tasks** with the search bar (supports full-text search)
 
 ## Next Steps
 
-- [Configure your environment](/getting-started/configuration)
 - [Set up GitHub integration](/guides/github-sync)
 - [Connect an AI agent via MCP](/mcp/overview)
+- [Create API keys](/guides/api-keys) for automation

@@ -18,25 +18,15 @@ When enabled, GitHub sync:
 
 ## Setup
 
-### 1. Configure GitHub OAuth
+### 1. Connect Your GitHub Account
 
-Set these environment variables on the API:
-
-```bash
-GITHUB_CLIENT_ID=your-github-oauth-app-client-id
-GITHUB_CLIENT_SECRET=your-github-oauth-app-secret
-APP_URL=https://yourdomain.com
-```
-
-### 2. Connect Your GitHub Account
-
-In the web UI: **Settings** → **Integrations** → **Connect GitHub**
+In the web UI, go to **Settings** → **Integrations** → **Connect GitHub**.
 
 This initiates an OAuth flow that grants TaskAI access to your repositories.
 
-### 3. Link a Repository
+### 2. Link a Repository
 
-In your project settings: **GitHub** → Select a repository
+In your project settings, go to **GitHub** and select a repository:
 
 ```bash
 curl -X PATCH https://taskai.cc/api/projects/1/github \
@@ -74,12 +64,3 @@ Trigger a sync manually:
 curl -X POST https://taskai.cc/api/projects/1/github/sync \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
-
-## Webhook Setup
-
-For real-time sync, configure a GitHub webhook:
-
-1. Go to your GitHub repo → **Settings** → **Webhooks**
-2. Set the Payload URL to `https://yourdomain.com/api/github/webhook`
-3. Set Content type to `application/json`
-4. Select events: Issues, Issue comments

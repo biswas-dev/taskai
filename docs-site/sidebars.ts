@@ -7,9 +7,8 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Getting Started',
       items: [
-        'getting-started/installation',
+        'getting-started/quickstart',
         'getting-started/first-project',
-        'getting-started/configuration',
       ],
     },
     {
@@ -41,24 +40,6 @@ const sidebars: SidebarsConfig = {
       items: [
         'mcp/overview',
         'mcp/tools-reference',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Architecture',
-      items: [
-        'architecture/overview',
-        'architecture/data-models',
-        'architecture/tech-stack',
-      ],
-    },
-    {
-      type: 'category',
-      label: 'Deployment',
-      items: [
-        'deployment/docker',
-        'deployment/self-hosting',
-        'deployment/environments',
       ],
     },
     {

@@ -4,25 +4,15 @@ sidebar_position: 2
 
 # Wiki Collaboration
 
-TaskAI wiki pages support real-time collaborative editing using Yjs CRDTs.
+TaskAI wiki pages support real-time collaborative editing — multiple users can edit the same page simultaneously with automatic conflict resolution.
 
 ## How It Works
 
 When multiple users edit the same wiki page:
-1. Each user's changes are tracked as Yjs operations
-2. The Yjs processor service merges changes in real-time
+1. Each user's changes are tracked as operations
+2. Changes are merged in real-time using CRDTs (Conflict-free Replicated Data Types)
 3. All connected editors see updates instantly
-4. Conflicts are resolved automatically (no manual merge needed)
-
-## Architecture
-
-```
-Browser A ──┐
-            ├── WebSocket ──→ Yjs Processor ──→ API (save)
-Browser B ──┘                    :3001
-```
-
-The Yjs processor runs as a separate service (`yjs-processor`) that handles WebSocket connections and operation merging.
+4. No manual merge conflicts
 
 ## Features
 
@@ -51,9 +41,7 @@ const api = new TaskAIClient();
 ```
 ````
 
-### Tables, Images, Links
-
-Standard markdown syntax is fully supported.
+Standard markdown syntax for tables, images, and links is fully supported.
 
 ## API Access
 

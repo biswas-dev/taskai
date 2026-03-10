@@ -30,28 +30,10 @@ Add to your MCP configuration (`claude_desktop_config.json` or `.mcp.json`):
 }
 ```
 
-### Self-Hosted
-
-If running TaskAI locally:
-
-```json
-{
-  "mcpServers": {
-    "taskai": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "http://localhost:8089/sse"],
-      "env": {
-        "API_KEY": "your-api-key-here"
-      }
-    }
-  }
-}
-```
-
 ## Getting an API Key
 
-1. Log in to TaskAI
-2. Go to **Settings** > **API Keys**
+1. Log in to TaskAI at [taskai.cc](https://taskai.cc)
+2. Go to **Settings** → **API Keys**
 3. Click **Create API Key**
 4. Copy the key and add it to your MCP configuration
 
