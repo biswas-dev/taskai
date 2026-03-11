@@ -1511,10 +1511,15 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if sprintID == nil && issue.Milestone != nil {
-				if sid, ok := milestoneToSprintID[issue.Milestone.Number]; ok {
-					sprintID = &sid
-				} else if issue.Milestone.Title != "" {
-					// Cross-repo fallback: milestone numbers differ per repo, match by name
+				isPrimaryRepo := issue.Repo == owner+"/"+repo
+				if isPrimaryRepo {
+					// Same-repo: milestone numbers are reliable
+					if sid, ok := milestoneToSprintID[issue.Milestone.Number]; ok {
+						sprintID = &sid
+					}
+				}
+				if sprintID == nil && issue.Milestone.Title != "" {
+					// Cross-repo or number miss: match by milestone title
 					if sid, ok := milestoneNameToSprintID[issue.Milestone.Title]; ok {
 						sprintID = &sid
 					}
@@ -3096,10 +3101,13 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 				}
 			}
 			if sprintID == nil && issue.Milestone != nil {
-				if sid, ok := milestoneToSprintID[issue.Milestone.Number]; ok {
-					sprintID = &sid
-				} else if issue.Milestone.Title != "" {
-					// Cross-repo fallback: milestone numbers differ per repo, match by name
+				isPrimaryRepo := issue.Repo == owner+"/"+repo
+				if isPrimaryRepo {
+					if sid, ok := milestoneToSprintID[issue.Milestone.Number]; ok {
+						sprintID = &sid
+					}
+				}
+				if sprintID == nil && issue.Milestone.Title != "" {
 					if sid, ok := milestoneNameToSprintID[issue.Milestone.Title]; ok {
 						sprintID = &sid
 					}
