@@ -1046,9 +1046,6 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request) {
 	req.StatusAssignments, req.UserAssignments = s.loadSavedGitHubMappings(
 		r.Context(), int64(projectID), req.StatusAssignments, req.UserAssignments)
 
-	// DEBUG: log loaded mappings
-	s.logger.Info("DEBUG: loaded status assignments", zap.Any("statusAssignments", req.StatusAssignments))
-
 	owner, repo, storedToken, projectURL, err := s.loadGitHubConfig(projectID)
 	if err != nil {
 		http.Error(w, "Failed to load project config", http.StatusInternalServerError)
@@ -1338,21 +1335,26 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Build a milestone_number→sprint_id map from all sprints that have been linked
-		// to a GitHub milestone (regardless of whether PullSprints was requested this run).
+		// Build milestone→sprint_id maps from all sprints linked to GitHub milestones.
+		// milestoneToSprintID: number-based (works for same-repo issues)
+		// milestoneNameToSprintID: name-based fallback (needed for cross-repo issues
+		// where milestone numbers differ per repo but names match)
 		milestoneToSprintID := map[int]int64{}
+		milestoneNameToSprintID := map[string]int64{}
 		{
 			rows, err := s.db.QueryContext(ctx, `
-				SELECT github_milestone_number, id FROM sprints
+				SELECT github_milestone_number, name, id FROM sprints
 				WHERE project_id = $1 AND github_milestone_number IS NOT NULL
 			`, projectID)
 			if err == nil {
 				defer rows.Close()
 				for rows.Next() {
 					var mnum int
+					var mname string
 					var sid int64
-					if err := rows.Scan(&mnum, &sid); err == nil {
+					if err := rows.Scan(&mnum, &mname, &sid); err == nil {
 						milestoneToSprintID[mnum] = sid
+						milestoneNameToSprintID[mname] = sid
 					}
 				}
 				rows.Close()
@@ -1511,6 +1513,11 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request) {
 			if sprintID == nil && issue.Milestone != nil {
 				if sid, ok := milestoneToSprintID[issue.Milestone.Number]; ok {
 					sprintID = &sid
+				} else if issue.Milestone.Title != "" {
+					// Cross-repo fallback: milestone numbers differ per repo, match by name
+					if sid, ok := milestoneNameToSprintID[issue.Milestone.Title]; ok {
+						sprintID = &sid
+					}
 				}
 			}
 
@@ -1541,23 +1548,6 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request) {
 						unknownStatusKeys[itemStatus.StatusName] = struct{}{}
 					}
 				}
-			}
-			// DEBUG: log Code Review status resolution and Sprint 139 issues
-			if is, ok := issueColumnMap[colKey]; ok && is.StatusName == "Code Review" {
-				s.logger.Info("DEBUG: Code Review task",
-					zap.String("colKey", colKey),
-					zap.String("title", issue.Title),
-					zap.Any("swimLaneID", swimLaneID),
-					zap.String("iteration", is.IterationTitle),
-				)
-			}
-			if is, ok := issueColumnMap[colKey]; ok && is.IterationTitle == "Sprint 139" {
-				s.logger.Info("DEBUG: Sprint 139 task",
-					zap.String("colKey", colKey),
-					zap.String("title", issue.Title),
-					zap.String("boardStatus", is.StatusName),
-					zap.Any("swimLaneID", swimLaneID),
-				)
 			}
 			// 2. Status-like labels
 			if swimLaneID == nil {
@@ -3013,19 +3003,24 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 			statusAssignmentsLower[strings.ToLower(k)] = v
 		}
 
-		// Build milestone_number→sprint_id map for sprint resolution
+		// Build milestone→sprint_id maps for sprint resolution.
+		// milestoneToSprintID: number-based (same-repo issues)
+		// milestoneNameToSprintID: name-based fallback (cross-repo issues)
 		milestoneToSprintID := map[int]int64{}
+		milestoneNameToSprintID := map[string]int64{}
 		{
 			msRows, msErr := s.db.QueryContext(ctx, `
-				SELECT github_milestone_number, id FROM sprints
+				SELECT github_milestone_number, name, id FROM sprints
 				WHERE project_id = $1 AND github_milestone_number IS NOT NULL
 			`, projectID)
 			if msErr == nil {
 				for msRows.Next() {
 					var mnum int
+					var mname string
 					var sid int64
-					if err := msRows.Scan(&mnum, &sid); err == nil {
+					if err := msRows.Scan(&mnum, &mname, &sid); err == nil {
 						milestoneToSprintID[mnum] = sid
+						milestoneNameToSprintID[mname] = sid
 					}
 				}
 				msRows.Close()
@@ -3103,6 +3098,11 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 			if sprintID == nil && issue.Milestone != nil {
 				if sid, ok := milestoneToSprintID[issue.Milestone.Number]; ok {
 					sprintID = &sid
+				} else if issue.Milestone.Title != "" {
+					// Cross-repo fallback: milestone numbers differ per repo, match by name
+					if sid, ok := milestoneNameToSprintID[issue.Milestone.Title]; ok {
+						sprintID = &sid
+					}
 				}
 			}
 
