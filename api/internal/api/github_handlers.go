@@ -1046,6 +1046,9 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request) {
 	req.StatusAssignments, req.UserAssignments = s.loadSavedGitHubMappings(
 		r.Context(), int64(projectID), req.StatusAssignments, req.UserAssignments)
 
+	// DEBUG: log loaded mappings
+	s.logger.Info("DEBUG: loaded status assignments", zap.Any("statusAssignments", req.StatusAssignments))
+
 	owner, repo, storedToken, projectURL, err := s.loadGitHubConfig(projectID)
 	if err != nil {
 		http.Error(w, "Failed to load project config", http.StatusInternalServerError)
@@ -1538,6 +1541,22 @@ func (s *Server) handleGitHubImport(w http.ResponseWriter, r *http.Request) {
 						unknownStatusKeys[itemStatus.StatusName] = struct{}{}
 					}
 				}
+			}
+			// DEBUG: log status resolution for first 5 issues
+			if i < 5 {
+				s.logger.Info("DEBUG: task status resolution",
+					zap.String("colKey", colKey),
+					zap.String("title", issue.Title),
+					zap.Bool("inColumnMap", func() bool { _, ok := issueColumnMap[colKey]; return ok }()),
+					zap.String("boardStatus", func() string {
+						if is, ok := issueColumnMap[colKey]; ok {
+							return is.StatusName
+						}
+						return "<not_in_map>"
+					}()),
+					zap.Any("swimLaneID", swimLaneID),
+					zap.Int("statusAssignmentsLen", len(req.StatusAssignments)),
+				)
 			}
 			// 2. Status-like labels
 			if swimLaneID == nil {
