@@ -426,6 +426,16 @@ query($projectId: ID!, $cursor: String) {
               milestone { number title state }
               repository { name owner { login } }
             }
+            ... on PullRequest {
+              number
+              title
+              body
+              state
+              assignees(first: 10) { nodes { login } }
+              labels(first: 20) { nodes { name color } }
+              milestone { number title state }
+              repository { name owner { login } }
+            }
           }
           fieldValues(first: 20) {
             nodes {

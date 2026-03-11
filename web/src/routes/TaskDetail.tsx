@@ -1185,10 +1185,10 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
 
             {/* GitHub */}
             <div className="mt-4">
-              {task.github_issue_number && githubRepo?.github_owner && githubRepo?.github_repo_name ? (
+              {task.github_issue_number && (task.github_repo || (githubRepo?.github_owner && githubRepo?.github_repo_name)) ? (
                 <div className="flex items-center gap-2">
                   <a
-                    href={githubPushResult?.html_url || `https://github.com/${githubRepo.github_owner}/${githubRepo.github_repo_name}/issues/${task.github_issue_number}`}
+                    href={githubPushResult?.html_url || (task.github_repo ? `https://github.com/${task.github_repo}/issues/${task.github_issue_number}` : `https://github.com/${githubRepo!.github_owner}/${githubRepo!.github_repo_name}/issues/${task.github_issue_number}`)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1.5 text-xs text-primary-400 hover:text-primary-300 transition-colors"

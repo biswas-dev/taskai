@@ -37,7 +37,8 @@ type SearchTaskResult struct {
 	Snippet           string `json:"snippet"`
 	Status            string `json:"status"`
 	Priority          string `json:"priority"`
-	GithubIssueNumber *int   `json:"github_issue_number,omitempty"`
+	GithubIssueNumber *int    `json:"github_issue_number,omitempty"`
+	GithubRepo        string  `json:"github_repo,omitempty"`
 }
 
 // GlobalSearchWikiResult represents a wiki page in global search results
@@ -258,7 +259,7 @@ func (s *Server) searchTasksPostgres(ctx context.Context, req GlobalSearchReques
 
 	sqlQuery := fmt.Sprintf(`
 		SELECT t.id, t.project_id, t.task_number, t.title, t.description, t.status, t.priority,
-		       t.github_issue_number,
+		       t.github_issue_number, t.github_repo,
 		       ts_rank(t.search_vector, plainto_tsquery('english', $1)) AS rank
 		FROM tasks t
 		WHERE (
@@ -288,9 +289,10 @@ func (s *Server) searchTasksPostgres(ctx context.Context, req GlobalSearchReques
 			status            string
 			priority          string
 			githubIssueNumber sql.NullInt32
+			githubRepo        sql.NullString
 			rank              float64
 		)
-		if err := rows.Scan(&id, &projectID, &taskNumber, &title, &description, &status, &priority, &githubIssueNumber, &rank); err != nil {
+		if err := rows.Scan(&id, &projectID, &taskNumber, &title, &description, &status, &priority, &githubIssueNumber, &githubRepo, &rank); err != nil {
 			return nil, fmt.Errorf("scan task row: %w", err)
 		}
 
@@ -313,6 +315,11 @@ func (s *Server) searchTasksPostgres(ctx context.Context, req GlobalSearchReques
 			ghNum = &n
 		}
 
+		ghRepoStr := ""
+		if githubRepo.Valid {
+			ghRepoStr = githubRepo.String
+		}
+
 		results = append(results, SearchTaskResult{
 			ID:                id,
 			ProjectID:         projectID,
@@ -323,6 +330,7 @@ func (s *Server) searchTasksPostgres(ctx context.Context, req GlobalSearchReques
 			Status:            status,
 			Priority:          priority,
 			GithubIssueNumber: ghNum,
+			GithubRepo:        ghRepoStr,
 		})
 	}
 

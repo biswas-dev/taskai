@@ -60,6 +60,7 @@ type Task struct {
 	ActualHours         *float64           `json:"actual_hours,omitempty"`
 	Tags                []Tag              `json:"tags,omitempty"`
 	GithubIssueNumber   *int64             `json:"github_issue_number,omitempty"`
+	GithubRepo          string             `json:"github_repo,omitempty"`
 	GithubReactions     []GitHubReaction   `json:"github_reactions,omitempty"`
 	AgentName           *string            `json:"agent_name,omitempty"`
 	CreatedAt           time.Time          `json:"created_at"`
@@ -314,6 +315,35 @@ func (s *Server) HandleListTasks(w http.ResponseWriter, r *http.Request) {
 		}
 
 		tasks = append(tasks, t)
+	}
+
+	// Bulk-fetch github_issue_number and github_repo (not in ent schema)
+	if len(tasks) > 0 {
+		ghRows, ghErr := s.db.QueryContext(ctx, `
+			SELECT id, github_issue_number, github_repo FROM tasks
+			WHERE project_id = $1 AND github_issue_number IS NOT NULL
+		`, projectID)
+		if ghErr == nil {
+			type ghInfo struct {
+				issueNum int64
+				repo     string
+			}
+			ghMap := map[int64]ghInfo{}
+			for ghRows.Next() {
+				var tid, inum int64
+				var repo string
+				if ghRows.Scan(&tid, &inum, &repo) == nil {
+					ghMap[tid] = ghInfo{inum, repo}
+				}
+			}
+			ghRows.Close()
+			for i := range tasks {
+				if info, ok := ghMap[tasks[i].ID]; ok {
+					tasks[i].GithubIssueNumber = &info.issueNum
+					tasks[i].GithubRepo = info.repo
+				}
+			}
+		}
 	}
 
 	// Bulk-fetch GitHub reactions for all tasks in this project, including user_reacted
@@ -1178,11 +1208,15 @@ func (s *Server) HandleGetTaskByNumber(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Load github_issue_number (not in ent schema, raw SQL)
+	// Load github_issue_number and github_repo (not in ent schema, raw SQL)
 	var ghIssueNum sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT github_issue_number FROM tasks WHERE id = $1`, taskEntity.ID).Scan(&ghIssueNum); err == nil {
+	var ghRepo sql.NullString
+	if err := s.db.QueryRowContext(ctx, `SELECT github_issue_number, github_repo FROM tasks WHERE id = $1`, taskEntity.ID).Scan(&ghIssueNum, &ghRepo); err == nil {
 		if ghIssueNum.Valid {
 			t.GithubIssueNumber = &ghIssueNum.Int64
+		}
+		if ghRepo.Valid && ghRepo.String != "" {
+			t.GithubRepo = ghRepo.String
 		}
 	}
 
