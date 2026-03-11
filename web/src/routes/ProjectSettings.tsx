@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../state/AuthContext'
 import Card from '../components/ui/Card'
@@ -6,7 +6,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
-import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubPreviewResponse, type GitHubUserMatch, type GitHubRepo, type GitHubStatusMatch, type GitHubProgressEvent, type GitHubMilestone, type GitHubLabel } from '../lib/api'
+import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubRepo, type GitHubProgressEvent } from '../lib/api'
 
 interface ProjectMember {
   id: number
@@ -42,215 +42,6 @@ interface GitHubSettings {
   github_sync_day: number
 }
 
-// ── GitHub-style filter bar ───────────────────────────────────────────────────
-type FilterCategory = 'milestone' | 'assignee' | 'label' | 'state'
-
-interface GitHubFilterBarProps {
-  milestones: GitHubMilestone[]
-  assignees: GitHubUserMatch[]
-  labels: GitHubLabel[]
-  filterMilestone: number | undefined
-  filterAssignee: string
-  filterLabels: string[]
-  filterState: 'all' | 'open' | 'closed'
-  onChange: (patch: {
-    milestone?: number | undefined
-    assignee?: string
-    labels?: string[]
-    state?: 'all' | 'open' | 'closed'
-  }) => void
-}
-
-function GitHubFilterBar({
-  milestones, assignees, labels,
-  filterMilestone, filterAssignee, filterLabels, filterState,
-  onChange,
-}: GitHubFilterBarProps) {
-  const [open, setOpen] = useState(false)
-  const [category, setCategory] = useState<FilterCategory | null>(null)
-  const [search, setSearch] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false); setCategory(null); setSearch('')
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const CATEGORIES: { id: FilterCategory; label: string; icon: React.ReactNode }[] = [
-    {
-      id: 'milestone', label: 'Milestone',
-      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3l9 9m0 0l9-9M12 12v9M3 3v6h6" /></svg>,
-    },
-    {
-      id: 'assignee', label: 'Assignee',
-      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
-    },
-    {
-      id: 'label', label: 'Label',
-      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" /></svg>,
-    },
-    {
-      id: 'state', label: 'State',
-      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="9" strokeWidth={1.5} /><path strokeLinecap="round" strokeWidth={1.5} d="M12 8v4m0 4h.01" /></svg>,
-    },
-  ]
-
-  // Active filter chips
-  const chips: { key: FilterCategory; label: string }[] = []
-  if (filterMilestone) chips.push({ key: 'milestone', label: `milestone:"${milestones.find(m => m.number === filterMilestone)?.title ?? filterMilestone}"` })
-  if (filterAssignee) chips.push({ key: 'assignee', label: filterAssignee === 'none' ? 'no assignee' : `assignee:"${filterAssignee}"` })
-  if (filterLabels.length > 0) chips.push({ key: 'label', label: `label:"${filterLabels[0]}"` })
-  if (filterState !== 'all') chips.push({ key: 'state', label: `is:${filterState}` })
-
-  const removeChip = (key: FilterCategory) => {
-    if (key === 'milestone') onChange({ milestone: undefined })
-    if (key === 'assignee') onChange({ assignee: '' })
-    if (key === 'label') onChange({ labels: [] })
-    if (key === 'state') onChange({ state: 'all' })
-  }
-
-  const selectOption = (cat: FilterCategory, value: string) => {
-    if (cat === 'milestone') onChange({ milestone: value ? Number(value) : undefined })
-    if (cat === 'assignee') onChange({ assignee: value })
-    if (cat === 'label') onChange({ labels: value ? [value] : [] })
-    if (cat === 'state') onChange({ state: value as 'all' | 'open' | 'closed' })
-    setOpen(false); setCategory(null); setSearch('')
-  }
-
-  const q = search.toLowerCase()
-  let options: { value: string; label: string; sub?: string; color?: string }[] = []
-  if (category === 'milestone') {
-    options = milestones
-      .filter(m => !q || m.title.toLowerCase().includes(q))
-      .map(m => ({ value: String(m.number), label: m.title, sub: m.state === 'closed' ? 'closed' : undefined }))
-  } else if (category === 'assignee') {
-    const base = [{ value: 'none', label: 'No assignee' }]
-    const users = assignees
-      .filter(u => !q || u.login.toLowerCase().includes(q) || (u.name ?? '').toLowerCase().includes(q))
-      .map(u => ({ value: u.login, label: u.login, sub: u.name || undefined }))
-    options = [...base, ...users]
-  } else if (category === 'label') {
-    options = labels
-      .filter(l => !q || l.name.toLowerCase().includes(q))
-      .map(l => ({ value: l.name, label: l.name, color: l.color ? '#' + l.color : undefined }))
-  } else if (category === 'state') {
-    options = [
-      { value: 'open', label: 'Open issues' },
-      { value: 'closed', label: 'Closed issues' },
-    ]
-  }
-
-  const activeValue = (cat: FilterCategory) => {
-    if (cat === 'milestone') return filterMilestone ? milestones.find(m => m.number === filterMilestone)?.title : undefined
-    if (cat === 'assignee') return filterAssignee || undefined
-    if (cat === 'label') return filterLabels[0]
-    if (cat === 'state') return filterState !== 'all' ? filterState : undefined
-  }
-
-  return (
-    <div ref={ref} className="relative">
-      {/* Bar */}
-      <button
-        type="button"
-        onClick={() => { setOpen(v => !v); setCategory(null); setSearch('') }}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-[#0d1117] border border-[#30363d] rounded-lg text-left hover:border-[#484f58] transition-colors focus:outline-none focus:border-primary-500"
-      >
-        <svg className="w-4 h-4 text-[#8b949e] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <div className="flex flex-wrap gap-1.5 flex-1 min-h-[20px]">
-          {chips.map(c => (
-            <span key={c.key} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#1f6feb]/20 border border-[#1f6feb]/40 text-[#79c0ff] rounded text-xs font-mono whitespace-nowrap">
-              {c.label}
-              <span
-                role="button"
-                onClick={e => { e.stopPropagation(); removeChip(c.key) }}
-                className="ml-0.5 text-[#8b949e] hover:text-white cursor-pointer leading-none"
-              >×</span>
-            </span>
-          ))}
-          {chips.length === 0 && <span className="text-sm text-[#8b949e]">Filter issues to import…</span>}
-        </div>
-      </button>
-
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-[#161b22] border border-[#30363d] rounded-lg shadow-2xl z-50 overflow-hidden text-sm">
-          {!category ? (
-            <>
-              <div className="px-3 py-2 text-xs text-[#8b949e] font-semibold border-b border-[#30363d]">Filter by</div>
-              {CATEGORIES.map(cat => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => { setCategory(cat.id); setSearch('') }}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 text-[#c9d1d9] hover:bg-[#1f6feb]/10 transition-colors"
-                >
-                  <span className="text-[#8b949e] w-4">{cat.icon}</span>
-                  <span className="flex-1 text-left">{cat.label}</span>
-                  {activeValue(cat.id) && (
-                    <span className="text-xs text-[#79c0ff] font-mono truncate max-w-[120px]">{activeValue(cat.id)}</span>
-                  )}
-                  <svg className="w-3 h-3 text-[#8b949e]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                </button>
-              ))}
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-[#30363d]">
-                <button type="button" onClick={() => { setCategory(null); setSearch('') }} className="text-[#8b949e] hover:text-[#c9d1d9] transition-colors">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-                </button>
-                <span className="text-xs text-[#8b949e] font-semibold uppercase tracking-wide">Filter by {category}</span>
-              </div>
-              {category !== 'state' && (
-                <div className="px-3 py-2 border-b border-[#30363d]">
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder={`Search ${category}s…`}
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    className="w-full text-sm bg-transparent text-[#c9d1d9] placeholder-[#8b949e] outline-none"
-                  />
-                </div>
-              )}
-              <div className="max-h-52 overflow-y-auto">
-                {options.length === 0 ? (
-                  <div className="px-3 py-3 text-[#8b949e]">No results</div>
-                ) : options.map(opt => {
-                  const isActive =
-                    (category === 'milestone' && filterMilestone === Number(opt.value)) ||
-                    (category === 'assignee' && filterAssignee === opt.value) ||
-                    (category === 'label' && filterLabels.includes(opt.value)) ||
-                    (category === 'state' && filterState === opt.value)
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => selectOption(category, opt.value)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-[#1f6feb]/10 transition-colors ${isActive ? 'text-[#79c0ff]' : 'text-[#c9d1d9]'}`}
-                    >
-                      <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 transition-colors ${isActive ? 'bg-[#1f6feb] border-[#1f6feb]' : 'border-[#484f58]'}`} />
-                      {opt.color && <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: opt.color.startsWith('#') ? opt.color : '#' + opt.color }} />}
-                      <span className="flex-1 text-left">{opt.label}</span>
-                      {opt.sub && <span className="text-xs text-[#8b949e]">{opt.sub}</span>}
-                    </button>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ProjectSettingsProps {
@@ -308,11 +99,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   const [selectedRepoFullName, setSelectedRepoFullName] = useState('')
   const [repoSearchQuery, setRepoSearchQuery] = useState('')
 
-  // GitHub import state
-  const [githubPreview, setGithubPreview] = useState<GitHubPreviewResponse | null>(null)
-  const [isPreviewing, setIsPreviewing] = useState(false)
-  const [previewProgress, setPreviewProgress] = useState<GitHubProgressEvent | null>(null)
-  const [isPulling, setIsPulling] = useState(false)
+  // GitHub sync state
   const [isSyncing, setIsSyncing] = useState(false)
   const [isPushingAll, setIsPushingAll] = useState(false)
   const [pushAllProgress, setPushAllProgress] = useState<GitHubProgressEvent | null>(null)
@@ -324,15 +111,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   const [isSavingMappings, setIsSavingMappings] = useState(false)
   const [mappingsSaved, setMappingsSaved] = useState(false)
   const [syncStateFilter, setSyncStateFilter] = useState<'open' | 'closed' | 'all'>('open')
-  const [pullSprints, setPullSprints] = useState(true)
-  const [pullTags, setPullTags] = useState(true)
-  const [pullTasks, setPullTasks] = useState(true)
-  const [pullComments, setPullComments] = useState(true)
-  // Import filters
-  const [filterMilestone, setFilterMilestone] = useState<number | undefined>(undefined)
-  const [filterAssignee, setFilterAssignee] = useState('')
-  const [filterLabels, setFilterLabels] = useState<string[]>([])
-  const [filterState, setFilterState] = useState<'all' | 'open' | 'closed'>('all')
+  const [isDiscovering, setIsDiscovering] = useState(false)
 
   // Storage usage state
   const [storageUsage, setStorageUsage] = useState<{ user_id: number; user_name: string; file_count: number; total_size: number }[]>([])
@@ -383,30 +162,6 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
       })
       .catch(() => { /* no saved mappings yet */ })
   }, [projectId])
-
-  // Restore saved import filters for this project (filters stay in localStorage — they're UI state)
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(`taskai_gh_filter_${projectId}`)
-      if (saved) {
-        const f = JSON.parse(saved)
-        if (f.milestone !== undefined) setFilterMilestone(f.milestone)
-        if (f.assignee !== undefined) setFilterAssignee(f.assignee)
-        if (f.labels !== undefined) setFilterLabels(f.labels)
-        if (f.state !== undefined) setFilterState(f.state)
-      }
-    } catch { /* ignore */ }
-  }, [projectId])
-
-  // Persist import filters whenever they change
-  useEffect(() => {
-    localStorage.setItem(`taskai_gh_filter_${projectId}`, JSON.stringify({
-      milestone: filterMilestone,
-      assignee: filterAssignee,
-      labels: filterLabels,
-      state: filterState,
-    }))
-  }, [projectId, filterMilestone, filterAssignee, filterLabels, filterState])
 
   const loadProject = async () => {
     try {
@@ -527,74 +282,20 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     }
   }
 
-  const handleFetchPreview = async () => {
+  const handleDiscoverMappings = async () => {
     setImportError('')
-    setImportSuccess('')
-    setIsPreviewing(true)
-    setPreviewProgress(null)
+    setIsDiscovering(true)
     try {
-      const preview = await apiClient.githubPreview(projectId, undefined, (evt) => setPreviewProgress(evt))
-      setGithubPreview(preview)
-      // Initialize user assignments from auto-matched users
-      const assignments: Record<string, number> = {}
-      for (const u of preview.github_users) {
-        assignments[u.login] = u.matched_user_id ?? 0
-      }
-      setUserAssignments(assignments)
-      // Initialize status assignments from auto-matched statuses,
-      // then overlay any previously saved DB mappings (DB values take priority)
-      const statusInit: Record<string, number> = {}
-      for (const s of (preview.statuses ?? [])) {
-        statusInit[s.key] = s.matched_lane_id ?? 0
-      }
-      // Merge saved DB mappings on top
-      Object.assign(statusInit, statusAssignments)
-      setStatusAssignments(statusInit)
+      const result = await apiClient.githubDiscoverMappings(projectId)
+      setImportSuccess(`Discovered ${result.discovered_statuses} statuses and ${result.discovered_users} users (${result.total_statuses} total statuses, ${result.total_users} total users)`)
+      // Reload mappings from DB
+      const { status_mappings, user_mappings } = await apiClient.githubGetMappings(projectId)
+      if (Object.keys(status_mappings).length > 0) setStatusAssignments(status_mappings)
+      if (Object.keys(user_mappings).length > 0) setUserAssignments(user_mappings)
     } catch (error: unknown) {
-      setImportError(error instanceof Error ? error.message : 'Failed to fetch GitHub preview')
+      setImportError(error instanceof Error ? error.message : 'Failed to discover mappings')
     } finally {
-      setIsPreviewing(false)
-      setPreviewProgress(null)
-    }
-  }
-
-  const handleImportFromGitHub = async () => {
-    setImportError('')
-    setImportSuccess('')
-    setImportProgress(null)
-    setIsPulling(true)
-    try {
-      const filter = (filterMilestone || filterAssignee || filterLabels.length || filterState !== 'all')
-        ? {
-            milestone_number: filterMilestone,
-            assignee: filterAssignee || undefined,
-            labels: filterLabels.length ? filterLabels : undefined,
-            state: filterState !== 'all' ? filterState : undefined,
-          }
-        : undefined
-      const result = await apiClient.githubPull(
-        projectId,
-        {
-          pull_sprints: pullSprints,
-          pull_tags: pullTags,
-          pull_tasks: pullTasks,
-          pull_comments: pullComments,
-          user_assignments: userAssignments,
-          status_assignments: statusAssignments,
-          filter,
-        },
-        (evt) => setImportProgress(evt)
-      )
-      const parts = [`${result.created_sprints} sprints`, `${result.created_tags} tags`, `${result.created_tasks} tasks (${result.skipped_tasks} skipped)`]
-      if (result.created_comments > 0) parts.push(`${result.created_comments} comments`)
-      setImportSuccess(`Imported: ${parts.join(', ')}`)
-      setImportProgress(null)
-      loadGitHubSettings()
-    } catch (error: unknown) {
-      setImportError(error instanceof Error ? error.message : 'Import failed')
-      setImportProgress(null)
-    } finally {
-      setIsPulling(false)
+      setIsDiscovering(false)
     }
   }
 
@@ -1659,12 +1360,12 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                 </form>
               )}
 
-              {/* Import Section — only owners and admins can import/sync */}
+              {/* GitHub Sync Section — owners/admins only */}
               {isOwnerOrAdmin && githubSettings.github_owner && githubSettings.github_repo_name && (
                 <div className="mt-8 pt-6 border-t border-dark-border-subtle">
-                  <h3 className="text-lg font-semibold text-dark-text-primary mb-1">Import from GitHub</h3>
+                  <h3 className="text-lg font-semibold text-dark-text-primary mb-1">GitHub Sync</h3>
                   <p className="text-sm text-dark-text-secondary mb-4">
-                    Pull milestones → sprints, labels → tags, and issues → tasks into this project.
+                    Sync milestones, labels, issues, and comments between GitHub and TaskAI.
                   </p>
 
                   {importSuccess && (
@@ -1680,321 +1381,125 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
 
                   {importError && <FormError message={importError} className="mb-4" />}
 
-                  {!githubPreview ? (
-                    <div className="space-y-2">
-                      <Button onClick={handleFetchPreview} disabled={isPreviewing} variant="secondary">
-                        {isPreviewing ? 'Fetching...' : 'Fetch Preview'}
-                      </Button>
-                      {isPreviewing && (
-                        <div className="space-y-1">
-                          <div className="text-xs text-dark-text-secondary">
-                            {previewProgress?.message ?? 'Connecting...'}
-                          </div>
-                          <div className="w-full bg-dark-bg-secondary rounded-full h-1 overflow-hidden">
-                            <div className="h-1 bg-blue-500 rounded-full animate-pulse w-full" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {/* Counts */}
-                      <div className="flex flex-wrap gap-3">
-                        <div className="px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg text-sm">
-                          <span className="font-semibold text-dark-text-primary">{githubPreview.milestone_count}</span>
-                          <span className="text-dark-text-secondary ml-1">milestones</span>
-                        </div>
-                        <div className="px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg text-sm">
-                          <span className="font-semibold text-dark-text-primary">{githubPreview.label_count}</span>
-                          <span className="text-dark-text-secondary ml-1">labels</span>
-                        </div>
-                        <div className="px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg text-sm">
-                          <span className="font-semibold text-dark-text-primary">{githubPreview.issue_count}</span>
-                          <span className="text-dark-text-secondary ml-1">issues</span>
-                        </div>
-                        <button
-                          onClick={() => { setGithubPreview(null); setImportError(''); setImportSuccess('') }}
-                          className="px-3 py-2 text-xs text-dark-text-tertiary hover:text-dark-text-secondary border border-dark-border-subtle rounded-lg transition-colors"
-                        >
-                          Refresh
-                        </button>
+                  {/* Section A: Mappings */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-dark-text-primary">Sync Mappings</h4>
+                        <p className="text-xs text-dark-text-tertiary mt-0.5">Map GitHub statuses and users to TaskAI swim lanes and members</p>
                       </div>
-
-                      {/* User mapping */}
-                      {githubPreview.github_users.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-medium text-dark-text-primary mb-2">Map GitHub users to TaskAI members</h4>
-                          <div className="space-y-2">
-                            {githubPreview.github_users.map((gu: GitHubUserMatch) => (
-                              <div key={gu.login} className="flex items-center gap-3 p-3 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
-                                <div className="w-7 h-7 bg-gray-700 rounded-full flex items-center justify-center text-xs font-medium text-gray-300 flex-shrink-0">
-                                  {gu.login.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <span className="text-sm font-medium text-dark-text-primary">{gu.login}</span>
-                                  {gu.name && <span className="text-xs text-dark-text-tertiary ml-1">({gu.name})</span>}
-                                </div>
-                                <select
-                                  value={userAssignments[gu.login] ?? 0}
-                                  onChange={(e) => setUserAssignments(prev => ({ ...prev, [gu.login]: Number(e.target.value) }))}
-                                  className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                                >
-                                  <option value={0}>Unassigned</option>
-                                  {members.map(m => (
-                                    <option key={m.user_id} value={m.user_id}>
-                                      {m.name || m.email}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Unified status → swim lane mapping */}
-                      {(githubPreview.statuses ?? []).length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-medium text-dark-text-primary mb-2">Map GitHub statuses to swim lanes</h4>
-                          <div className="space-y-2">
-                            {(githubPreview.statuses ?? []).map((st: GitHubStatusMatch) => (
-                              <div key={st.key} className="flex items-center gap-3 p-3 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
-                                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                  st.source === 'project_column' ? 'bg-purple-400' :
-                                  st.source === 'label' ? 'bg-yellow-400' :
-                                  st.key === 'open' ? 'bg-green-400' : 'bg-gray-400'
-                                }`} />
-                                <div className="flex-1 min-w-0">
-                                  <span className="text-sm font-medium text-dark-text-primary">{st.label}</span>
-                                  {st.source === 'project_column' && (
-                                    <span className="ml-2 text-xs text-dark-text-tertiary">Projects V2</span>
-                                  )}
-                                  {st.source === 'label' && (
-                                    <span className="ml-2 text-xs text-dark-text-tertiary">label</span>
-                                  )}
-                                  {st.issue_count > 0 && (
-                                    <span className="ml-2 text-xs text-dark-text-tertiary">{st.issue_count} issues</span>
-                                  )}
-                                </div>
-                                <select
-                                  value={statusAssignments[st.key] ?? 0}
-                                  onChange={(e) => setStatusAssignments(prev => ({ ...prev, [st.key]: Number(e.target.value) }))}
-                                  className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                                >
-                                  <option value={0}>Default (by category)</option>
-                                  {swimLanes.map(l => (
-                                    <option key={l.id} value={l.id}>{l.name}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Save mappings */}
-                      {(githubPreview.github_users.length > 0 || (githubPreview.statuses ?? []).length > 0) && (
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={handleSaveMappings}
-                            disabled={isSavingMappings}
-                            className="px-3 py-1.5 text-xs font-medium bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white rounded-lg transition-colors"
-                          >
-                            {isSavingMappings ? 'Saving...' : 'Save Mappings'}
-                          </button>
-                          {mappingsSaved && (
-                            <span className="text-xs text-success-400">Mappings saved — will be used for future syncs</span>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Filters */}
-                      <GitHubFilterBar
-                        milestones={githubPreview.milestones ?? []}
-                        assignees={githubPreview.github_users ?? []}
-                        labels={githubPreview.labels ?? []}
-                        filterMilestone={filterMilestone}
-                        filterAssignee={filterAssignee}
-                        filterLabels={filterLabels}
-                        filterState={filterState}
-                        onChange={patch => {
-                          if ('milestone' in patch) setFilterMilestone(patch.milestone)
-                          if ('assignee' in patch) setFilterAssignee(patch.assignee ?? '')
-                          if ('labels' in patch) setFilterLabels(patch.labels ?? [])
-                          if ('state' in patch) setFilterState(patch.state ?? 'all')
-                        }}
-                      />
-
-                      {/* Options */}
-                      <div className="flex flex-wrap gap-4">
-                        <label className="flex items-center gap-2 text-sm text-dark-text-primary cursor-pointer">
-                          <input type="checkbox" checked={pullSprints} onChange={e => setPullSprints(e.target.checked)}
-                            className="w-4 h-4 text-primary-600 border-dark-border-subtle rounded focus:ring-primary-500" />
-                          Import Sprints (milestones)
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-dark-text-primary cursor-pointer">
-                          <input type="checkbox" checked={pullTags} onChange={e => setPullTags(e.target.checked)}
-                            className="w-4 h-4 text-primary-600 border-dark-border-subtle rounded focus:ring-primary-500" />
-                          Import Tags (labels)
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-dark-text-primary cursor-pointer">
-                          <input type="checkbox" checked={pullTasks} onChange={e => setPullTasks(e.target.checked)}
-                            className="w-4 h-4 text-primary-600 border-dark-border-subtle rounded focus:ring-primary-500" />
-                          Import Tasks (issues)
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-dark-text-primary cursor-pointer">
-                          <input type="checkbox" checked={pullComments} onChange={e => setPullComments(e.target.checked)}
-                            className="w-4 h-4 text-primary-600 border-dark-border-subtle rounded focus:ring-primary-500" />
-                          Import Comments
-                        </label>
-                      </div>
-
-                      {/* Progress indicator */}
-                      {importProgress && (
-                        <div className="p-3 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
-                          <div className="flex items-center justify-between text-sm mb-1.5">
-                            <span className="text-dark-text-primary font-medium">{importProgress.message}</span>
-                            {importProgress.total > 0 && (
-                              <span className="text-dark-text-tertiary text-xs">{importProgress.current}/{importProgress.total}</span>
-                            )}
-                          </div>
-                          {importProgress.total > 0 && (
-                            <div className="w-full bg-dark-bg-primary rounded-full h-1.5">
-                              <div
-                                className="bg-primary-500 h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
-
                       <div className="flex items-center gap-3">
-                        <Button onClick={handleImportFromGitHub} disabled={isPulling || (!pullSprints && !pullTags && !pullTasks)}>
-                          {isPulling ? 'Importing...' : 'Import from GitHub'}
+                        <Button onClick={handleDiscoverMappings} disabled={isDiscovering} variant="secondary" size="sm">
+                          {isDiscovering ? 'Discovering...' : 'Discover Mappings'}
                         </Button>
+                        <button
+                          onClick={handleSaveMappings}
+                          disabled={isSavingMappings}
+                          className="px-3 py-1.5 text-xs font-medium bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+                        >
+                          {isSavingMappings ? 'Saving...' : 'Save Mappings'}
+                        </button>
+                        {mappingsSaved && (
+                          <span className="text-xs text-success-400">Saved!</span>
+                        )}
                       </div>
                     </div>
-                  )}
-
-                  {/* Persistent Sync Mappings — visible even without Preview */}
-                  {!githubPreview && (Object.keys(statusAssignments).length > 0 || Object.keys(userAssignments).length > 0) && (
-                    <div className="mt-4 pt-4 border-t border-dark-border-subtle space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="text-sm font-medium text-dark-text-primary">Sync Mappings</h4>
-                          <p className="text-xs text-dark-text-tertiary mt-0.5">Saved mappings used when syncing from GitHub</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={handleSaveMappings}
-                            disabled={isSavingMappings}
-                            className="px-3 py-1.5 text-xs font-medium bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white rounded-lg transition-colors"
-                          >
-                            {isSavingMappings ? 'Saving...' : 'Save Mappings'}
-                          </button>
-                          {mappingsSaved && (
-                            <span className="text-xs text-success-400">Saved!</span>
-                          )}
+                    {Object.keys(statusAssignments).length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium text-dark-text-secondary uppercase tracking-wide mb-2">GitHub Status → Swim Lane</h5>
+                        <div className="space-y-2">
+                          {Object.entries(statusAssignments).map(([key, laneId]) => (
+                            <div key={key} className="flex items-center gap-3 p-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                              <span className="flex-1 text-sm text-dark-text-primary font-mono">{key}</span>
+                              <select
+                                value={laneId ?? 0}
+                                onChange={(e) => setStatusAssignments(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                                className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                              >
+                                <option value={0}>Default (by category)</option>
+                                {swimLanes.map(l => (
+                                  <option key={l.id} value={l.id}>{l.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                      {Object.keys(statusAssignments).length > 0 && (
-                        <div>
-                          <h5 className="text-xs font-medium text-dark-text-secondary uppercase tracking-wide mb-2">GitHub Status → Swim Lane</h5>
-                          <div className="space-y-2">
-                            {Object.entries(statusAssignments).map(([key, laneId]) => (
-                              <div key={key} className="flex items-center gap-3 p-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
-                                <span className="flex-1 text-sm text-dark-text-primary font-mono">{key}</span>
-                                <select
-                                  value={laneId ?? 0}
-                                  onChange={(e) => setStatusAssignments(prev => ({ ...prev, [key]: Number(e.target.value) }))}
-                                  className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                                >
-                                  <option value={0}>Default (by category)</option>
-                                  {swimLanes.map(l => (
-                                    <option key={l.id} value={l.id}>{l.name}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            ))}
-                          </div>
+                    )}
+                    {Object.keys(userAssignments).length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium text-dark-text-secondary uppercase tracking-wide mb-2">GitHub User → TaskAI User</h5>
+                        <div className="space-y-2">
+                          {Object.entries(userAssignments).map(([login, userId]) => (
+                            <div key={login} className="flex items-center gap-3 p-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                              <span className="flex-1 text-sm text-dark-text-primary font-mono">@{login}</span>
+                              <select
+                                value={userId ?? 0}
+                                onChange={(e) => setUserAssignments(prev => ({ ...prev, [login]: Number(e.target.value) }))}
+                                className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                              >
+                                <option value={0}>Unassigned</option>
+                                {members.map(u => (
+                                  <option key={u.user_id} value={u.user_id}>{u.name || u.email}</option>
+                                ))}
+                              </select>
+                            </div>
+                          ))}
                         </div>
-                      )}
-                      {Object.keys(userAssignments).length > 0 && (
-                        <div>
-                          <h5 className="text-xs font-medium text-dark-text-secondary uppercase tracking-wide mb-2">GitHub User → TaskAI User</h5>
-                          <div className="space-y-2">
-                            {Object.entries(userAssignments).map(([login, userId]) => (
-                              <div key={login} className="flex items-center gap-3 p-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
-                                <span className="flex-1 text-sm text-dark-text-primary font-mono">@{login}</span>
-                                <select
-                                  value={userId ?? 0}
-                                  onChange={(e) => setUserAssignments(prev => ({ ...prev, [login]: Number(e.target.value) }))}
-                                  className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                                >
-                                  <option value={0}>Unassigned</option>
-                                  {members.map(u => (
-                                    <option key={u.user_id} value={u.user_id}>{u.name || u.email}</option>
-                                  ))}
-                                </select>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+                  </div>
 
-                  {/* Sync Now (shown after first sync, owners/admins only) */}
-                  {githubSettings.github_last_sync && isOwnerOrAdmin && (
-                    <div className="mt-4 pt-4 border-t border-dark-border-subtle space-y-3">
-                      <div className="flex flex-wrap items-center gap-3">
+                  {/* Section B: Sync Actions */}
+                  <div className="mt-4 pt-4 border-t border-dark-border-subtle space-y-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      {githubSettings.github_last_sync && (
                         <span className="text-sm text-dark-text-secondary">
                           Last synced: {new Date(githubSettings.github_last_sync).toLocaleString()}
                         </span>
-                        <div className="flex items-center gap-2 ml-auto">
-                          <label className="text-xs text-dark-text-tertiary">Sync:</label>
-                          <select
-                            value={syncStateFilter}
-                            onChange={e => setSyncStateFilter(e.target.value as 'open' | 'closed' | 'all')}
-                            disabled={isSyncing}
-                            className="text-xs bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                          >
-                            <option value="open">Open issues only</option>
-                            <option value="all">All issues</option>
-                            <option value="closed">Closed issues only</option>
-                          </select>
-                          <Button onClick={handleSyncNow} disabled={isSyncing || isForceFullSyncing} variant="secondary" size="sm">
-                            {isSyncing ? 'Syncing...' : 'Sync Now'}
-                          </Button>
-                          <Button onClick={handleForceFullSync} disabled={isSyncing || isForceFullSyncing} variant="danger" size="sm" title="Delete all GitHub-imported tasks and re-import from scratch">
-                            {isForceFullSyncing ? 'Rebuilding...' : 'Force Full Sync'}
-                          </Button>
-                        </div>
+                      )}
+                      <div className="flex items-center gap-2 ml-auto">
+                        <label className="text-xs text-dark-text-tertiary">Sync:</label>
+                        <select
+                          value={syncStateFilter}
+                          onChange={e => setSyncStateFilter(e.target.value as 'open' | 'closed' | 'all')}
+                          disabled={isSyncing}
+                          className="text-xs bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        >
+                          <option value="open">Open issues only</option>
+                          <option value="all">All issues</option>
+                          <option value="closed">Closed issues only</option>
+                        </select>
+                        <Button onClick={handleSyncNow} disabled={isSyncing || isForceFullSyncing} variant="secondary" size="sm">
+                          {isSyncing ? 'Syncing...' : 'Sync Now'}
+                        </Button>
+                        <Button onClick={handleForceFullSync} disabled={isSyncing || isForceFullSyncing} variant="danger" size="sm" title="Delete all GitHub-imported tasks and re-import from scratch">
+                          {isForceFullSyncing ? 'Rebuilding...' : 'Full Sync'}
+                        </Button>
                       </div>
-                      {(isSyncing || isForceFullSyncing) && importProgress && (
-                        <div className="p-3 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
-                          <div className="flex items-center justify-between text-sm mb-1.5">
-                            <span className="text-dark-text-primary font-medium">{importProgress.message}</span>
-                            {importProgress.total > 0 && (
-                              <span className="text-dark-text-tertiary text-xs">{importProgress.current}/{importProgress.total}</span>
-                            )}
-                          </div>
+                    </div>
+                    {(isSyncing || isForceFullSyncing) && importProgress && (
+                      <div className="p-3 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
+                        <div className="flex items-center justify-between text-sm mb-1.5">
+                          <span className="text-dark-text-primary font-medium">{importProgress.message}</span>
                           {importProgress.total > 0 && (
-                            <div className="w-full bg-dark-bg-primary rounded-full h-1.5">
-                              <div
-                                className="bg-primary-500 h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }}
-                              />
-                            </div>
+                            <span className="text-dark-text-tertiary text-xs">{importProgress.current}/{importProgress.total}</span>
                           )}
                         </div>
-                      )}
-                    </div>
-                  )}
+                        {importProgress.total > 0 && (
+                          <div className="w-full bg-dark-bg-primary rounded-full h-1.5">
+                            <div
+                              className="bg-primary-500 h-1.5 rounded-full transition-all duration-300"
+                              style={{ width: `${Math.round((importProgress.current / importProgress.total) * 100)}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Push All New Issues to GitHub */}
-                  {githubSettings.github_token_set && (isOwnerOrAdmin) && (
+                  {githubSettings.github_token_set && (
                     <div className="mt-4 pt-4 border-t border-dark-border-subtle space-y-3">
                       <div>
                         <h4 className="text-sm font-medium text-dark-text-primary mb-1">Push New Issues to GitHub</h4>

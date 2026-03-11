@@ -183,9 +183,7 @@ func main() {
 				return
 			}
 			// SSE endpoints and long-running operations — no fixed timeout
-			if strings.HasSuffix(r.URL.Path, "/github/preview") ||
-				strings.HasSuffix(r.URL.Path, "/github/pull") ||
-				strings.HasSuffix(r.URL.Path, "/github/sync") ||
+			if strings.HasSuffix(r.URL.Path, "/github/sync") ||
 				strings.HasSuffix(r.URL.Path, "/github/push-all") ||
 				strings.HasSuffix(r.URL.Path, "/admin/backup/trigger") ||
 			strings.HasSuffix(r.URL.Path, "/admin/backup/copy-from-env") ||
@@ -520,9 +518,8 @@ func main() {
 			r.Delete("/projects/{id}/members/{memberId}", server.HandleRemoveProjectMember)
 			r.Get("/projects/{id}/github", server.HandleGetProjectGitHubSettings)
 			r.Patch("/projects/{id}/github", server.HandleUpdateProjectGitHubSettings)
-			r.Post("/projects/{id}/github/preview", server.HandleGitHubPreview)
-			r.Post("/projects/{id}/github/pull", server.HandleGitHubPull)
 			r.Post("/projects/{id}/github/sync", server.HandleGitHubSync)
+			r.Post("/projects/{id}/github/discover-mappings", server.HandleGitHubDiscoverMappings)
 			r.Post("/projects/{id}/github/oauth-init", server.HandleGitHubOAuthInit)
 			r.Get("/projects/{id}/github/repos", server.HandleGitHubListRepos)
 			r.Delete("/projects/{id}/github/token", server.HandleGitHubDisconnect)

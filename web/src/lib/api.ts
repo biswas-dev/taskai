@@ -321,14 +321,11 @@ export interface GitHubLabel {
   color: string
 }
 
-export interface GitHubPreviewResponse {
-  milestone_count: number
-  label_count: number
-  issue_count: number
-  github_users: GitHubUserMatch[]
-  statuses: GitHubStatusMatch[]
-  milestones: GitHubMilestone[]
-  labels: GitHubLabel[]
+export interface GitHubDiscoverMappingsResponse {
+  discovered_statuses: number
+  discovered_users: number
+  total_statuses: number
+  total_users: number
 }
 
 export interface GitHubImportFilter {
@@ -986,16 +983,10 @@ class ApiClient {
     })
   }
 
-  async githubPreview(
-    projectId: number,
-    token?: string,
-    onProgress?: (event: GitHubProgressEvent) => void
-  ): Promise<GitHubPreviewResponse> {
-    return this.streamGitHub<GitHubPreviewResponse>(
-      `/api/projects/${projectId}/github/preview`,
-      { token: token || '' },
-      onProgress ?? (() => {})
-    )
+  async githubDiscoverMappings(projectId: number): Promise<GitHubDiscoverMappingsResponse> {
+    return this.request<GitHubDiscoverMappingsResponse>(`/api/projects/${projectId}/github/discover-mappings`, {
+      method: 'POST',
+    })
   }
 
   // Stream a GitHub SSE endpoint and report progress events.
@@ -1050,18 +1041,6 @@ class ApiClient {
       }
     }
     throw new Error('Stream ended without result')
-  }
-
-  async githubPull(
-    projectId: number,
-    data: GitHubPullRequest,
-    onProgress?: (event: GitHubProgressEvent) => void
-  ): Promise<GitHubPullResponse> {
-    return this.streamGitHub(
-      `/api/projects/${projectId}/github/pull`,
-      data,
-      onProgress ?? (() => {})
-    )
   }
 
   async githubSync(
