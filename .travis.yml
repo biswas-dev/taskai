@@ -1,0 +1,129 @@
+# Travis CI configuration for TaskAI
+# Primary CI/CD pipeline (GitHub Actions kept as backup in .github/workflows-backup/)
+#
+# Required environment variables (set in Travis CI Settings > Environment Variables):
+#   STAGING_SSH_KEY_BASE64 / UAT_SSH_KEY_BASE64 / PRODUCTION_SSH_KEY_BASE64
+#   STAGING_DB_DSN, STAGING_JWT_SECRET, STAGING_LOGIN_GITHUB_CLIENT_ID, etc.
+#   UAT_DB_DSN, UAT_JWT_SECRET, UAT_LOGIN_GITHUB_CLIENT_ID, etc.
+#   PRODUCTION_DB_DSN, PRODUCTION_JWT_SECRET, PRODUCTION_LOGIN_GITHUB_CLIENT_ID, etc.
+#   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+#   SONAR_TOKEN, DD_API_KEY, DD_SITE
+
+language: minimal
+os: linux
+dist: jammy
+
+git:
+  depth: 10
+  submodules: false
+
+env:
+  global:
+    - SONAR_HOST_URL=https://sonar.taskai.cc
+
+stages:
+  - name: test
+    if: type = push OR type = pull_request
+  - name: sonarqube
+    if: branch = main AND type = push
+  - name: deploy-staging
+    if: branch = main AND type = push
+  - name: deploy-uat
+    if: branch = uat AND type = push
+  - name: deploy-production
+    if: branch = production AND type = push
+
+jobs:
+  include:
+    # ── API Tests (Go) ─────────────────────────────────────────────────────
+    - stage: test
+      name: "API Tests (Go)"
+      language: go
+      go: "1.26.1"
+      env:
+        - GOTOOLCHAIN=local
+      cache:
+        directories:
+          - $HOME/go/pkg/mod
+          - $HOME/.cache/go-build
+      before_script:
+        - go version
+        - cd api
+      script:
+        - go vet ./...
+        - go test -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v /e2e)
+        - go tool cover -func=coverage.out | tail -1
+        - sed -i 's|^taskai/|api/|' coverage.out
+      workspaces:
+        create:
+          name: api-coverage
+          paths:
+            - api/coverage.out
+
+    # ── Web Tests + Build (Node) ───────────────────────────────────────────
+    - stage: test
+      name: "Web Tests + Build"
+      language: node_js
+      node_js: "20"
+      cache: npm
+      before_script:
+        - cd web
+        - npm ci
+        - npx rollup --version || npm install @rollup/rollup-linux-x64-gnu
+      script:
+        - npx eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 5
+        - npx tsc --noEmit
+        - npx vitest run --coverage
+        - npx vite build
+      workspaces:
+        create:
+          name: web-coverage
+          paths:
+            - web/coverage/
+
+    # ── SonarQube ──────────────────────────────────────────────────────────
+    - stage: sonarqube
+      name: "SonarQube Analysis"
+      git:
+        depth: false
+        submodules: false
+      workspaces:
+        use:
+          - api-coverage
+          - web-coverage
+      script:
+        - |
+          export SONAR_SCANNER_VERSION=5.0.1.3006
+          curl -sSLo sonar-scanner.zip "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux.zip"
+          unzip -q sonar-scanner.zip
+          export PATH="$PWD/sonar-scanner-${SONAR_SCANNER_VERSION}-linux/bin:$PATH"
+          sonar-scanner \
+            -Dsonar.host.url="$SONAR_HOST_URL" \
+            -Dsonar.token="$SONAR_TOKEN" \
+            -Dsonar.projectVersion="$(git describe --tags --always 2>/dev/null || echo dev)"
+
+    # ── Deploy Staging ─────────────────────────────────────────────────────
+    - stage: deploy-staging
+      name: "Deploy to Staging"
+      script:
+        - bash deployment/scripts/travis-deploy.sh staging
+
+    # ── Deploy UAT ─────────────────────────────────────────────────────────
+    - stage: deploy-uat
+      name: "Deploy to UAT"
+      script:
+        - bash deployment/scripts/travis-deploy.sh uat
+
+    # ── Deploy Production ──────────────────────────────────────────────────
+    - stage: deploy-production
+      name: "Deploy to Production"
+      script:
+        - bash deployment/scripts/travis-deploy.sh production
+
+  allow_failures:
+    - name: "SonarQube Analysis"
+
+notifications:
+  email:
+    on_success: never
+    on_failure: always
