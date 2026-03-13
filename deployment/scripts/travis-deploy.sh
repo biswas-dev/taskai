@@ -1,6 +1,9 @@
 #!/bin/bash
 # Travis CI deployment script for TaskAI
 # Usage: bash deployment/scripts/travis-deploy.sh <environment>
+#
+# Staging: deploys the digests from the build stage
+# UAT/Production: promotes the previous environment's digests, then deploys
 
 set -euo pipefail
 
@@ -25,6 +28,7 @@ case "$ENV" in
     GOOGLE_SECRET_VAR="STAGING_GOOGLE_CLIENT_SECRET"
     DD_PROFILING="true"
     EXTRA_PORTS=""
+    PROMOTE_FROM=""
     ;;
   uat)
     SSH_KEY_VAR="UAT_SSH_KEY_BASE64"
@@ -44,6 +48,7 @@ case "$ENV" in
     GOOGLE_SECRET_VAR="UAT_GOOGLE_CLIENT_SECRET"
     DD_PROFILING="false"
     EXTRA_PORTS="TASKAI_API_PORT=38888 TASKAI_WEB_PORT=33333"
+    PROMOTE_FROM="staging"
     ;;
   production)
     SSH_KEY_VAR="PRODUCTION_SSH_KEY_BASE64"
@@ -63,6 +68,7 @@ case "$ENV" in
     GOOGLE_SECRET_VAR="PRODUCTION_GOOGLE_CLIENT_SECRET"
     DD_PROFILING="true"
     EXTRA_PORTS=""
+    PROMOTE_FROM="uat"
     ;;
   *)
     echo "ERROR: Unknown environment: $ENV"
@@ -84,11 +90,49 @@ GIT_COMMIT=$(git rev-parse HEAD)
 GIT_SHORT=$(git rev-parse --short HEAD)
 BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+# Decode Harbor credentials (base64 avoids Travis $ expansion issues)
+HARBOR_USERNAME=$(echo "$HARBOR_AUTH" | base64 -d | cut -d: -f1)
+HARBOR_PASSWORD=$(echo "$HARBOR_AUTH" | base64 -d | cut -d: -f2)
+
+# Determine image digests
+if [ -n "$PROMOTE_FROM" ]; then
+  echo "=== Promoting taskai images: $PROMOTE_FROM -> $ENV ==="
+  eval $(bash deployment/scripts/harbor-promote.sh biswas "$PROMOTE_FROM" "$ENV" taskai-api taskai-web taskai-mcp taskai-yjs)
+else
+  if [ -f .image-digests.txt ]; then
+    eval $(cat .image-digests.txt)
+  else
+    TASKAI_API_DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
+      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/taskai-api/artifacts?q=tags%3Dstaging-latest" \
+      | jq -r '.[0].digest')
+    TASKAI_WEB_DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
+      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/taskai-web/artifacts?q=tags%3Dstaging-latest" \
+      | jq -r '.[0].digest')
+    TASKAI_MCP_DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
+      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/taskai-mcp/artifacts?q=tags%3Dstaging-latest" \
+      | jq -r '.[0].digest')
+    TASKAI_YJS_DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
+      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/taskai-yjs/artifacts?q=tags%3Dstaging-latest" \
+      | jq -r '.[0].digest')
+  fi
+fi
+
+for d in TASKAI_API_DIGEST TASKAI_WEB_DIGEST TASKAI_MCP_DIGEST TASKAI_YJS_DIGEST; do
+  val="${!d:-}"
+  if [ -z "$val" ] || [ "$val" = "null" ]; then
+    echo "ERROR: Could not determine $d for $ENV deployment"
+    exit 1
+  fi
+done
+
 echo "=== TaskAI Travis CI Deploy ==="
 echo "Environment: $ENV"
 echo "Server:      $SERVER_USER@$SERVER_IP"
 echo "Version:     $VERSION"
-echo "Commit:      $GIT_SHORT"
+echo "API digest:  $TASKAI_API_DIGEST"
+echo "Web digest:  $TASKAI_WEB_DIGEST"
+echo "MCP digest:  $TASKAI_MCP_DIGEST"
+echo "YJS digest:  $TASKAI_YJS_DIGEST"
 echo ""
 
 # SSH setup
@@ -107,12 +151,10 @@ SSH_CMD="ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $SERVER_USER@$SERV
 
 # Determine compose command based on environment
 if [ "$ENV" = "uat" ]; then
-  # UAT: repo is directly in deploy dir, no compose project name
   COMPOSE_CMD="docker compose"
   GIT_DIR="$DEPLOY_DIR"
   COMPOSE_DIR="$DEPLOY_DIR"
 else
-  # Staging/Production: source is in a subdirectory, use compose project name
   COMPOSE_CMD="docker compose -f source/docker-compose.yml -p $COMPOSE_PROJECT"
   GIT_DIR="$DEPLOY_DIR"
   COMPOSE_DIR="$(dirname "$DEPLOY_DIR")"
@@ -166,8 +208,8 @@ $SSH_CMD "bash -s" <<REMOTE_EOF
   # UAT custom ports
   $( [ -n "$EXTRA_PORTS" ] && echo "export $EXTRA_PORTS" || echo "true" )
 
-  # Login to Docker Hub
-  echo '${DOCKERHUB_TOKEN}' | docker login -u '${DOCKERHUB_USERNAME}' --password-stdin
+  # Login to Harbor
+  echo '${HARBOR_PASSWORD}' | docker login harbor.biswas.me -u '${HARBOR_USERNAME}' --password-stdin || true
 
   # Nginx scripts
   chmod +x $GIT_DIR/deployment/scripts/ensure-draw-route.sh 2>/dev/null || true
@@ -181,15 +223,24 @@ $SSH_CMD "bash -s" <<REMOTE_EOF
     sudo $GIT_DIR/deployment/scripts/ensure-mcp-agent-header.sh $MCP_DOMAIN || true
   fi
 
-  # Pull pre-built images from Docker Hub
-  export IMAGE_TAG='$GIT_SHORT'
+  # Image digests for docker-compose overlay
+  export TASKAI_API_DIGEST='$TASKAI_API_DIGEST'
+  export TASKAI_WEB_DIGEST='$TASKAI_WEB_DIGEST'
+  export TASKAI_MCP_DIGEST='$TASKAI_MCP_DIGEST'
+  export TASKAI_YJS_DIGEST='$TASKAI_YJS_DIGEST'
 
   # Build and deploy
   if [ '$ENV' = 'uat' ]; then
     # UAT: simple down/up (shared server, no zero-downtime needed)
     $COMPOSE_CMD down || true
-    docker builder prune -f || true
-    docker image prune -f || true
+
+    # Disk space management
+    DISK_USAGE=\$(df / | tail -1 | awk '{print \$5}' | tr -d '%')
+    if [ "\$DISK_USAGE" -gt 80 ]; then
+      docker builder prune -f --filter "until=48h" || true
+      docker image prune -f || true
+    fi
+
     $COMPOSE_CMD -f docker-compose.yml -f docker-compose.hub.yml pull api web mcp yjs-processor
     $COMPOSE_CMD -f docker-compose.yml -f docker-compose.hub.yml up -d --no-build --force-recreate --remove-orphans
   else

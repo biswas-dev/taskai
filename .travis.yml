@@ -1,12 +1,15 @@
 # Travis CI configuration for TaskAI
 # Primary CI/CD pipeline (GitHub Actions kept as backup in .github/workflows-backup/)
 #
+# Build once on main, promote exact digests through staging -> UAT -> production.
+# Images pushed to Harbor (harbor.biswas.me/biswas/taskai-{api,web,mcp,yjs}).
+#
 # Required environment variables (set in Travis CI Settings > Environment Variables):
 #   STAGING_SSH_KEY_BASE64 / UAT_SSH_KEY_BASE64 / PRODUCTION_SSH_KEY_BASE64
 #   STAGING_DB_DSN, STAGING_JWT_SECRET, STAGING_LOGIN_GITHUB_CLIENT_ID, etc.
 #   UAT_DB_DSN, UAT_JWT_SECRET, UAT_LOGIN_GITHUB_CLIENT_ID, etc.
 #   PRODUCTION_DB_DSN, PRODUCTION_JWT_SECRET, PRODUCTION_LOGIN_GITHUB_CLIENT_ID, etc.
-#   DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+#   HARBOR_AUTH (base64-encoded "username:password")
 #   SONAR_TOKEN, DD_API_KEY, DD_SITE
 
 language: minimal
@@ -27,12 +30,12 @@ stages:
   - name: sonarqube
     if: branch = main AND type = push
   - name: build-images
-    if: branch IN (main, uat, production) AND type = push
+    if: branch = main AND type = push
   - name: deploy-staging
     if: branch = main AND type = push
-  - name: deploy-uat
+  - name: promote-and-deploy-uat
     if: branch = uat AND type = push
-  - name: deploy-production
+  - name: promote-and-deploy-production
     if: branch = production AND type = push
 
 jobs:
@@ -104,29 +107,37 @@ jobs:
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.projectVersion="$(git describe --tags --always 2>/dev/null || echo dev)"
 
-    # ── Build & Push Docker Images ────────────────────────────────────────
+    # ── Build & Push Docker Images (main only) ────────────────────────────
     - stage: build-images
       name: "Build & Push Docker Images"
       services:
         - docker
       script:
         - bash deployment/scripts/travis-build-images.sh
+      workspaces:
+        create:
+          name: taskai-digests
+          paths:
+            - .image-digests.txt
 
-    # ── Deploy Staging ─────────────────────────────────────────────────────
+    # ── Deploy Staging (uses digests from build) ──────────────────────────
     - stage: deploy-staging
       name: "Deploy to Staging"
+      workspaces:
+        use:
+          - taskai-digests
       script:
         - bash deployment/scripts/travis-deploy.sh staging
 
-    # ── Deploy UAT ─────────────────────────────────────────────────────────
-    - stage: deploy-uat
-      name: "Deploy to UAT"
+    # ── Promote & Deploy UAT (no rebuild) ─────────────────────────────────
+    - stage: promote-and-deploy-uat
+      name: "Promote & Deploy to UAT"
       script:
         - bash deployment/scripts/travis-deploy.sh uat
 
-    # ── Deploy Production ──────────────────────────────────────────────────
-    - stage: deploy-production
-      name: "Deploy to Production"
+    # ── Promote & Deploy Production (no rebuild) ──────────────────────────
+    - stage: promote-and-deploy-production
+      name: "Promote & Deploy to Production"
       script:
         - bash deployment/scripts/travis-deploy.sh production
 

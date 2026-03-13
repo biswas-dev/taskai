@@ -1,22 +1,22 @@
-# Docker Hub image overlay for TaskAI
+# Harbor image overlay for TaskAI
 # Usage: docker compose -f docker-compose.yml -f docker-compose.hub.yml pull
 #        docker compose -f docker-compose.yml -f docker-compose.hub.yml up -d --no-build
 #
-# Set IMAGE_TAG to a git short SHA or "latest"
+# Set TASKAI_API_DIGEST, TASKAI_WEB_DIGEST, TASKAI_MCP_DIGEST, TASKAI_YJS_DIGEST
 
 services:
   api:
-    image: anchoo2kewl/taskai-api:${IMAGE_TAG:-latest}
+    image: harbor.biswas.me/biswas/taskai-api@${TASKAI_API_DIGEST}
     build: !reset null
 
   web:
-    image: anchoo2kewl/taskai-web:${IMAGE_TAG:-latest}
+    image: harbor.biswas.me/biswas/taskai-web@${TASKAI_WEB_DIGEST}
     build: !reset null
 
   mcp:
-    image: anchoo2kewl/taskai-mcp:${IMAGE_TAG:-latest}
+    image: harbor.biswas.me/biswas/taskai-mcp@${TASKAI_MCP_DIGEST}
     build: !reset null
 
   yjs-processor:
-    image: anchoo2kewl/taskai-yjs:${IMAGE_TAG:-latest}
+    image: harbor.biswas.me/biswas/taskai-yjs@${TASKAI_YJS_DIGEST}
     build: !reset null

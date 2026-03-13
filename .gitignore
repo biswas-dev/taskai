@@ -66,3 +66,6 @@ deployment/inventory.yml
 # Session logs (may contain secrets)
 .entire/
 f1/
+
+# CI artifacts
+.image-digests.txt
