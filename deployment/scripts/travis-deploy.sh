@@ -95,25 +95,41 @@ HARBOR_USERNAME=$(echo "$HARBOR_AUTH" | base64 -d | cut -d: -f1)
 HARBOR_PASSWORD=$(echo "$HARBOR_AUTH" | base64 -d | cut -d: -f2)
 
 # Determine image digests
+# Staging/UAT use arm64 (staging-latest), production uses amd64 (prod-latest)
 if [ -n "$PROMOTE_FROM" ]; then
   echo "=== Promoting taskai images: $PROMOTE_FROM -> $ENV ==="
-  eval $(bash deployment/scripts/harbor-promote.sh biswas "$PROMOTE_FROM" "$ENV" taskai-api taskai-web taskai-mcp taskai-yjs)
-else
-  if [ -f .image-digests.txt ]; then
-    eval $(cat .image-digests.txt)
+  if [ "$ENV" = "production" ]; then
+    # Production needs amd64 — use prod-latest tag (set during build)
+    LOOKUP_TAG="prod-latest"
   else
-    TASKAI_API_DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
-      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/taskai-api/artifacts?q=tags%3Dstaging-latest" \
+    # UAT needs arm64 — use staging-latest tag
+    LOOKUP_TAG="staging-latest"
+  fi
+  for REPO in taskai-api taskai-web taskai-mcp taskai-yjs; do
+    DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
+      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/$REPO/artifacts?q=tags%3D${LOOKUP_TAG}" \
       | jq -r '.[0].digest')
-    TASKAI_WEB_DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
-      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/taskai-web/artifacts?q=tags%3Dstaging-latest" \
-      | jq -r '.[0].digest')
-    TASKAI_MCP_DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
-      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/taskai-mcp/artifacts?q=tags%3Dstaging-latest" \
-      | jq -r '.[0].digest')
-    TASKAI_YJS_DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
-      "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/taskai-yjs/artifacts?q=tags%3Dstaging-latest" \
-      | jq -r '.[0].digest')
+    VAR_NAME=$(echo "$REPO" | tr '-' '_' | tr '[:lower:]' '[:upper:]')_DIGEST
+    eval "${VAR_NAME}=${DIGEST}"
+    echo "  $REPO: $DIGEST (from $LOOKUP_TAG)"
+  done
+else
+  # Staging deploy — read arm64 digests from build stage
+  if [ -f .image-digests.txt ]; then
+    # Extract arm64 digests and map to standard TASKAI_*_DIGEST vars
+    TASKAI_API_DIGEST=$(grep TASKAI_API_ARM64_DIGEST .image-digests.txt | cut -d= -f2)
+    TASKAI_WEB_DIGEST=$(grep TASKAI_WEB_ARM64_DIGEST .image-digests.txt | cut -d= -f2)
+    TASKAI_MCP_DIGEST=$(grep TASKAI_MCP_ARM64_DIGEST .image-digests.txt | cut -d= -f2)
+    TASKAI_YJS_DIGEST=$(grep TASKAI_YJS_ARM64_DIGEST .image-digests.txt | cut -d= -f2)
+  else
+    # Fallback: look up staging-latest from Harbor
+    for REPO in taskai-api taskai-web taskai-mcp taskai-yjs; do
+      DIGEST=$(curl -sf -u "$HARBOR_USERNAME:$HARBOR_PASSWORD" \
+        "https://harbor.biswas.me/api/v2.0/projects/biswas/repositories/$REPO/artifacts?q=tags%3Dstaging-latest" \
+        | jq -r '.[0].digest')
+      VAR_NAME=$(echo "$REPO" | tr '-' '_' | tr '[:lower:]' '[:upper:]')_DIGEST
+      eval "${VAR_NAME}=${DIGEST}"
+    done
   fi
 fi
 

@@ -15,7 +15,8 @@ COPY api/openapi.yaml /api/openapi.yaml
 COPY web/package*.json ./
 
 # Install dependencies (BUILDPLATFORM finds correct native binaries automatically)
-RUN npm ci --production=false
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --production=false
 
 # Copy web source code
 COPY web/ .
@@ -38,7 +39,8 @@ WORKDIR /docs-build
 COPY docs-site/package*.json ./
 
 # Install dependencies
-RUN npm ci --production=false
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --production=false
 
 # Copy docs source
 COPY docs-site/ .

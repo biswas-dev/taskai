@@ -499,7 +499,20 @@ func (s *Server) HandleUpdateWikiPageContent(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := s.maybeCreateVersion(ctx, pageID, userID, req.Content, req.ManualSave); err != nil {
+	// Set agent_name via raw SQL if present (wiki_pages Ent schema doesn't have this field yet)
+	agentName := GetAgentName(r)
+	if agentName != nil {
+		if _, err := s.db.ExecContext(ctx, `UPDATE wiki_pages SET agent_name = $1 WHERE id = $2`, *agentName, pageID); err != nil {
+			s.logger.Warn("Failed to set agent_name on wiki page", zap.Error(err), zap.Int64("page_id", pageID))
+		}
+	} else {
+		// Clear agent_name when human edits
+		if _, err := s.db.ExecContext(ctx, `UPDATE wiki_pages SET agent_name = NULL WHERE id = $1`, pageID); err != nil {
+			s.logger.Warn("Failed to clear agent_name on wiki page", zap.Error(err), zap.Int64("page_id", pageID))
+		}
+	}
+
+	if err := s.maybeCreateVersion(ctx, pageID, userID, req.Content, req.ManualSave, agentName); err != nil {
 		s.logger.Warn("Failed to create wiki page version",
 			zap.Int64("page_id", pageID),
 			zap.Error(err),
@@ -517,7 +530,7 @@ func (s *Server) HandleUpdateWikiPageContent(w http.ResponseWriter, r *http.Requ
 }
 
 // maybeCreateVersion creates a version snapshot if versioning criteria are met.
-func (s *Server) maybeCreateVersion(ctx context.Context, pageID, userID int64, newContent string, manualSave bool) error {
+func (s *Server) maybeCreateVersion(ctx context.Context, pageID, userID int64, newContent string, manualSave bool, agentName *string) error {
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(newContent)))
 
 	// Fetch last version
@@ -559,14 +572,24 @@ func (s *Server) maybeCreateVersion(ctx context.Context, pageID, userID int64, n
 		versionNum = lastVersion.VersionNumber + 1
 	}
 
-	_, err = s.db.Client.WikiPageVersion.Create().
+	ver, err := s.db.Client.WikiPageVersion.Create().
 		SetWikiPageID(pageID).
 		SetVersionNumber(versionNum).
 		SetContent(newContent).
 		SetContentHash(hash).
 		SetCreatedBy(userID).
 		Save(ctx)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Set agent_name via raw SQL (Ent schema doesn't have this field yet)
+	if agentName != nil {
+		if _, execErr := s.db.ExecContext(ctx, `UPDATE wiki_page_versions SET agent_name = $1 WHERE id = $2`, *agentName, ver.ID); execErr != nil {
+			s.logger.Warn("Failed to set agent_name on wiki version", zap.Error(execErr), zap.Int64("version_id", ver.ID))
+		}
+	}
+	return nil
 }
 
 // isSignificantChange returns true when the diff is >15% of old or >500 chars changed.
@@ -810,7 +833,7 @@ func (s *Server) HandleRestoreWikiPageVersion(w http.ResponseWriter, r *http.Req
 	}
 
 	// Create a new version for the restore action
-	if err := s.maybeCreateVersion(ctx, pageID, userID, version.Content, true); err != nil {
+	if err := s.maybeCreateVersion(ctx, pageID, userID, version.Content, true, nil); err != nil {
 		s.logger.Warn("Failed to create version after restore",
 			zap.Int64("page_id", pageID),
 			zap.Error(err),

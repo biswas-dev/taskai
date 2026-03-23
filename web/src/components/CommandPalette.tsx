@@ -19,6 +19,7 @@ interface Command {
   id: string
   name: string
   description?: string
+  snippet?: string
   icon: string
   action: () => void
   category: 'navigation' | 'actions' | 'tasks' | 'wiki'
@@ -217,9 +218,10 @@ export default function CommandPalette() {
 
     wikiResults.forEach(wiki => {
       commands.push({
-        id: `wiki-${wiki.page_id}-${wiki.snippet.slice(0, 20)}`,
+        id: `wiki-${wiki.page_id}-${wiki.snippet?.slice(0, 20) ?? ''}`,
         name: wiki.page_title,
         description: wiki.project_name + (wiki.headings_path ? ' · ' + wiki.headings_path : ''),
+        snippet: wiki.snippet || undefined,
         icon: '📄',
         category: 'wiki',
         action: () => {
@@ -364,6 +366,11 @@ export default function CommandPalette() {
                                     {command.description && (
                                       <p className={`text-xs truncate ${active ? 'text-dark-text-tertiary' : 'text-dark-text-quaternary'}`}>
                                         {command.description}
+                                      </p>
+                                    )}
+                                    {command.snippet && (
+                                      <p className={`text-xs truncate mt-0.5 ${active ? 'text-dark-text-quaternary' : 'text-dark-text-quaternary/70'}`}>
+                                        {command.snippet}
                                       </p>
                                     )}
                                   </div>

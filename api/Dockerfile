@@ -9,7 +9,8 @@ WORKDIR /build
 
 # Copy go mod files
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Copy source code
 COPY . .
@@ -21,7 +22,9 @@ ARG BUILD_TIME=unknown
 ARG TARGETARCH
 
 # Build static binary — no CGO needed (modernc.org/sqlite is pure Go)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -ldflags="-w -s \
       -X 'taskai/internal/version.Version=${VERSION}' \
       -X 'taskai/internal/version.GitCommit=${GIT_COMMIT}' \

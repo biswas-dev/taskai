@@ -3,7 +3,8 @@ FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npm run build
@@ -18,7 +19,8 @@ RUN addgroup -g 1001 -S taskai && \
     adduser -u 1001 -S taskai -G taskai
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
