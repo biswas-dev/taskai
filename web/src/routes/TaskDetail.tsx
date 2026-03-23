@@ -636,7 +636,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
             </button>
             <button
               onClick={handleDelete}
-              className="p-2 text-dark-text-tertiary hover:text-danger-400 hover:bg-danger-500/10 rounded-lg transition-colors"
+              className="p-2 text-danger-400/60 hover:text-danger-400 hover:bg-danger-500/10 rounded-lg transition-colors"
               title="Delete task"
             >
               <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1169,18 +1169,21 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
               </SidebarField>
 
               {/* Tags */}
-              {projectTags.length > 0 && (
-                <SidebarField label="Tags">
-                  <MultiSelectDropdown
-                    values={(task.tags ?? []).map((t) => String(t.id))}
-                    onChange={(vals) => saveTagIds(vals.map(Number))}
-                    options={projectTags.map((t) => ({ value: String(t.id), label: t.name, color: t.color }))}
-                    title="Select tags"
-                    placeholder="No tags"
-                    filterPlaceholder="Filter tags…"
-                  />
-                </SidebarField>
-              )}
+              <SidebarField label="Tags">
+                <MultiSelectDropdown
+                  values={(task.tags ?? []).map((t) => String(t.id))}
+                  onChange={(vals) => saveTagIds(vals.map(Number))}
+                  options={projectTags.map((t) => ({ value: String(t.id), label: t.name, color: t.color }))}
+                  title="Select tags"
+                  placeholder="No tags"
+                  filterPlaceholder="Filter or create tags…"
+                  onCreate={async (name: string) => {
+                    const tag = await apiClient.createTag(Number(projectId), { name, color: '#3B82F6' })
+                    setProjectTags((prev) => [...prev, tag])
+                    return String(tag.id)
+                  }}
+                />
+              </SidebarField>
             </div>
 
             {/* GitHub */}

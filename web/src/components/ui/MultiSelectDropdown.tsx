@@ -15,6 +15,7 @@ interface MultiSelectDropdownProps {
   placeholder?: string
   filterPlaceholder?: string
   disabled?: boolean
+  onCreate?: (name: string) => Promise<string>
 }
 
 export default function MultiSelectDropdown({
@@ -25,9 +26,11 @@ export default function MultiSelectDropdown({
   placeholder = 'None',
   filterPlaceholder = 'Filter…',
   disabled = false,
+  onCreate,
 }: Readonly<MultiSelectDropdownProps>) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -69,6 +72,20 @@ export default function MultiSelectDropdown({
       onChange(values.filter((v) => v !== value))
     } else {
       onChange([...values, value])
+    }
+  }
+
+  const exactMatch = query && options.some((o) => o.label.toLowerCase() === query.toLowerCase().trim())
+
+  const handleCreate = async () => {
+    if (!onCreate || !query.trim() || creating) return
+    setCreating(true)
+    try {
+      const newValue = await onCreate(query.trim())
+      onChange([...values, newValue])
+      setQuery('')
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -159,8 +176,27 @@ export default function MultiSelectDropdown({
               </>
             )}
 
-            {filtered.length === 0 && (
+            {filtered.length === 0 && !onCreate && (
               <div className="px-3 py-4 text-sm text-dark-text-tertiary text-center">No results</div>
+            )}
+
+            {/* Create new option */}
+            {onCreate && query.trim() && !exactMatch && (
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={creating}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-dark-bg-tertiary/60 border-t border-dark-border-subtle"
+              >
+                <span className="w-4 h-4 rounded flex-shrink-0 flex items-center justify-center text-primary-400">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                </span>
+                <span className="text-sm text-primary-400 font-medium">
+                  {creating ? 'Creating…' : `Create "${query.trim()}"`}
+                </span>
+              </button>
             )}
           </div>
         </div>
