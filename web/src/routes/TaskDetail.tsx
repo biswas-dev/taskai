@@ -21,7 +21,7 @@ function preprocessFigmaUrls(content: string): string {
 }
 
 // Convert @mentions to clickable links
-const MENTION_RE = /@([\w.\-]+)/g
+const MENTION_RE = /@([\w.-]+)/g
 function linkifyMentions(content: string, members: import('../lib/api').ProjectMember[]): string {
   return content.replace(MENTION_RE, (match, username) => {
     // Find the member by email prefix, name, or user_name

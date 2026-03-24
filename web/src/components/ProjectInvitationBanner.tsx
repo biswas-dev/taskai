@@ -23,7 +23,7 @@ export default function NotificationBell() {
     const padding = 8
 
     // Position below the bell
-    let top = rect.bottom + 4
+    const top = rect.bottom + 4
     let left = rect.right - dropdownWidth
 
     // Keep on screen horizontally
