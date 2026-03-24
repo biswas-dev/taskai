@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications } from '../state/NotificationContext'
 
@@ -10,20 +10,63 @@ export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false)
   const [tab, setTab] = useState<'notifications' | 'invitations'>('notifications')
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const bellRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
 
-  // Close dropdown on outside click
+  // Position dropdown directly below the bell icon, always on screen
+  const positionDropdown = useCallback(() => {
+    if (!bellRef.current) return
+    const rect = bellRef.current.getBoundingClientRect()
+    const dropdownWidth = 320 // w-80
+    const padding = 8
+
+    // Position below the bell
+    let top = rect.bottom + 4
+    let left = rect.right - dropdownWidth
+
+    // Keep on screen horizontally
+    if (left < padding) left = padding
+    if (left + dropdownWidth > window.innerWidth - padding) {
+      left = window.innerWidth - dropdownWidth - padding
+    }
+
+    // If not enough space below, cap the max-height
+    const maxHeight = window.innerHeight - top - padding
+
+    setDropdownStyle({
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`,
+      width: `${dropdownWidth}px`,
+      maxHeight: `${Math.max(maxHeight, 200)}px`,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) positionDropdown()
+  }, [isOpen, positionDropdown])
+
+  // Close dropdown on outside click or scroll
   useEffect(() => {
     if (!isOpen) return
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+    const handleClose = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+          bellRef.current && !bellRef.current.contains(e.target as Node)) {
         setIsOpen(false)
       }
     }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [isOpen])
+    const handleScroll = () => positionDropdown()
+    document.addEventListener('mousedown', handleClose)
+    window.addEventListener('scroll', handleScroll, true)
+    window.addEventListener('resize', positionDropdown)
+    return () => {
+      document.removeEventListener('mousedown', handleClose)
+      window.removeEventListener('scroll', handleScroll, true)
+      window.removeEventListener('resize', positionDropdown)
+    }
+  }, [isOpen, positionDropdown])
 
   const handleAccept = async (id: number) => {
     setActionLoading(id)
@@ -52,8 +95,9 @@ export default function NotificationBell() {
   }
 
   return (
-    <div className="relative" ref={dropdownRef}>
+    <>
       <button
+        ref={bellRef}
         onClick={() => setIsOpen(v => !v)}
         className="relative p-1.5 text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary rounded-md transition-colors"
         aria-label={count > 0 ? `${count} unread notification${count !== 1 ? 's' : ''}` : 'Notifications'}
@@ -70,7 +114,7 @@ export default function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-1 w-80 bg-dark-bg-primary border border-dark-border-subtle rounded-lg shadow-xl z-50">
+        <div ref={dropdownRef} style={dropdownStyle} className="bg-dark-bg-primary border border-dark-border-subtle rounded-lg shadow-xl z-[9999] flex flex-col overflow-hidden">
           {/* Tabs */}
           <div className="flex border-b border-dark-border-subtle">
             <button
@@ -112,7 +156,7 @@ export default function NotificationBell() {
                   No notifications
                 </div>
               ) : (
-                <div className="max-h-72 overflow-y-auto divide-y divide-dark-border-subtle">
+                <div className="flex-1 overflow-y-auto divide-y divide-dark-border-subtle">
                   {notifications.map(n => (
                     <button
                       key={n.id}
@@ -147,7 +191,7 @@ export default function NotificationBell() {
                   No pending invitations
                 </div>
               ) : (
-                <div className="max-h-72 overflow-y-auto divide-y divide-dark-border-subtle">
+                <div className="flex-1 overflow-y-auto divide-y divide-dark-border-subtle">
                   {invitations.map(inv => (
                     <div key={inv.id} className="px-4 py-3">
                       <p className="text-sm font-medium text-dark-text-primary truncate">
@@ -188,6 +232,6 @@ export default function NotificationBell() {
           )}
         </div>
       )}
-    </div>
+    </>
   )
 }
