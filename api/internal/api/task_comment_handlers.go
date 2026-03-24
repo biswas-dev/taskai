@@ -257,6 +257,10 @@ func (s *Server) HandleCreateTaskComment(w http.ResponseWriter, r *http.Request)
 		c.UserName = userDisplayNamePtr(commentWithUser.Edges.User)
 	}
 
+	// Activity log + auto-watch
+	s.logActivity(ctx, projectID, userID, "comment_added", "task", taskID, taskEntity.Title, map[string]interface{}{"comment_id": c.ID})
+	s.addTaskWatcher(ctx, taskID, userID)
+
 	// Best-effort push to GitHub (non-blocking)
 	// Use clean user name for GitHub (agent attribution is TaskAI-internal)
 	displayName := ""
@@ -356,6 +360,9 @@ func (s *Server) HandleUpdateTaskComment(w http.ResponseWriter, r *http.Request)
 		c.UserName = userDisplayNamePtr(commentEntity.Edges.User)
 	}
 
+	// Activity log
+	s.logActivity(ctx, taskEntity.ProjectID, userID, "comment_updated", "task", commentEntity.TaskID, taskEntity.Title, map[string]interface{}{"comment_id": commentID})
+
 	respondJSON(w, http.StatusOK, c)
 }
 
@@ -399,6 +406,9 @@ func (s *Server) HandleDeleteTaskComment(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusInternalServerError, "failed to delete comment", "internal_error")
 		return
 	}
+
+	// Activity log
+	s.logActivity(ctx, taskEntity.ProjectID, userID, "comment_deleted", "task", commentEntity.TaskID, taskEntity.Title, map[string]interface{}{"comment_id": commentID})
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"id": commentID, "deleted": true})
 }

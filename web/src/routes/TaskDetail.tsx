@@ -133,6 +133,9 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
   const [editingCommentText, setEditingCommentText] = useState('')
   const [savingComment, setSavingComment] = useState(false)
+  const [watching, setWatching] = useState(false)
+  const [activityEntries, setActivityEntries] = useState<import('../lib/api').ActivityEntry[]>([])
+  const [showActivity, setShowActivity] = useState(false)
 
   // Image picker
   const [imagePickerTarget, setImagePickerTarget] = useState<'description' | 'comment' | null>(null)
@@ -244,6 +247,12 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
     if (task?.id) {
       loadComments(task.id)
       loadAttachments(task.id)
+      // Load watch status
+      apiClient.getTaskWatchers(task.id).then(watchers => {
+        if (currentUser) setWatching(watchers.some(w => w.user_id === currentUser.id))
+      }).catch(() => {})
+      // Load activity
+      apiClient.getTaskActivity(task.id).then(setActivityEntries).catch(() => {})
     }
   }, [task?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1171,10 +1180,84 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                 )}
               </div>
             </div>
+
+            {/* Activity Log Section */}
+            <div className="bg-dark-bg-secondary border border-dark-border-subtle rounded-lg p-6">
+              <button
+                onClick={() => setShowActivity(v => !v)}
+                className="flex items-center gap-2 text-sm font-semibold text-dark-text-primary w-full"
+              >
+                <svg className="w-4 h-4 text-dark-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Activity {activityEntries.length > 0 && `(${activityEntries.length})`}
+                <svg className={`w-3 h-3 ml-auto transition-transform ${showActivity ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {showActivity && (
+                <div className="mt-3 space-y-2">
+                  {activityEntries.length === 0 ? (
+                    <p className="text-xs text-dark-text-tertiary italic">No activity yet</p>
+                  ) : (
+                    activityEntries.map(entry => (
+                      <div key={entry.id} className="flex items-start gap-2 text-xs">
+                        <span className="text-dark-text-quaternary mt-0.5 shrink-0">
+                          {entry.action === 'task_created' ? '🆕' :
+                           entry.action === 'task_status_changed' ? '🔄' :
+                           entry.action === 'task_updated' ? '✏️' :
+                           entry.action === 'task_deleted' ? '🗑️' :
+                           entry.action === 'comment_added' ? '💬' :
+                           entry.action === 'comment_updated' ? '📝' :
+                           entry.action === 'comment_deleted' ? '❌' : '📋'}
+                        </span>
+                        <div className="min-w-0">
+                          <span className="text-dark-text-secondary">
+                            <span className="font-medium text-dark-text-primary">{entry.user_name}</span>
+                            {' '}
+                            {entry.action === 'task_created' ? 'created this task' :
+                             entry.action === 'task_status_changed' && entry.details?.status
+                               ? `moved to ${(entry.details.status as Record<string, string>).to?.replace('_', ' ')}`
+                               : entry.action === 'task_updated' ? 'updated this task' :
+                                 entry.action === 'comment_added' ? 'added a comment' :
+                                 entry.action === 'comment_updated' ? 'edited a comment' :
+                                 entry.action === 'comment_deleted' ? 'deleted a comment' :
+                                 entry.action.replace(/_/g, ' ')}
+                          </span>
+                          <span className="text-dark-text-quaternary ml-1">
+                            {new Date(entry.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Right Column - Sidebar */}
           <div className="w-full md:w-72 flex-shrink-0">
+            {/* Watch button */}
+            <button
+              onClick={async () => {
+                if (!task) return
+                const result = await apiClient.toggleTaskWatcher(task.id!)
+                setWatching(result.watching)
+              }}
+              className={`w-full mb-3 flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                watching
+                  ? 'bg-primary-500/10 text-primary-400 border-primary-500/30 hover:bg-primary-500/20'
+                  : 'bg-dark-bg-secondary text-dark-text-tertiary border-dark-border-subtle hover:text-dark-text-primary hover:bg-dark-bg-tertiary'
+              }`}
+            >
+              <svg className="w-4 h-4" fill={watching ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              {watching ? 'Watching' : 'Watch'}
+            </button>
+
             <div className="bg-dark-bg-secondary border border-dark-border-subtle rounded-lg divide-y divide-dark-border-subtle">
               {/* Swim Lane */}
               <SidebarField label="Swim Lane">

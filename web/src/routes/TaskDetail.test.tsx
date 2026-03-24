@@ -35,6 +35,9 @@ const mocks = vi.hoisted(() => ({
   updateAttachment: vi.fn(),
   getProjectGitHub: vi.fn(),
   getProjectTags: vi.fn(),
+  getTaskWatchers: vi.fn().mockResolvedValue([]),
+  toggleTaskWatcher: vi.fn().mockResolvedValue({ watching: false }),
+  getTaskActivity: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('../lib/api', () => ({

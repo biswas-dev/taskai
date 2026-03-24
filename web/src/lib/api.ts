@@ -29,6 +29,19 @@ export interface TaskComment {
   github_reactions?: GitHubReaction[]
 }
 
+export interface ActivityEntry {
+  id: number
+  project_id: number
+  user_id: number
+  user_name?: string
+  action: string
+  entity_type: string
+  entity_id: number
+  entity_title?: string
+  details?: Record<string, unknown>
+  created_at: string
+}
+
 export interface Sprint {
   id: number
   user_id: number
@@ -914,6 +927,31 @@ class ApiClient {
     return this.request(`/api/comments/${commentId}`, {
       method: 'DELETE',
     })
+  }
+
+  // Task watchers
+  async getTaskWatchers(taskId: number): Promise<{ user_id: number; user_name?: string; created_at: string }[]> {
+    return this.request(`/api/tasks/${taskId}/watchers`)
+  }
+
+  async toggleTaskWatcher(taskId: number): Promise<{ watching: boolean }> {
+    return this.request(`/api/tasks/${taskId}/watchers`, { method: 'POST' })
+  }
+
+  // Task activity log
+  async getTaskActivity(taskId: number): Promise<ActivityEntry[]> {
+    return this.request(`/api/tasks/${taskId}/activity`)
+  }
+
+  // Project activity log
+  async getProjectActivity(projectId: number, params?: { entity_type?: string; entity_id?: number; limit?: number; before?: string }): Promise<ActivityEntry[]> {
+    const qs = new URLSearchParams()
+    if (params?.entity_type) qs.set('entity_type', params.entity_type)
+    if (params?.entity_id) qs.set('entity_id', String(params.entity_id))
+    if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.before) qs.set('before', params.before)
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return this.request(`/api/projects/${projectId}/activity${suffix}`)
   }
 
   async toggleReaction(taskId: number, reaction: string, commentId?: number): Promise<GitHubReaction> {

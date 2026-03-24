@@ -491,6 +491,20 @@ func main() {
 			r.Patch("/comments/{commentId}", server.HandleUpdateTaskComment)
 			r.Delete("/comments/{commentId}", server.HandleDeleteTaskComment)
 
+			// Task watchers
+			r.Get("/tasks/{taskId}/watchers", server.HandleListTaskWatchers)
+			r.Post("/tasks/{taskId}/watchers", server.HandleToggleTaskWatcher)
+
+			// Wiki page watchers
+			r.Get("/wiki/pages/{pageId}/watchers", server.HandleListWikiPageWatchers)
+			r.Post("/wiki/pages/{pageId}/watchers", server.HandleToggleWikiPageWatcher)
+
+			// Task activity log
+			r.Get("/tasks/{taskId}/activity", server.HandleListTaskActivity)
+
+			// Project activity log
+			r.Get("/projects/{id}/activity", server.HandleListProjectActivity)
+
 			// Task reactions (bidirectional)
 			r.Post("/tasks/{taskId}/reactions", server.HandleToggleReaction)
 

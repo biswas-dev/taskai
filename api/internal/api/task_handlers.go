@@ -657,6 +657,11 @@ func (s *Server) HandleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, t)
+
+	// Activity log + auto-watch
+	s.logActivity(ctx, t.ProjectID, userID, "task_created", "task", t.ID, t.Title, nil)
+	s.addTaskWatcher(ctx, t.ID, userID)
+
 	go s.broadcastToProjectMembers(t.ProjectID, "task_created", t)
 	if createdTask.Description != nil {
 		taskNum := t.TaskNumber
@@ -995,6 +1000,36 @@ func (s *Server) HandleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, t)
+
+	// Activity log: record what changed
+	changes := map[string]interface{}{}
+	if req.Status != nil || finalStatus != nil {
+		oldStatus := taskEntity.Status
+		newStatus := updatedTask.Status
+		if oldStatus != newStatus {
+			changes["status"] = map[string]string{"from": oldStatus, "to": newStatus}
+		}
+	}
+	if req.Title != nil && *req.Title != taskEntity.Title {
+		changes["title"] = map[string]string{"from": taskEntity.Title, "to": *req.Title}
+	}
+	if req.Priority != nil && *req.Priority != taskEntity.Priority {
+		changes["priority"] = map[string]string{"from": taskEntity.Priority, "to": *req.Priority}
+	}
+	if req.SwimLaneID != nil {
+		changes["swim_lane_id"] = *req.SwimLaneID
+	}
+	if req.AssigneeIDs != nil {
+		changes["assignees_updated"] = true
+	}
+	action := "task_updated"
+	if _, ok := changes["status"]; ok {
+		action = "task_status_changed"
+	}
+	if len(changes) > 0 {
+		s.logActivity(ctx, t.ProjectID, userID, action, "task", taskID, t.Title, changes)
+	}
+
 	go s.broadcastToProjectMembers(t.ProjectID, "task_updated", t)
 	if updatedTask.Description != nil {
 		taskNum := t.TaskNumber
@@ -1048,6 +1083,10 @@ func (s *Server) HandleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+
+	// Activity log
+	s.logActivity(ctx, taskEntity.ProjectID, userID, "task_deleted", "task", taskID, taskEntity.Title, nil)
+
 	go s.broadcastToProjectMembers(taskEntity.ProjectID, "task_deleted", map[string]int64{
 		"id":         taskID,
 		"project_id": taskEntity.ProjectID,
