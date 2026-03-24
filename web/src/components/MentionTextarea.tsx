@@ -52,7 +52,9 @@ const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaProps>(fu
 
   const insertMention = useCallback((member: ProjectMember) => {
     if (atPos < 0) return
-    const username = member.user_name ?? member.name ?? member.email ?? ''
+    // Use email prefix as the mention handle — unique, no spaces, matches backend regex
+    const email = member.email ?? ''
+    const username = email.includes('@') ? email.split('@')[0] : (member.user_name ?? member.name ?? email)
     const ta = getTA()
     const before = value.slice(0, atPos)
     const after = value.slice(ta?.selectionStart ?? value.length)

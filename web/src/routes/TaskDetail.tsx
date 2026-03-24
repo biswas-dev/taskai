@@ -20,6 +20,24 @@ function preprocessFigmaUrls(content: string): string {
   return content.replace(FIGMA_URL_RE, (_, prefix, url) => `${prefix}[${url}](${url})`)
 }
 
+// Convert @mentions to clickable links
+const MENTION_RE = /@([\w.\-]+)/g
+function linkifyMentions(content: string, members: import('../lib/api').ProjectMember[]): string {
+  return content.replace(MENTION_RE, (match, username) => {
+    // Find the member by email prefix, name, or user_name
+    const lower = username.toLowerCase()
+    const member = members.find(m =>
+      m.email?.split('@')[0]?.toLowerCase() === lower ||
+      m.name?.toLowerCase() === lower ||
+      m.user_name?.toLowerCase() === lower
+    )
+    if (member) {
+      return `[@${username}](/app/users/${member.user_id})`
+    }
+    return match
+  })
+}
+
 function ReactionBar({
   reactions,
   onToggle,
@@ -1168,7 +1186,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                                 },
                               }}
                             >
-                              {preprocessFigmaUrls(comment.comment)}
+                              {linkifyMentions(preprocessFigmaUrls(comment.comment), members)}
                             </ReactMarkdown>
                             <ReactionBar reactions={comment.github_reactions} onToggle={(r) => handleToggleReaction(r, comment.id)} />
                           </div>

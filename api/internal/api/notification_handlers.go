@@ -198,21 +198,39 @@ func (s *Server) extractMentionedUserIDs(ctx context.Context, content string, pr
 	}
 
 	// Build IN clause (safe: usernames are from regex \w+)
-	placeholders := make([]string, len(usernames))
-	args := make([]interface{}, 0, len(usernames)+2)
+	// We need 3 copies of the placeholders for email prefix, name, and first_name
+	args := make([]interface{}, 0, len(usernames)*3+2)
 	args = append(args, projectID, senderID)
+
+	emailPlaceholders := make([]string, len(usernames))
+	namePlaceholders := make([]string, len(usernames))
+	fnPlaceholders := make([]string, len(usernames))
+	idx := 3
 	for i, un := range usernames {
-		args = append(args, un)
-		placeholders[i] = fmt.Sprintf("$%d", i+3)
+		lower := strings.ToLower(un)
+		args = append(args, lower)
+		emailPlaceholders[i] = fmt.Sprintf("$%d", idx)
+		idx++
+		args = append(args, lower)
+		namePlaceholders[i] = fmt.Sprintf("$%d", idx)
+		idx++
+		args = append(args, lower)
+		fnPlaceholders[i] = fmt.Sprintf("$%d", idx)
+		idx++
 	}
 
+	// Match mentions against email prefix, name, or first_name (case-insensitive)
 	query := fmt.Sprintf(`
-		SELECT u.id FROM users u
+		SELECT DISTINCT u.id FROM users u
 		JOIN project_members pm ON pm.user_id = u.id
 		WHERE pm.project_id = $1
 		  AND u.id != $2
-		  AND u.user_name IN (%s)
-	`, strings.Join(placeholders, ","))
+		  AND (
+		    LOWER(SPLIT_PART(u.email, '@', 1)) IN (%s)
+		    OR LOWER(u.name) IN (%s)
+		    OR LOWER(u.first_name) IN (%s)
+		  )
+	`, strings.Join(emailPlaceholders, ","), strings.Join(namePlaceholders, ","), strings.Join(fnPlaceholders, ","))
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
