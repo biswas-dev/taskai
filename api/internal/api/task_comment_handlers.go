@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 
 	"taskai/ent"
+	"taskai/ent/projectmember"
 	"taskai/ent/taskcomment"
 )
 
@@ -33,6 +35,38 @@ type TaskComment struct {
 
 type CreateCommentRequest struct {
 	Comment string `json:"comment"`
+}
+
+type UpdateCommentRequest struct {
+	Comment string `json:"comment"`
+}
+
+// canModifyComment checks if the user can update or delete the comment.
+// Returns true if the user is the comment owner, a global admin, or a project owner.
+func (s *Server) canModifyComment(ctx context.Context, userID, commentUserID, projectID int64) bool {
+	// Comment owner can always modify
+	if userID == commentUserID {
+		return true
+	}
+
+	// Global admin (super admin)
+	if s.isAdmin(ctx, userID) {
+		return true
+	}
+
+	// Project owner
+	exists, err := s.db.Client.ProjectMember.Query().
+		Where(
+			projectmember.ProjectID(projectID),
+			projectmember.UserID(userID),
+			projectmember.RoleIn("owner", "admin"),
+		).
+		Exist(ctx)
+	if err != nil {
+		s.logger.Error("Failed to check project role", zap.Error(err))
+		return false
+	}
+	return exists
 }
 
 // HandleListTaskComments returns all comments for a task
@@ -244,4 +278,127 @@ func (s *Server) HandleCreateTaskComment(w http.ResponseWriter, r *http.Request)
 	go s.notifyTaskComment(context.Background(), taskID, projectID, userID, c.ID, taskEntity.Title, c.Comment, displayName, taskLink, taskEntity.AssigneeID)
 
 	respondJSON(w, http.StatusCreated, c)
+}
+
+// HandleUpdateTaskComment updates a comment (owner, project owner, or super admin)
+func (s *Server) HandleUpdateTaskComment(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	userID := r.Context().Value(UserIDKey).(int64)
+	commentID, err := strconv.ParseInt(chi.URLParam(r, "commentId"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid comment ID", "invalid_input")
+		return
+	}
+
+	// Fetch the comment with its task edge to get projectID
+	commentEntity, err := s.db.Client.TaskComment.Query().
+		Where(taskcomment.ID(commentID)).
+		WithUser().
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			respondError(w, http.StatusNotFound, "comment not found", "not_found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "failed to get comment", "internal_error")
+		return
+	}
+
+	// Get the task to find projectID
+	taskEntity, err := s.db.Client.Task.Get(ctx, commentEntity.TaskID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to get task", "internal_error")
+		return
+	}
+
+	// Check permission
+	if !s.canModifyComment(ctx, userID, commentEntity.UserID, taskEntity.ProjectID) {
+		respondError(w, http.StatusForbidden, "you do not have permission to edit this comment", "forbidden")
+		return
+	}
+
+	var req UpdateCommentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_input")
+		return
+	}
+
+	if req.Comment == "" {
+		respondError(w, http.StatusBadRequest, "comment is required", "invalid_input")
+		return
+	}
+	if len(req.Comment) > 5000 {
+		respondError(w, http.StatusBadRequest, "comment is too long (max 5000 characters)", "invalid_input")
+		return
+	}
+
+	updated, err := s.db.Client.TaskComment.UpdateOneID(commentID).
+		SetComment(req.Comment).
+		Save(ctx)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to update comment", "internal_error")
+		return
+	}
+
+	c := TaskComment{
+		ID:        updated.ID,
+		TaskID:    updated.TaskID,
+		UserID:    updated.UserID,
+		AgentName: updated.AgentName,
+		Comment:   updated.Comment,
+		CreatedAt: updated.CreatedAt,
+		UpdatedAt: updated.UpdatedAt,
+	}
+
+	if commentEntity.Edges.User != nil {
+		c.UserName = userDisplayNamePtr(commentEntity.Edges.User)
+	}
+
+	respondJSON(w, http.StatusOK, c)
+}
+
+// HandleDeleteTaskComment deletes a comment (owner, project owner, or super admin)
+func (s *Server) HandleDeleteTaskComment(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	userID := r.Context().Value(UserIDKey).(int64)
+	commentID, err := strconv.ParseInt(chi.URLParam(r, "commentId"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid comment ID", "invalid_input")
+		return
+	}
+
+	// Fetch the comment
+	commentEntity, err := s.db.Client.TaskComment.Get(ctx, commentID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			respondError(w, http.StatusNotFound, "comment not found", "not_found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "failed to get comment", "internal_error")
+		return
+	}
+
+	// Get the task to find projectID
+	taskEntity, err := s.db.Client.Task.Get(ctx, commentEntity.TaskID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to get task", "internal_error")
+		return
+	}
+
+	// Check permission
+	if !s.canModifyComment(ctx, userID, commentEntity.UserID, taskEntity.ProjectID) {
+		respondError(w, http.StatusForbidden, "you do not have permission to delete this comment", "forbidden")
+		return
+	}
+
+	if err := s.db.Client.TaskComment.DeleteOneID(commentID).Exec(ctx); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to delete comment", "internal_error")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"id": commentID, "deleted": true})
 }

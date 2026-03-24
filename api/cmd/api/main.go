@@ -488,6 +488,8 @@ func main() {
 			// Task comment routes
 			r.Get("/tasks/{taskId}/comments", server.HandleListTaskComments)
 			r.Post("/tasks/{taskId}/comments", server.HandleCreateTaskComment)
+			r.Patch("/comments/{commentId}", server.HandleUpdateTaskComment)
+			r.Delete("/comments/{commentId}", server.HandleDeleteTaskComment)
 
 			// Task reactions (bidirectional)
 			r.Post("/tasks/{taskId}/reactions", server.HandleToggleReaction)

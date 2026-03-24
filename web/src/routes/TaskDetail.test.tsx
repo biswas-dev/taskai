@@ -41,6 +41,10 @@ vi.mock('../lib/api', () => ({
   apiClient: mocks,
 }))
 
+vi.mock('../state/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 1, email: 'test@example.com', is_admin: false }, loading: false, error: null, login: vi.fn(), signup: vi.fn(), logout: vi.fn(), clearError: vi.fn(), loginWithToken: vi.fn() }),
+}))
+
 const task1 = {
   id: 1,
   project_id: 7,

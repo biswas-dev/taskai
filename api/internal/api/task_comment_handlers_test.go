@@ -759,3 +759,343 @@ func TestHandleCreateTaskCommentMultiple(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// HandleUpdateTaskComment — owner can update their comment
+// ---------------------------------------------------------------------------
+
+func TestHandleUpdateTaskCommentOwner(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	userID := ts.CreateTestUser(t, "test@example.com", "password123")
+	projectID := ts.CreateTestProject(t, userID, "Test Project")
+	taskID := ts.CreateTestTask(t, projectID, "Test Task")
+
+	// Create a comment
+	body := CreateCommentRequest{Comment: "Original comment"}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", taskID),
+		body, userID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleCreateTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	var created TaskComment
+	DecodeJSON(t, rec, &created)
+
+	// Update it
+	updateBody := UpdateCommentRequest{Comment: "Updated comment"}
+	rec2, req2 := ts.MakeAuthRequest(t, http.MethodPatch, fmt.Sprintf("/api/comments/%d", created.ID),
+		updateBody, userID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleUpdateTaskComment(rec2, req2)
+	AssertStatusCode(t, rec2.Code, http.StatusOK)
+
+	var updated TaskComment
+	DecodeJSON(t, rec2, &updated)
+
+	if updated.Comment != "Updated comment" {
+		t.Errorf("Expected 'Updated comment', got %q", updated.Comment)
+	}
+	if updated.ID != created.ID {
+		t.Errorf("Expected same ID %d, got %d", created.ID, updated.ID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HandleUpdateTaskComment — non-owner non-admin cannot update
+// ---------------------------------------------------------------------------
+
+func TestHandleUpdateTaskCommentForbidden(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
+	otherID := ts.CreateTestUser(t, "other@example.com", "password123")
+	projectID := ts.CreateTestProject(t, ownerID, "Test Project")
+	taskID := ts.CreateTestTask(t, projectID, "Test Task")
+	ts.AddProjectMember(t, projectID, otherID, ownerID, "member")
+
+	// Owner creates a comment
+	body := CreateCommentRequest{Comment: "Owner's comment"}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", taskID),
+		body, ownerID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleCreateTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	var created TaskComment
+	DecodeJSON(t, rec, &created)
+
+	// Other member tries to update — should be forbidden
+	updateBody := UpdateCommentRequest{Comment: "Hacked!"}
+	rec2, req2 := ts.MakeAuthRequest(t, http.MethodPatch, fmt.Sprintf("/api/comments/%d", created.ID),
+		updateBody, otherID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleUpdateTaskComment(rec2, req2)
+	AssertStatusCode(t, rec2.Code, http.StatusForbidden)
+}
+
+// ---------------------------------------------------------------------------
+// HandleUpdateTaskComment — project owner can update any comment
+// ---------------------------------------------------------------------------
+
+func TestHandleUpdateTaskCommentProjectOwner(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
+	memberID := ts.CreateTestUser(t, "member@example.com", "password123")
+	projectID := ts.CreateTestProject(t, ownerID, "Test Project")
+	taskID := ts.CreateTestTask(t, projectID, "Test Task")
+	ts.AddProjectMember(t, projectID, memberID, ownerID, "member")
+
+	// Member creates a comment
+	body := CreateCommentRequest{Comment: "Member's comment"}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", taskID),
+		body, memberID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleCreateTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	var created TaskComment
+	DecodeJSON(t, rec, &created)
+
+	// Project owner updates member's comment — should succeed
+	updateBody := UpdateCommentRequest{Comment: "Fixed by owner"}
+	rec2, req2 := ts.MakeAuthRequest(t, http.MethodPatch, fmt.Sprintf("/api/comments/%d", created.ID),
+		updateBody, ownerID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleUpdateTaskComment(rec2, req2)
+	AssertStatusCode(t, rec2.Code, http.StatusOK)
+
+	var updated TaskComment
+	DecodeJSON(t, rec2, &updated)
+
+	if updated.Comment != "Fixed by owner" {
+		t.Errorf("Expected 'Fixed by owner', got %q", updated.Comment)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HandleUpdateTaskComment — super admin can update any comment
+// ---------------------------------------------------------------------------
+
+func TestHandleUpdateTaskCommentSuperAdmin(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
+	adminID := ts.CreateTestUser(t, "admin@example.com", "password123")
+	projectID := ts.CreateTestProject(t, ownerID, "Test Project")
+	taskID := ts.CreateTestTask(t, projectID, "Test Task")
+
+	// Make admin a super admin
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := ts.DB.ExecContext(ctx, `UPDATE users SET is_admin = 1 WHERE id = ?`, adminID)
+	if err != nil {
+		t.Fatalf("Failed to set admin: %v", err)
+	}
+
+	// Add admin as a regular member (not project owner)
+	ts.AddProjectMember(t, projectID, adminID, ownerID, "member")
+
+	// Owner creates a comment
+	body := CreateCommentRequest{Comment: "Owner's comment"}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", taskID),
+		body, ownerID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleCreateTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	var created TaskComment
+	DecodeJSON(t, rec, &created)
+
+	// Super admin updates the comment
+	updateBody := UpdateCommentRequest{Comment: "Fixed by super admin"}
+	rec2, req2 := ts.MakeAuthRequest(t, http.MethodPatch, fmt.Sprintf("/api/comments/%d", created.ID),
+		updateBody, adminID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleUpdateTaskComment(rec2, req2)
+	AssertStatusCode(t, rec2.Code, http.StatusOK)
+
+	var updated TaskComment
+	DecodeJSON(t, rec2, &updated)
+
+	if updated.Comment != "Fixed by super admin" {
+		t.Errorf("Expected 'Fixed by super admin', got %q", updated.Comment)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HandleUpdateTaskComment — validation
+// ---------------------------------------------------------------------------
+
+func TestHandleUpdateTaskCommentValidation(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	userID := ts.CreateTestUser(t, "test@example.com", "password123")
+	projectID := ts.CreateTestProject(t, userID, "Test Project")
+	taskID := ts.CreateTestTask(t, projectID, "Test Task")
+
+	// Create a comment
+	body := CreateCommentRequest{Comment: "Original"}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", taskID),
+		body, userID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleCreateTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	var created TaskComment
+	DecodeJSON(t, rec, &created)
+
+	// Empty comment
+	rec2, req2 := ts.MakeAuthRequest(t, http.MethodPatch, fmt.Sprintf("/api/comments/%d", created.ID),
+		UpdateCommentRequest{Comment: ""}, userID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleUpdateTaskComment(rec2, req2)
+	AssertStatusCode(t, rec2.Code, http.StatusBadRequest)
+
+	// Too long
+	rec3, req3 := ts.MakeAuthRequest(t, http.MethodPatch, fmt.Sprintf("/api/comments/%d", created.ID),
+		UpdateCommentRequest{Comment: strings.Repeat("x", 5001)}, userID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleUpdateTaskComment(rec3, req3)
+	AssertStatusCode(t, rec3.Code, http.StatusBadRequest)
+
+	// Not found
+	rec4, req4 := ts.MakeAuthRequest(t, http.MethodPatch, "/api/comments/99999",
+		UpdateCommentRequest{Comment: "nope"}, userID,
+		map[string]string{"commentId": "99999"})
+	ts.HandleUpdateTaskComment(rec4, req4)
+	AssertStatusCode(t, rec4.Code, http.StatusNotFound)
+}
+
+// ---------------------------------------------------------------------------
+// HandleDeleteTaskComment — owner can delete their comment
+// ---------------------------------------------------------------------------
+
+func TestHandleDeleteTaskCommentOwner(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	userID := ts.CreateTestUser(t, "test@example.com", "password123")
+	projectID := ts.CreateTestProject(t, userID, "Test Project")
+	taskID := ts.CreateTestTask(t, projectID, "Test Task")
+
+	// Create a comment
+	body := CreateCommentRequest{Comment: "Delete me"}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", taskID),
+		body, userID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleCreateTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	var created TaskComment
+	DecodeJSON(t, rec, &created)
+
+	// Delete it
+	rec2, req2 := ts.MakeAuthRequest(t, http.MethodDelete, fmt.Sprintf("/api/comments/%d", created.ID),
+		nil, userID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleDeleteTaskComment(rec2, req2)
+	AssertStatusCode(t, rec2.Code, http.StatusOK)
+
+	// Verify it's gone
+	listRec, listReq := ts.MakeAuthRequest(t, http.MethodGet, fmt.Sprintf("/api/tasks/%d/comments", taskID), nil, userID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleListTaskComments(listRec, listReq)
+	AssertStatusCode(t, listRec.Code, http.StatusOK)
+
+	var comments []TaskComment
+	DecodeJSON(t, listRec, &comments)
+
+	if len(comments) != 0 {
+		t.Errorf("Expected 0 comments after delete, got %d", len(comments))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HandleDeleteTaskComment — non-owner non-admin cannot delete
+// ---------------------------------------------------------------------------
+
+func TestHandleDeleteTaskCommentForbidden(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
+	otherID := ts.CreateTestUser(t, "other@example.com", "password123")
+	projectID := ts.CreateTestProject(t, ownerID, "Test Project")
+	taskID := ts.CreateTestTask(t, projectID, "Test Task")
+	ts.AddProjectMember(t, projectID, otherID, ownerID, "member")
+
+	// Owner creates a comment
+	body := CreateCommentRequest{Comment: "Owner's comment"}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", taskID),
+		body, ownerID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleCreateTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	var created TaskComment
+	DecodeJSON(t, rec, &created)
+
+	// Other member tries to delete — should be forbidden
+	rec2, req2 := ts.MakeAuthRequest(t, http.MethodDelete, fmt.Sprintf("/api/comments/%d", created.ID),
+		nil, otherID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleDeleteTaskComment(rec2, req2)
+	AssertStatusCode(t, rec2.Code, http.StatusForbidden)
+}
+
+// ---------------------------------------------------------------------------
+// HandleDeleteTaskComment — project owner can delete any comment
+// ---------------------------------------------------------------------------
+
+func TestHandleDeleteTaskCommentProjectOwner(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	ownerID := ts.CreateTestUser(t, "owner@example.com", "password123")
+	memberID := ts.CreateTestUser(t, "member@example.com", "password123")
+	projectID := ts.CreateTestProject(t, ownerID, "Test Project")
+	taskID := ts.CreateTestTask(t, projectID, "Test Task")
+	ts.AddProjectMember(t, projectID, memberID, ownerID, "member")
+
+	// Member creates a comment
+	body := CreateCommentRequest{Comment: "Member's comment"}
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", taskID),
+		body, memberID,
+		map[string]string{"taskId": fmt.Sprintf("%d", taskID)})
+	ts.HandleCreateTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+
+	var created TaskComment
+	DecodeJSON(t, rec, &created)
+
+	// Project owner deletes member's comment
+	rec2, req2 := ts.MakeAuthRequest(t, http.MethodDelete, fmt.Sprintf("/api/comments/%d", created.ID),
+		nil, ownerID,
+		map[string]string{"commentId": fmt.Sprintf("%d", created.ID)})
+	ts.HandleDeleteTaskComment(rec2, req2)
+	AssertStatusCode(t, rec2.Code, http.StatusOK)
+}
+
+// ---------------------------------------------------------------------------
+// HandleDeleteTaskComment — not found
+// ---------------------------------------------------------------------------
+
+func TestHandleDeleteTaskCommentNotFound(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	userID := ts.CreateTestUser(t, "test@example.com", "password123")
+
+	rec, req := ts.MakeAuthRequest(t, http.MethodDelete, "/api/comments/99999",
+		nil, userID,
+		map[string]string{"commentId": "99999"})
+	ts.HandleDeleteTaskComment(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusNotFound)
+}

@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback, Fragment } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Dialog, Transition, Combobox } from '@headlessui/react'
 import { useAuth } from '../state/AuthContext'
 import { api } from '../lib/api'
@@ -34,6 +34,7 @@ export default function CommandPalette() {
   const [isLoading, setIsLoading] = useState(false)
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const abortControllerRef = useRef<AbortController | null>(null)
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -73,6 +74,12 @@ export default function CommandPalette() {
     }
   }, [isOpen])
 
+  // Extract project ID from current URL if on a project page
+  const currentProjectId = useMemo(() => {
+    const match = location.pathname.match(/\/app\/projects\/(\d+)/)
+    return match ? Number(match[1]) : undefined
+  }, [location.pathname])
+
   // Debounced search
   const performSearch = useCallback(async (searchQuery: string) => {
     // Cancel any in-flight request
@@ -92,7 +99,7 @@ export default function CommandPalette() {
     setIsLoading(true)
 
     try {
-      const results = await api.globalSearch(searchQuery, undefined, undefined, 10, controller.signal)
+      const results = await api.globalSearch(searchQuery, currentProjectId, undefined, 10, controller.signal)
       // Only update if this request wasn't aborted
       if (!controller.signal.aborted) {
         setTaskResults(results.tasks)
@@ -109,7 +116,7 @@ export default function CommandPalette() {
         setIsLoading(false)
       }
     }
-  }, [])
+  }, [currentProjectId])
 
   // Handle query change with debounce
   const handleQueryChange = useCallback((value: string) => {
@@ -321,7 +328,7 @@ export default function CommandPalette() {
                   </div>
                   <Combobox.Input
                     className="h-14 w-full border-0 bg-transparent pl-12 pr-4 text-dark-text-primary placeholder-dark-text-quaternary focus:ring-0 text-base"
-                    placeholder="Search tasks, wiki pages, or type a command..."
+                    placeholder={currentProjectId ? "Search tasks & wiki in this project..." : "Search tasks, wiki pages, or type a command..."}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleQueryChange(e.target.value)}
                     autoFocus
                   />

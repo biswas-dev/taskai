@@ -697,11 +697,11 @@ export interface GraphData {
 }
 
 // API Client Configuration
-// Use relative URL in production (served behind nginx proxy)
-// or VITE_API_URL for development override
-const API_BASE_URL = import.meta.env.VITE_API_URL || (
-  import.meta.env.PROD ? '' : 'http://localhost:8080'
-)
+// Use relative URL by default — works with both:
+//   - Vite dev proxy (VITE_PROXY_TARGET routes /api to backend)
+//   - Production nginx proxy (serves /api from backend)
+// Set VITE_API_URL only if you need to bypass the proxy entirely
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
 class ApiClient {
   private baseURL: string
@@ -900,6 +900,19 @@ class ApiClient {
     return this.request<TaskComment>(`/api/tasks/${taskId}/comments`, {
       method: 'POST',
       body: JSON.stringify({ comment }),
+    })
+  }
+
+  async updateTaskComment(commentId: number, comment: string): Promise<TaskComment> {
+    return this.request<TaskComment>(`/api/comments/${commentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ comment }),
+    })
+  }
+
+  async deleteTaskComment(commentId: number): Promise<{ id: number; deleted: boolean }> {
+    return this.request(`/api/comments/${commentId}`, {
+      method: 'DELETE',
     })
   }
 

@@ -198,6 +198,19 @@ export class TaskAIClient {
     });
   }
 
+  async updateComment(commentId: string, content: string): Promise<Comment> {
+    return this.request<Comment>(`/api/comments/${encodeURIComponent(commentId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ comment: content }),
+    });
+  }
+
+  async deleteComment(commentId: string): Promise<{ id: number; deleted: boolean }> {
+    return this.request(`/api/comments/${encodeURIComponent(commentId)}`, {
+      method: "DELETE",
+    });
+  }
+
   // Wiki methods
   async searchWiki(params: {
     query: string;

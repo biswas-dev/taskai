@@ -398,6 +398,32 @@ export default function ProjectDetail() {
     }))
   }, [projectId, filterSprint, filterAssignee, filterPriority, filterTag, filterTaskIds])
 
+  // Keyboard shortcuts for project board
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable
+
+      // Cmd/Ctrl+N to create new task
+      if ((e.metaKey || e.ctrlKey) && e.key === 'n') {
+        e.preventDefault()
+        setShowNewTaskModal(true)
+        return
+      }
+
+      if (isInput) return
+
+      // '/' to focus search
+      if (e.key === '/') {
+        e.preventDefault()
+        const searchInput = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]')
+        searchInput?.focus()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   const loadProject = async () => {
     try {
       setLoadingProject(true)

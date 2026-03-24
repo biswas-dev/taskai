@@ -301,6 +301,34 @@ function createServer(client: TaskAIClient, cachedUser?: User): McpServer {
     }
   );
 
+  // --- update_comment ---
+  server.tool(
+    "update_comment",
+    "Update a comment. Only the comment owner, project owner, or super admin can update.",
+    {
+      comment_id: z.string().describe("Comment ID"),
+      content: z.string().describe("New comment text"),
+      verbose: z.boolean().optional().describe("Pretty print JSON (default: false)"),
+    },
+    async ({ comment_id, content, verbose }) => {
+      const comment = await client.updateComment(comment_id, content);
+      return { content: [{ type: "text", text: formatResponse(comment, verbose) }] };
+    }
+  );
+
+  // --- delete_comment ---
+  server.tool(
+    "delete_comment",
+    "Delete a comment. Only the comment owner, project owner, or super admin can delete.",
+    {
+      comment_id: z.string().describe("Comment ID"),
+    },
+    async ({ comment_id }) => {
+      const result = await client.deleteComment(comment_id);
+      return { content: [{ type: "text", text: formatResponse(result, false) }] };
+    }
+  );
+
   // --- list_project_drawings ---
   server.tool(
     "list_project_drawings",

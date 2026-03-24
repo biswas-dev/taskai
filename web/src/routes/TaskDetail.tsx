@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -8,6 +8,7 @@ import SearchSelect from '../components/ui/SearchSelect'
 import MultiSelectDropdown from '../components/ui/MultiSelectDropdown'
 import ImagePickerModal from '../components/ImagePickerModal'
 import { apiClient, Task, type UpdateTaskRequest, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment, type GitHubPushTaskResponse, type Tag, type GitHubReaction } from '../lib/api'
+import { useAuth } from '../state/AuthContext'
 import { preprocessGraphLinks, parseGraphLinkUrl } from '../lib/graphLinks'
 import FigmaEmbed from '../components/FigmaEmbed'
 import { REACTION_EMOJI, REACTION_ORDER } from '../lib/reactionUtils'
@@ -98,6 +99,7 @@ interface TaskDetailProps {
 export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
   const { projectId, taskNumber } = useParams()
   const navigate = useNavigate()
+  const { user: currentUser } = useAuth()
   const [task, setTask] = useState<Task | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -128,6 +130,9 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
   const [comments, setComments] = useState<TaskComment[]>([])
   const [newComment, setNewComment] = useState('')
   const [postingComment, setPostingComment] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null)
+  const [editingCommentText, setEditingCommentText] = useState('')
+  const [savingComment, setSavingComment] = useState(false)
 
   // Image picker
   const [imagePickerTarget, setImagePickerTarget] = useState<'description' | 'comment' | null>(null)
@@ -252,6 +257,53 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
       }
     }
   }, [editingField])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable
+
+      // Escape closes the task detail (unless in an input)
+      if (e.key === 'Escape') {
+        if (editingCommentId) {
+          setEditingCommentId(null)
+          setEditingCommentText('')
+          return
+        }
+        if (editingField) {
+          cancelEdit()
+          return
+        }
+        if (!isInput) {
+          e.preventDefault()
+          handleClose()
+        }
+        return
+      }
+
+      // Skip shortcuts when typing in inputs
+      if (isInput) return
+
+      // 'e' to edit title
+      if (e.key === 'e' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault()
+        startEdit('title', task?.title || '')
+      }
+      // 'd' to edit description
+      if (e.key === 'd' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault()
+        startEdit('description', task?.description || '')
+      }
+      // 'c' to focus comment box
+      if (e.key === 'c' && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault()
+        commentRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editingField, editingCommentId, task]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePushToGitHub = async () => {
     if (!task?.id) return
@@ -519,6 +571,16 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
     }
   }
 
+  // Check if current user can modify a comment (owner, project owner, or super admin)
+  const canModifyComment = useMemo(() => {
+    if (!currentUser) return () => false
+    const myRole = members.find(m => m.user_id === currentUser.id)?.role
+    const isProjectOwnerOrAdmin = myRole === 'owner' || myRole === 'admin'
+    const isSuperAdmin = !!(currentUser as Record<string, unknown>).is_admin
+    return (commentUserId: number) =>
+      commentUserId === currentUser.id || isProjectOwnerOrAdmin || isSuperAdmin
+  }, [currentUser, members])
+
   const handlePostComment = async () => {
     if (!newComment.trim()) return
     try {
@@ -531,6 +593,37 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
     } finally {
       setPostingComment(false)
     }
+  }
+
+  const handleUpdateComment = async (commentId: number) => {
+    if (!editingCommentText.trim()) return
+    try {
+      setSavingComment(true)
+      await apiClient.updateTaskComment(commentId, editingCommentText.trim())
+      setEditingCommentId(null)
+      setEditingCommentText('')
+      await loadComments()
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update comment')
+    } finally {
+      setSavingComment(false)
+    }
+  }
+
+  const handleDeleteComment = (commentId: number) => {
+    setConfirmAction({
+      message: 'Are you sure you want to delete this comment? This action cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await apiClient.deleteTaskComment(commentId)
+          setConfirmAction(null)
+          await loadComments()
+        } catch (err: unknown) {
+          setError(err instanceof Error ? err.message : 'Failed to delete comment')
+          setConfirmAction(null)
+        }
+      },
+    })
   }
 
   const handleDelete = () => {
@@ -970,7 +1063,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                   <p className="text-sm text-dark-text-tertiary italic">No comments yet</p>
                 ) : (
                   comments.map((comment) => (
-                    <div key={comment.id} className="border-t border-dark-border-subtle pt-4 first:border-t-0 first:pt-0">
+                    <div key={comment.id} className="border-t border-dark-border-subtle pt-4 first:border-t-0 first:pt-0 group/comment">
                       <div className="flex items-start gap-3">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${comment.agent_name ? 'bg-violet-500/10' : 'bg-primary-500/10'}`}>
                           <span className={`text-xs font-medium ${comment.agent_name ? 'text-violet-400' : 'text-primary-400'}`}>
@@ -994,8 +1087,66 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                             )}
                             <span className="text-xs text-dark-text-tertiary">
                               {new Date(comment.created_at).toLocaleString()}
+                              {comment.updated_at !== comment.created_at && ' (edited)'}
                             </span>
+                            {canModifyComment(comment.user_id) && editingCommentId !== comment.id && (
+                              <div className="ml-auto flex items-center gap-1 opacity-0 group-hover/comment:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => { setEditingCommentId(comment.id); setEditingCommentText(comment.comment) }}
+                                  className="p-1 text-dark-text-tertiary hover:text-primary-400 rounded transition-colors"
+                                  title="Edit comment"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteComment(comment.id)}
+                                  className="p-1 text-dark-text-tertiary hover:text-red-400 rounded transition-colors"
+                                  title="Delete comment"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </div>
+                            )}
                           </div>
+                          {editingCommentId === comment.id ? (
+                            <div>
+                              <textarea
+                                value={editingCommentText}
+                                onChange={(e) => setEditingCommentText(e.target.value)}
+                                className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
+                                rows={3}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                                    e.preventDefault()
+                                    handleUpdateComment(comment.id)
+                                  } else if (e.key === 'Escape') {
+                                    setEditingCommentId(null)
+                                    setEditingCommentText('')
+                                  }
+                                }}
+                                autoFocus
+                              />
+                              <div className="flex justify-end gap-2 mt-1">
+                                <button
+                                  onClick={() => { setEditingCommentId(null); setEditingCommentText('') }}
+                                  className="px-2 py-1 text-xs text-dark-text-tertiary hover:text-dark-text-primary transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                                <Button
+                                  onClick={() => handleUpdateComment(comment.id)}
+                                  size="sm"
+                                  disabled={!editingCommentText.trim() || savingComment}
+                                >
+                                  {savingComment ? 'Saving...' : 'Save'}
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
                           <div className="text-sm text-dark-text-secondary prose prose-sm max-w-none prose-headings:text-dark-text-primary prose-p:text-dark-text-secondary prose-a:text-primary-400 prose-code:text-primary-400 prose-code:bg-primary-500/10 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-dark-bg-primary prose-pre:border prose-pre:border-dark-border-subtle prose-strong:text-dark-text-primary prose-li:text-dark-text-secondary prose-img:rounded-lg prose-img:max-h-64 prose-img:border prose-img:border-dark-border-subtle">
                             <ReactMarkdown
                               remarkPlugins={[remarkGfm, remarkEmoji]}
@@ -1012,6 +1163,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                             </ReactMarkdown>
                             <ReactionBar reactions={comment.github_reactions} onToggle={(r) => handleToggleReaction(r, comment.id)} />
                           </div>
+                          )}
                         </div>
                       </div>
                     </div>
