@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "adc81dc057cd",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 13,
+  "files_touched": [
+    "api/cmd/api/main.go",
+    "api/internal/api/task_comment_handlers.go",
+    "api/internal/api/task_comment_handlers_test.go",
+    "mcp/src/api.ts",
+    "mcp/src/index.ts",
+    "web/src/components/CommandPalette.tsx",
+    "web/src/lib/api.ts",
+    "web/src/routes/ProjectDetail.tsx",
+    "web/src/routes/TaskDetail.tsx",
+    "web/vite.config.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ad/c81dc057cd/0/metadata.json",
+      "transcript": "/ad/c81dc057cd/0/full.jsonl",
+      "content_hash": "/ad/c81dc057cd/0/content_hash.txt",
+      "prompt": "/ad/c81dc057cd/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 262,
+    "cache_creation_tokens": 201299,
+    "cache_read_tokens": 25022991,
+    "output_tokens": 50602,
+    "api_call_count": 214
+  }
+}
