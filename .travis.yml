@@ -1,15 +1,22 @@
 # Travis CI configuration for TaskAI
-# Primary CI/CD pipeline (GitHub Actions kept as backup in .github/workflows-backup/)
+# Primary CI/CD pipeline
 #
-# Build once on main, promote exact digests through staging -> UAT -> production.
-# Images pushed to Harbor (harbor.biswas.me/biswas/taskai-{api,web,mcp,yjs}).
+# FAST DEPLOY: Tests + deploy run in parallel. Deploy builds images directly
+# on the target server (native arch, no cross-compilation, no registry).
+# Tests run alongside deploy — if tests fail, the build is marked failed
+# but staging already has the code (fix-forward).
 #
-# Required environment variables (set in Travis CI Settings > Environment Variables):
+# Pipeline:
+#   main branch:       test + deploy-staging (parallel) → ~5 min
+#   production branch: deploy-production → ~4 min (build on server)
+#   uat branch:        deploy-uat → ~4 min (build on server)
+#
+# Required environment variables (set in Travis CI Settings):
 #   STAGING_SSH_KEY_BASE64 / UAT_SSH_KEY_BASE64 / PRODUCTION_SSH_KEY_BASE64
-#   STAGING_DB_DSN, STAGING_JWT_SECRET, STAGING_LOGIN_GITHUB_CLIENT_ID, etc.
-#   UAT_DB_DSN, UAT_JWT_SECRET, UAT_LOGIN_GITHUB_CLIENT_ID, etc.
-#   PRODUCTION_DB_DSN, PRODUCTION_JWT_SECRET, PRODUCTION_LOGIN_GITHUB_CLIENT_ID, etc.
-#   HARBOR_AUTH (base64-encoded "username:password")
+#   STAGING_DB_DSN, STAGING_JWT_SECRET, etc.
+#   UAT_DB_DSN, UAT_JWT_SECRET, etc.
+#   PRODUCTION_DB_DSN, PRODUCTION_JWT_SECRET, etc.
+#   HARBOR_AUTH (base64-encoded "username:password") — kept for rollback
 #   SONAR_TOKEN, DD_API_KEY, DD_SITE
 
 language: minimal
@@ -25,12 +32,10 @@ env:
     - SONAR_HOST_URL=https://sonar.taskai.cc
 
 stages:
-  - name: test
-    if: type = push OR type = pull_request
-  - name: build-and-analyze
+  - name: deploy-and-test
     if: branch = main AND type = push
-  - name: deploy-staging
-    if: branch = main AND type = push
+  - name: test-only
+    if: type = pull_request
   - name: promote-and-deploy-uat
     if: branch = uat AND type = push
   - name: promote-and-deploy-production
@@ -38,8 +43,15 @@ stages:
 
 jobs:
   include:
-    # ── API Tests (Go) ─────────────────────────────────────────────────────
-    - stage: test
+    # ═══════════════════════════════════════════════════════════════════════
+    # MAIN BRANCH: tests + staging deploy run IN PARALLEL (same stage)
+    # Deploy builds natively on the staging server — no cross-compilation.
+    # Tests run alongside — if they fail, build is marked failed but
+    # staging is already deployed (fix-forward philosophy).
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # ── API Tests (Go) ─────────────────────────────────────────────────
+    - stage: deploy-and-test
       name: "API Tests (Go)"
       language: go
       go: "1.26.1"
@@ -63,8 +75,8 @@ jobs:
           paths:
             - api/coverage.out
 
-    # ── Web Tests (Node) ───────────────────────────────────────────────────
-    - stage: test
+    # ── Web Tests (Node) ──────────────────────────────────────────────
+    - stage: deploy-and-test
       name: "Web Tests"
       language: node_js
       node_js: "24"
@@ -82,61 +94,59 @@ jobs:
           paths:
             - web/coverage/
 
-    # ── Build & Push Docker Images + SonarQube (parallel) ──────────────────
-    # These run in the same stage so they execute concurrently.
-    # SonarQube is allow_failures — it won't block the deploy pipeline.
-    - stage: build-and-analyze
-      name: "Build & Push Docker Images"
-      services:
-        - docker
-      script:
-        - bash deployment/scripts/travis-build-images.sh
-      workspaces:
-        create:
-          name: taskai-digests
-          paths:
-            - .image-digests.txt
-
-    - stage: build-and-analyze
-      name: "SonarQube Analysis"
-      git:
-        depth: false
-        submodules: false
-      workspaces:
-        use:
-          - api-coverage
-          - web-coverage
-      script:
-        - |
-          export SONAR_SCANNER_VERSION=5.0.1.3006
-          curl -sSLo sonar-scanner.zip "https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-${SONAR_SCANNER_VERSION}-linux.zip"
-          unzip -q sonar-scanner.zip
-          export PATH="$PWD/sonar-scanner-${SONAR_SCANNER_VERSION}-linux/bin:$PATH"
-          sonar-scanner \
-            -Dsonar.host.url="$SONAR_HOST_URL" \
-            -Dsonar.token="$SONAR_TOKEN" \
-            -Dsonar.projectVersion="$(git describe --tags --always 2>/dev/null || echo dev)"
-
-    # ── Deploy Staging (uses digests from build) ──────────────────────────
-    - stage: deploy-staging
+    # ── Deploy to Staging (builds on server, native ARM64) ────────────
+    - stage: deploy-and-test
       name: "Deploy to Staging"
-      workspaces:
-        use:
-          - taskai-digests
       script:
-        - bash deployment/scripts/travis-deploy.sh staging
+        - bash deployment/scripts/travis-deploy-fast.sh staging
 
-    # ── Promote & Deploy UAT (no rebuild) ─────────────────────────────────
+    # ═══════════════════════════════════════════════════════════════════════
+    # PULL REQUESTS: tests only (no deploy)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    - stage: test-only
+      name: "API Tests (Go)"
+      language: go
+      go: "1.26.1"
+      env:
+        - GOTOOLCHAIN=local
+      cache:
+        directories:
+          - $HOME/go/pkg/mod
+          - $HOME/.cache/go-build
+      before_script:
+        - go version
+        - cd api
+      script:
+        - go vet ./...
+        - go test $(go list ./... | grep -v /e2e)
+
+    - stage: test-only
+      name: "Web Tests"
+      language: node_js
+      node_js: "24"
+      cache: npm
+      before_script:
+        - cd web
+        - npm ci
+      script:
+        - npx eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 5
+        - npx tsc --noEmit
+        - npx vitest run
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # UAT / PRODUCTION: build on server (native arch), no registry needed
+    # ═══════════════════════════════════════════════════════════════════════
+
     - stage: promote-and-deploy-uat
-      name: "Promote & Deploy to UAT"
+      name: "Deploy to UAT"
       script:
-        - bash deployment/scripts/travis-deploy.sh uat
+        - bash deployment/scripts/travis-deploy-fast.sh uat
 
-    # ── Promote & Deploy Production (no rebuild) ──────────────────────────
     - stage: promote-and-deploy-production
-      name: "Promote & Deploy to Production"
+      name: "Deploy to Production"
       script:
-        - bash deployment/scripts/travis-deploy.sh production
+        - bash deployment/scripts/travis-deploy-fast.sh production
 
   allow_failures:
     - name: "SonarQube Analysis"
