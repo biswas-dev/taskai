@@ -94,3 +94,11 @@ Read the output file to retrieve the result: /private/tmp/claude-501/-Users-ansh
 ---
 
 ok works, so delete is not working, edit seems to work
+
+---
+
+makes sense. let us move to staging production and uat, but before that, can we make builds faster, takes 30 mins or more :(
+
+---
+
+track builds using buildme MCP server
