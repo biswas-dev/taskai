@@ -118,3 +118,14 @@ this build is so slow for staging and prod. problem is that staging is arm and p
 ---
 
 yes, please please fix the notification and make it much better styling, should always be below, plus allow users to watch tasks or pages, when we tag someone they get notified, do we support @username? we need to. Also, any time someone comments or creates a task, they are watchers. Plus another task is to audit everything, like when some moves a task from to do to done, adds a comment, deletes a comment, adds a user, everything. obviously visibilty needs to be sensible, but everyone in a project can see all changes made by everyone in a separate tab for a task, and for a wiki page
+
+---
+
+<task-notification>
+<task-id>bawrzl8pe</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/d5d7e842-ffdd-4e92-aeb2-1ac43d96a575/tasks/bawrzl8pe.output</output-file>
+<status>completed</status>
+<summary>Background command "Restart Vite with clean env" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/d5d7e842-ffdd-4e92-aeb2-1ac43d96a575/tasks/bawrzl8pe.output
