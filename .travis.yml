@@ -27,9 +27,7 @@ env:
 stages:
   - name: test
     if: type = push OR type = pull_request
-  - name: sonarqube
-    if: branch = main AND type = push
-  - name: build-images
+  - name: build-and-analyze
     if: branch = main AND type = push
   - name: deploy-staging
     if: branch = main AND type = push
@@ -65,29 +63,41 @@ jobs:
           paths:
             - api/coverage.out
 
-    # ── Web Tests + Build (Node) ───────────────────────────────────────────
+    # ── Web Tests (Node) ───────────────────────────────────────────────────
     - stage: test
-      name: "Web Tests + Build"
+      name: "Web Tests"
       language: node_js
       node_js: "24"
       cache: npm
       before_script:
         - cd web
         - npm ci
-        - npx rollup --version || npm install @rollup/rollup-linux-x64-gnu
       script:
         - npx eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 5
         - npx tsc --noEmit
         - npx vitest run --coverage
-        - npx vite build
       workspaces:
         create:
           name: web-coverage
           paths:
             - web/coverage/
 
-    # ── SonarQube ──────────────────────────────────────────────────────────
-    - stage: sonarqube
+    # ── Build & Push Docker Images + SonarQube (parallel) ──────────────────
+    # These run in the same stage so they execute concurrently.
+    # SonarQube is allow_failures — it won't block the deploy pipeline.
+    - stage: build-and-analyze
+      name: "Build & Push Docker Images"
+      services:
+        - docker
+      script:
+        - bash deployment/scripts/travis-build-images.sh
+      workspaces:
+        create:
+          name: taskai-digests
+          paths:
+            - .image-digests.txt
+
+    - stage: build-and-analyze
       name: "SonarQube Analysis"
       git:
         depth: false
@@ -106,19 +116,6 @@ jobs:
             -Dsonar.host.url="$SONAR_HOST_URL" \
             -Dsonar.token="$SONAR_TOKEN" \
             -Dsonar.projectVersion="$(git describe --tags --always 2>/dev/null || echo dev)"
-
-    # ── Build & Push Docker Images (main only) ────────────────────────────
-    - stage: build-images
-      name: "Build & Push Docker Images"
-      services:
-        - docker
-      script:
-        - bash deployment/scripts/travis-build-images.sh
-      workspaces:
-        create:
-          name: taskai-digests
-          paths:
-            - .image-digests.txt
 
     # ── Deploy Staging (uses digests from build) ──────────────────────────
     - stage: deploy-staging
