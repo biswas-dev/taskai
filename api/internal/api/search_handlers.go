@@ -404,54 +404,47 @@ func (s *Server) searchWikiPostgres(ctx context.Context, req GlobalSearchRequest
 		projectFilter = fmt.Sprintf("AND wp.project_id IN (%s)", strings.Join(placeholders, ","))
 	}
 
-	// Search wiki_blocks (FTS + ILIKE) UNION with wiki_pages.content (ILIKE + title)
-	// This ensures pages without blocks are still searchable via their markdown content.
+	// Search wiki pages by title and content directly.
+	// Also search wiki_blocks for pages with structured content.
+	// Deduplication happens in Go via the `seen` map below.
 	sqlQuery := fmt.Sprintf(`
-		SELECT page_id, page_title, page_slug, project_id, snippet, headings_path, rank
-		FROM (
-			-- Search wiki blocks (structured content with FTS)
-			SELECT DISTINCT ON (wp.id)
+		(
+			SELECT
+				wp.id AS page_id, wp.title AS page_title, wp.slug AS page_slug,
+				wp.project_id,
+				LEFT(COALESCE(wp.content, ''), 200) AS snippet,
+				'' AS headings_path,
+				CASE WHEN wp.title ILIKE '%%%%' || $2 || '%%%%' THEN 2.0 ELSE 0.5 END AS rank
+			FROM wiki_pages wp
+			WHERE (
+				wp.title ILIKE '%%%%' || $2 || '%%%%'
+				OR wp.content ILIKE '%%%%' || $2 || '%%%%'
+			)
+			%s
+		)
+		UNION ALL
+		(
+			SELECT
 				wp.id AS page_id, wp.title AS page_title, wp.slug AS page_slug,
 				wp.project_id,
 				LEFT(wb.plain_text, 200) AS snippet,
-				wb.headings_path,
+				COALESCE(wb.headings_path, '') AS headings_path,
 				ts_rank(wb.search_vector, plainto_tsquery('english', $1)) + 1 AS rank
 			FROM wiki_blocks wb
 			JOIN wiki_pages wp ON wb.page_id = wp.id
 			WHERE (
 				wb.search_vector @@ plainto_tsquery('english', $1)
-				OR wb.plain_text ILIKE '%%' || $2 || '%%'
+				OR wb.plain_text ILIKE '%%%%' || $2 || '%%%%'
 			)
 			%s
-			ORDER BY wp.id, rank DESC
-
-			UNION ALL
-
-			-- Search wiki pages directly (markdown content + title)
-			SELECT
-				wp.id AS page_id, wp.title AS page_title, wp.slug AS page_slug,
-				wp.project_id,
-				LEFT(wp.content, 200) AS snippet,
-				'' AS headings_path,
-				0.5 AS rank
-			FROM wiki_pages wp
-			WHERE (
-				wp.title ILIKE '%%' || $2 || '%%'
-				OR wp.content ILIKE '%%' || $2 || '%%'
-			)
-			AND wp.id NOT IN (
-				SELECT DISTINCT wb2.page_id FROM wiki_blocks wb2
-				WHERE wb2.search_vector @@ plainto_tsquery('english', $1)
-				   OR wb2.plain_text ILIKE '%%' || $2 || '%%'
-			)
-			%s
-		) combined
+		)
 		ORDER BY rank DESC
 		LIMIT $3
 	`, projectFilter, projectFilter)
 
 	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
+		s.logger.Error("Wiki search query failed", zap.Error(err), zap.String("query", req.Query), zap.Int("args_count", len(args)))
 		return nil, fmt.Errorf("postgres wiki search: %w", err)
 	}
 	defer rows.Close()
