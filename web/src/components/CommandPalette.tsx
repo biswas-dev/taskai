@@ -201,7 +201,9 @@ export default function CommandPalette() {
   ], [navigate, logout])
 
   // Convert search results to commands
+  // Capture query at memo time so wiki highlight URLs have the correct value
   const searchCommands: Command[] = useMemo(() => {
+    const currentQuery = query
     const commands: Command[] = []
 
     taskResults.forEach(task => {
@@ -232,14 +234,14 @@ export default function CommandPalette() {
         icon: '📄',
         category: 'wiki',
         action: () => {
-          navigate(`/app/projects/${wiki.project_id}/wiki/${wiki.page_slug}`)
+          navigate(`/app/projects/${wiki.project_id}?tab=wiki&page=${wiki.page_id}&highlight=${encodeURIComponent(currentQuery)}`)
           setIsOpen(false)
         },
       })
     })
 
     return commands
-  }, [taskResults, wikiResults, navigate])
+  }, [taskResults, wikiResults, navigate, query])
 
   // Filter static commands based on query
   const filteredStaticCommands = useMemo(() => {

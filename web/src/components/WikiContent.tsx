@@ -12,6 +12,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedPageId = searchParams.get('page')
   const annotationParam = searchParams.get('annotation')
+  const highlightTerm = searchParams.get('highlight')
 
   const [pages, setPages] = useState<WikiPage[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,6 +51,56 @@ export default function WikiContent({ projectId }: WikiContentProps) {
     setSelectedAnnotationId(id)
     setShowAnnotationSidebar(true)
   }, [annotationParam, annotations])
+
+  // Highlight search term from ?highlight=X (from command palette wiki search)
+  useEffect(() => {
+    if (!highlightTerm || !selectedPageId) return
+    // Wait for wiki content to render
+    const timer = setTimeout(() => {
+      const container = document.querySelector('[data-wiki-content]') || document.querySelector('.ProseMirror') || document.querySelector('.prose')
+      if (!container) return
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+      const regex = new RegExp(`(${highlightTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
+      const textNodes: Text[] = []
+      let node: Node | null
+      while ((node = walker.nextNode())) {
+        const text = node.textContent || ''
+        if (regex.test(text)) { regex.lastIndex = 0; textNodes.push(node as Text) }
+      }
+      // Wrap matches in <mark> elements
+      let firstMark: HTMLElement | null = null
+      for (const textNode of textNodes) {
+        const parts = (textNode.textContent || '').split(regex)
+        const frag = document.createDocumentFragment()
+        for (const part of parts) {
+          if (regex.test(part)) {
+            const mark = document.createElement('mark')
+            mark.textContent = part
+            mark.style.cssText = 'background: #facc15; color: #1a1a2e; padding: 1px 2px; border-radius: 2px; transition: background 2s ease;'
+            frag.appendChild(mark)
+            if (!firstMark) firstMark = mark
+            regex.lastIndex = 0
+          } else {
+            frag.appendChild(document.createTextNode(part))
+          }
+        }
+        textNode.parentNode?.replaceChild(frag, textNode)
+      }
+      // Scroll first match into view
+      if (firstMark) firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // Fade out highlights after 4 seconds
+      setTimeout(() => {
+        container.querySelectorAll('mark').forEach((m: Element) => {
+          (m as HTMLElement).style.background = 'transparent'
+        })
+      }, 4000)
+      // Remove highlight param from URL
+      const newParams = new URLSearchParams(searchParams)
+      newParams.delete('highlight')
+      setSearchParams(newParams, { replace: true })
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [highlightTerm, selectedPageId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadPages = async () => {
     try {
