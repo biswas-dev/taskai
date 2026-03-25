@@ -385,9 +385,10 @@ func (s *Server) searchWikiSQLite(ctx context.Context, req GlobalSearchRequest, 
 	return mapWikiResults(blocks, projectNameMap), nil
 }
 
-// searchWikiPostgres uses tsvector + GIN index with ts_rank for relevance ordering
+// searchWikiPostgres searches both wiki_blocks (FTS) and wiki_pages.content (ILIKE fallback).
+// Many wiki pages store content as markdown directly without wiki_blocks, so we search both.
 func (s *Server) searchWikiPostgres(ctx context.Context, req GlobalSearchRequest, accessibleProjects []int64, projectNameMap map[int64]string) ([]GlobalSearchWikiResult, error) {
-	// $1 = query (for FTS), $2 = query (for ILIKE fallback), $3 = limit
+	// $1 = query (for FTS), $2 = query (for ILIKE), $3 = limit
 	args := []interface{}{req.Query, req.Query, req.Limit}
 
 	var projectFilter string
@@ -403,22 +404,51 @@ func (s *Server) searchWikiPostgres(ctx context.Context, req GlobalSearchRequest
 		projectFilter = fmt.Sprintf("AND wp.project_id IN (%s)", strings.Join(placeholders, ","))
 	}
 
-	// Use DISTINCT ON to return one result per wiki page (highest-ranking block)
+	// Search wiki_blocks (FTS + ILIKE) UNION with wiki_pages.content (ILIKE + title)
+	// This ensures pages without blocks are still searchable via their markdown content.
 	sqlQuery := fmt.Sprintf(`
-		SELECT DISTINCT ON (wp.id)
-			wp.id AS page_id, wp.title AS page_title, wp.slug AS page_slug,
-			wp.project_id, wb.plain_text, wb.headings_path,
-			ts_rank(wb.search_vector, plainto_tsquery('english', $1)) AS rank
-		FROM wiki_blocks wb
-		JOIN wiki_pages wp ON wb.page_id = wp.id
-		WHERE (
-			wb.search_vector @@ plainto_tsquery('english', $1)
-			OR wb.plain_text ILIKE '%%' || $2 || '%%'
-		)
-		%s
-		ORDER BY wp.id, rank DESC
+		SELECT page_id, page_title, page_slug, project_id, snippet, headings_path, rank
+		FROM (
+			-- Search wiki blocks (structured content with FTS)
+			SELECT DISTINCT ON (wp.id)
+				wp.id AS page_id, wp.title AS page_title, wp.slug AS page_slug,
+				wp.project_id,
+				LEFT(wb.plain_text, 200) AS snippet,
+				wb.headings_path,
+				ts_rank(wb.search_vector, plainto_tsquery('english', $1)) + 1 AS rank
+			FROM wiki_blocks wb
+			JOIN wiki_pages wp ON wb.page_id = wp.id
+			WHERE (
+				wb.search_vector @@ plainto_tsquery('english', $1)
+				OR wb.plain_text ILIKE '%%' || $2 || '%%'
+			)
+			%s
+			ORDER BY wp.id, rank DESC
+
+			UNION ALL
+
+			-- Search wiki pages directly (markdown content + title)
+			SELECT
+				wp.id AS page_id, wp.title AS page_title, wp.slug AS page_slug,
+				wp.project_id,
+				LEFT(wp.content, 200) AS snippet,
+				'' AS headings_path,
+				0.5 AS rank
+			FROM wiki_pages wp
+			WHERE (
+				wp.title ILIKE '%%' || $2 || '%%'
+				OR wp.content ILIKE '%%' || $2 || '%%'
+			)
+			AND wp.id NOT IN (
+				SELECT DISTINCT wb2.page_id FROM wiki_blocks wb2
+				WHERE wb2.search_vector @@ plainto_tsquery('english', $1)
+				   OR wb2.plain_text ILIKE '%%' || $2 || '%%'
+			)
+			%s
+		) combined
+		ORDER BY rank DESC
 		LIMIT $3
-	`, projectFilter)
+	`, projectFilter, projectFilter)
 
 	rows, err := s.db.QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
@@ -427,6 +457,7 @@ func (s *Server) searchWikiPostgres(ctx context.Context, req GlobalSearchRequest
 	defer rows.Close()
 
 	results := make([]GlobalSearchWikiResult, 0)
+	seen := map[int64]bool{}
 	for rows.Next() {
 		var (
 			pageID       int64
@@ -440,6 +471,12 @@ func (s *Server) searchWikiPostgres(ctx context.Context, req GlobalSearchRequest
 		if err := rows.Scan(&pageID, &pageTitle, &pageSlug, &projectID, &plainText, &headingsPath, &rank); err != nil {
 			return nil, fmt.Errorf("scan wiki row: %w", err)
 		}
+
+		// Deduplicate pages (blocks + content may both match)
+		if seen[pageID] {
+			continue
+		}
+		seen[pageID] = true
 
 		snippet := ""
 		if plainText.Valid {
