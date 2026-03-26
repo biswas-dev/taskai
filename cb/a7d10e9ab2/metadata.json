@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "cba7d10e9ab2",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "api/cmd/api/main.go",
+    "api/go.mod",
+    "api/go.sum",
+    "api/internal/api/admin_analytics_handlers.go",
+    "api/internal/api/middleware.go",
+    "api/internal/db/api_keys.go",
+    "api/internal/db/api_keys_test.go",
+    "api/internal/db/migrations/063_analytics_tables.sql",
+    "api/internal/db/migrations/postgres/063_analytics_tables.sql",
+    "api/internal/version/version.go",
+    "docker-compose.yml",
+    "script/server",
+    "web/src/components/AdminAnalytics.tsx",
+    "web/src/lib/api.ts",
+    "web/src/lib/pageViewTracker.ts",
+    "web/src/routes/Admin.tsx",
+    "web/src/routes/Dashboard.test.tsx",
+    "web/src/routes/Dashboard.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cb/a7d10e9ab2/0/metadata.json",
+      "transcript": "/cb/a7d10e9ab2/0/full.jsonl",
+      "content_hash": "/cb/a7d10e9ab2/0/content_hash.txt",
+      "prompt": "/cb/a7d10e9ab2/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 72,
+    "cache_creation_tokens": 33776,
+    "cache_read_tokens": 2538854,
+    "output_tokens": 5138,
+    "api_call_count": 46
+  }
+}
