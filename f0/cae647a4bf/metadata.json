@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "f0cae647a4bf",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "web/src/components/ProjectInvitationBanner.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/f0/cae647a4bf/0/metadata.json",
+      "transcript": "/f0/cae647a4bf/0/full.jsonl",
+      "content_hash": "/f0/cae647a4bf/0/content_hash.txt",
+      "prompt": "/f0/cae647a4bf/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 27869,
+    "cache_read_tokens": 403710,
+    "output_tokens": 2372,
+    "api_call_count": 13
+  }
+}
