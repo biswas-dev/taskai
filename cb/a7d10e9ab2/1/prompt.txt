@@ -1,0 +1,93 @@
+Make a new tab next to System in admin Dashboard, to track user engagement in general, links clicked, time spent on the website, tasks created etc, Allow me as super admin to filter by any user and track all times and how they spend on the website, create tasks, create wiki, even their MCP server interactions, tracked by API key etc. Admin Dashboard
+Users (20)
+Invitations
+Email Provider
+Backup & Restore
+System If someone is using my website, i want to know everything about them
+
+---
+
+how can i access locally?
+
+---
+
+http://localhost:5173/app/admin?tab=analytics This site can’t be reached
+localhost refused to connect.
+
+---
+
+http://localhost:5173/app/admin?tab=analytics Server error (404): Not Found
+
+---
+
+<task-notification>
+<task-id>bfbjrm4sy</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/bfbjrm4sy.output</output-file>
+<status>completed</status>
+<summary>Background command "Start Vite dev server pointed to production" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/bfbjrm4sy.output
+
+---
+
+<task-notification>
+<task-id>b1afm2ww9</task-id>
+<tool-use-id>toolu_01Bu5oVsk5b1LVeM2SzNVEQy</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/b1afm2ww9.output</output-file>
+<status>failed</status>
+<summary>Background command "Start Go backend on :8083" failed with exit code 2</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/b1afm2ww9.output
+
+---
+
+<task-notification>
+<task-id>bp0b2q1ck</task-id>
+<tool-use-id>toolu_011tABErEby3NTc7jct4hmLk</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/bp0b2q1ck.output</output-file>
+<status>completed</status>
+<summary>Background command "Start Go backend with DATABASE_URL" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/bp0b2q1ck.output
+
+---
+
+<task-notification>
+<task-id>bbv67o608</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/bbv67o608.output</output-file>
+<status>failed</status>
+<summary>Background command "Start Go backend with DB_DSN" failed with exit code 1</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/bbv67o608.output
+
+---
+
+ok this is fine Analytics endpoints not deployed yet — showing empty state. Deploy migration 063 to enable.
+two more issues, the subtab is not saved https://taskai.cc/app/admin?tab=backup, if I navigate to automated, and refresh, it goes back to manual, more importantly, auto backup not working, last backup 19 days ago , also this page does not work https://taskai.cc/app/admin?tab=system  same for local http://localhost:5174/app/admin?tab=system
+
+---
+
+ok works, why are we not backing up though? It maybe because it wasnt connected, but after connecting I cannot find my folder which was crated Storage Folder
+Google Drive root
+
+---
+
+yes, lets do it
+
+---
+
+no, we must have set it and its in the server somewhere, in prod, please search
+
+---
+
+wait, we use travis, why are they in Github secrets
+
+---
+
+we should not be using github at all, this should be fully travis
+
+---
+
+same issue, no TaskAI folder, but it is there and one backup was made to that folder, the folders showing are not in the root
