@@ -24,6 +24,7 @@ vi.mock('../components/CommandPalette', () => ({
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mockNavigate,
+  useLocation: () => ({ pathname: '/app', search: '', hash: '', state: null, key: 'default' }),
   Outlet: () => <div data-testid="outlet" />,
 }))
 

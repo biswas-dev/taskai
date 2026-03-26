@@ -26,6 +26,8 @@ const (
 	UserEmailKey contextKey = "user_email"
 	// AgentNameKey is the context key for AI agent name (from X-Agent-Name header)
 	AgentNameKey contextKey = "agent_name"
+	// ApiKeyIDKey is the context key for the API key ID (set when auth is via ApiKey)
+	ApiKeyIDKey contextKey = "api_key_id"
 )
 
 // JWTAuth middleware validates JWT tokens or API keys from Authorization header
@@ -72,12 +74,15 @@ func (s *Server) JWTAuth(next http.Handler) http.Handler {
 
 		case "ApiKey":
 			// API key authentication
-			userID, email, err = s.db.GetUserByAPIKey(r.Context(), credential)
+			var apiKeyID int64
+			userID, email, apiKeyID, err = s.db.GetUserByAPIKey(r.Context(), credential)
 			if err != nil {
 				s.logger.Warn("API key validation failed", zap.Error(err))
 				respondError(w, http.StatusUnauthorized, "invalid or expired API key", "unauthorized")
 				return
 			}
+			// Store API key ID in context for analytics tracking
+			r = r.WithContext(context.WithValue(r.Context(), ApiKeyIDKey, apiKeyID))
 
 		default:
 			respondError(w, http.StatusUnauthorized, "unsupported authorization type", "unauthorized")
@@ -282,4 +287,59 @@ func RateLimitMiddleware(requestsPerMinute int) func(http.Handler) http.Handler 
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// GetApiKeyID extracts API key ID from request context (0 if not via API key)
+func GetApiKeyID(r *http.Request) int64 {
+	id, _ := r.Context().Value(ApiKeyIDKey).(int64)
+	return id
+}
+
+// APIRequestLogger returns a middleware that logs authenticated API requests to the database.
+// Must be placed after JWTAuth in the middleware chain.
+func (s *Server) APIRequestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		next.ServeHTTP(wrapped, r)
+
+		// Skip logging for the page-view beacon itself to avoid noise
+		if r.URL.Path == "/api/analytics/page-views" {
+			return
+		}
+
+		userID, ok := r.Context().Value(UserIDKey).(int64)
+		if !ok || userID == 0 {
+			return // No authenticated user, skip
+		}
+
+		apiKeyID := GetApiKeyID(r)
+		agentName := GetAgentName(r)
+		ip := getClientIP(r)
+		durationMs := int(time.Since(start).Milliseconds())
+
+		go func() {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			var agentNameVal *string
+			if agentName != nil {
+				agentNameVal = agentName
+			}
+
+			var apiKeyIDVal *int64
+			if apiKeyID > 0 {
+				apiKeyIDVal = &apiKeyID
+			}
+
+			_, err := s.db.ExecContext(bgCtx, `
+				INSERT INTO api_request_log (user_id, api_key_id, method, path, status_code, duration_ms, agent_name, ip_address)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			`, userID, apiKeyIDVal, r.Method, r.URL.Path, wrapped.statusCode, durationMs, agentNameVal, ip)
+			if err != nil {
+				s.logger.Error("Failed to log API request", zap.Error(err))
+			}
+		}()
+	})
 }

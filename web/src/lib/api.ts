@@ -196,6 +196,54 @@ export interface UserActivityPage {
   has_more: boolean
 }
 
+// ── Analytics types ──────────────────────────────────────────────────────
+export interface AnalyticsOverview {
+  period_days: number
+  active_users: number
+  total_logins: number
+  total_page_views: number
+  total_api_requests: number
+  tasks_created: number
+  wiki_pages_created: number
+  wiki_edits: number
+  comments_added: number
+  avg_session_duration_minutes: number
+  daily_active_users: { date: string; count: number }[]
+}
+
+export interface AnalyticsUserRow {
+  user_id: number
+  email: string
+  name: string
+  login_count: number
+  page_view_count: number
+  api_request_count: number
+  tasks_created: number
+  comments_added: number
+  wiki_edits: number
+  total_session_minutes: number
+  last_active_at?: string | null
+}
+
+export interface AnalyticsUserDetail {
+  user: AnalyticsUserRow
+  recent_logins: { id: number; activity_type: string; ip_address?: string; user_agent?: string; created_at: string }[]
+  recent_page_views: { id: number; path: string; referrer?: string; duration_ms?: number | null; created_at: string }[]
+  recent_activity: ActivityEntry[]
+  api_keys: AnalyticsAPIKeyUsage[]
+}
+
+export interface AnalyticsAPIKeyUsage {
+  api_key_id: number
+  key_name: string
+  key_prefix: string
+  user_id: number
+  user_email: string
+  request_count: number
+  last_used_at?: string | null
+  top_paths: { method: string; path: string; count: number }[]
+}
+
 export type AnnotationColor = 'yellow' | 'blue' | 'green' | 'red'
 
 export interface AnnotationComment {
@@ -1901,6 +1949,30 @@ class ApiClient {
   async getUserActivityFeed(userId: number, before?: string): Promise<UserActivityPage> {
     const qs = before ? `?before=${encodeURIComponent(before)}` : ''
     return this.request<UserActivityPage>(`/api/users/${userId}/activity${qs}`)
+  }
+
+  // ── Analytics endpoints ──────────────────────────────────────────────────
+  async trackPageView(data: { path: string; referrer: string; session_id: string; duration_ms?: number }): Promise<void> {
+    await this.request<void>('/api/analytics/page-views', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getAnalyticsOverview(days = 30): Promise<AnalyticsOverview> {
+    return this.request<AnalyticsOverview>(`/api/admin/analytics/overview?days=${days}`)
+  }
+
+  async getAnalyticsUsers(days = 30): Promise<AnalyticsUserRow[]> {
+    return this.request<AnalyticsUserRow[]>(`/api/admin/analytics/users?days=${days}`)
+  }
+
+  async getAnalyticsUserDetail(userId: number, days = 30): Promise<AnalyticsUserDetail> {
+    return this.request<AnalyticsUserDetail>(`/api/admin/analytics/users/${userId}?days=${days}`)
+  }
+
+  async getAnalyticsAPIKeys(days = 30): Promise<AnalyticsAPIKeyUsage[]> {
+    return this.request<AnalyticsAPIKeyUsage[]>(`/api/admin/analytics/api-keys?days=${days}`)
   }
 
   // Version endpoint

@@ -48,6 +48,7 @@ type ResourceMetrics struct {
 type DatabaseInfo struct {
 	Type             string `json:"type"`
 	MigrationVersion int    `json:"migration_version,omitempty"`
+	Environment      string `json:"environment,omitempty"`
 }
 
 // ContainerMetrics matches BuildMe's container section
@@ -105,6 +106,7 @@ func Get(env string, dbVersion int, dbDriver string) VersionResponse {
 		Database: DatabaseInfo{
 			Type:             dbDriver,
 			MigrationVersion: dbVersion,
+			Environment:      env,
 		},
 	}
 

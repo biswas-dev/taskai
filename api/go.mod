@@ -5,9 +5,9 @@ go 1.26.0
 require (
 	entgo.io/ent v0.14.5
 	github.com/XSAM/otelsql v0.41.0
-	github.com/anchoo2kewl/go-backup v0.1.9
-	github.com/anchoo2kewl/go-backup/gdrive v0.1.9
-	github.com/anchoo2kewl/go-backup/pgstore v0.1.9
+	github.com/anchoo2kewl/go-backup v0.1.10
+	github.com/anchoo2kewl/go-backup/gdrive v0.1.10
+	github.com/anchoo2kewl/go-backup/pgstore v0.1.10
 	github.com/anchoo2kewl/go-draw v0.8.1
 	github.com/anchoo2kewl/go-login v0.2.1
 	github.com/anchoo2kewl/go-wiki v0.1.2

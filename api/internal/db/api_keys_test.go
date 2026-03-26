@@ -279,7 +279,7 @@ func TestValidateAPIKey(t *testing.T) {
 	}
 
 	// Validate the key
-	gotUserID, err := db.ValidateAPIKey(ctx, result.Key)
+	gotUserID, _, err := db.ValidateAPIKey(ctx, result.Key)
 	if err != nil {
 		t.Fatalf("ValidateAPIKey failed: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestValidateAPIKey_Invalid(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := db.ValidateAPIKey(ctx, "completely-invalid-key")
+	_, _, err := db.ValidateAPIKey(ctx, "completely-invalid-key")
 	if err == nil {
 		t.Fatal("Expected error for invalid API key")
 	}
@@ -314,7 +314,7 @@ func TestValidateAPIKey_Expired(t *testing.T) {
 		t.Fatalf("CreateAPIKey failed: %v", err)
 	}
 
-	_, err = db.ValidateAPIKey(ctx, result.Key)
+	_, _, err = db.ValidateAPIKey(ctx, result.Key)
 	if err == nil {
 		t.Fatal("Expected error for expired API key")
 	}
@@ -333,7 +333,7 @@ func TestValidateAPIKey_UpdatesLastUsed(t *testing.T) {
 	}
 
 	// Validate to trigger last_used_at update
-	_, err = db.ValidateAPIKey(ctx, result.Key)
+	_, _, err = db.ValidateAPIKey(ctx, result.Key)
 	if err != nil {
 		t.Fatalf("ValidateAPIKey failed: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestGetUserByAPIKey(t *testing.T) {
 		t.Fatalf("CreateAPIKey failed: %v", err)
 	}
 
-	gotUserID, gotEmail, err := db.GetUserByAPIKey(ctx, result.Key)
+	gotUserID, gotEmail, _, err := db.GetUserByAPIKey(ctx, result.Key)
 	if err != nil {
 		t.Fatalf("GetUserByAPIKey failed: %v", err)
 	}
@@ -450,7 +450,7 @@ func TestGetUserByAPIKey_InvalidKey(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, _, err := db.GetUserByAPIKey(ctx, "invalid-key")
+	_, _, _, err := db.GetUserByAPIKey(ctx, "invalid-key")
 	if err == nil {
 		t.Fatal("Expected error for invalid API key")
 	}
@@ -469,7 +469,7 @@ func TestGetUserByAPIKey_ExpiredKey(t *testing.T) {
 		t.Fatalf("CreateAPIKey failed: %v", err)
 	}
 
-	_, _, err = db.GetUserByAPIKey(ctx, result.Key)
+	_, _, _, err = db.GetUserByAPIKey(ctx, result.Key)
 	if err == nil {
 		t.Fatal("Expected error for expired API key")
 	}

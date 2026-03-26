@@ -421,6 +421,8 @@ func main() {
 			r.Use(server.JWTAuth)
 			// Apply general rate limiting (100 req/min)
 			r.Use(api.RateLimitMiddleware(cfg.RateLimitRequests))
+			// Log all authenticated API requests for analytics
+			r.Use(server.APIRequestLogger)
 
 			r.Get("/me", server.HandleMe)
 			r.Patch("/me", server.HandleUpdateProfile)
@@ -646,6 +648,15 @@ func main() {
 			r.Get("/admin/invitations", server.HandleAdminGetInvitations)
 			r.Post("/admin/team-invitations/{id}/resolve", server.HandleAdminResolveTeamInvitation)
 			r.Post("/admin/project-invitations/{id}/resolve", server.HandleAdminResolveProjectInvitation)
+
+			// Admin analytics routes
+			r.Get("/admin/analytics/overview", server.HandleAnalyticsOverview)
+			r.Get("/admin/analytics/users", server.HandleAnalyticsUsers)
+			r.Get("/admin/analytics/users/{id}", server.HandleAnalyticsUserDetail)
+			r.Get("/admin/analytics/api-keys", server.HandleAnalyticsAPIKeys)
+
+			// Analytics beacon (all authenticated users, not admin-only)
+			r.Post("/analytics/page-views", server.HandleTrackPageView)
 
 			// Admin backup/restore routes (legacy export/import)
 			r.Get("/admin/backup/export", server.HandleExportData)

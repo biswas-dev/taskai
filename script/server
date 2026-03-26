@@ -103,11 +103,13 @@ show_help() {
     echo "  local:logs [service] Show local logs"
     echo "  local:clean          Stop and remove all local containers/volumes"
     echo ""
-    echo -e "${YELLOW}Deployment Commands:${NC}"
-    echo "  deploy [\"message\"]         Commit, push to main, auto-deploy to STAGING → UAT → PROD"
-    echo "                              Include [skip-prod] in message to skip auto-promotion to production"
-    echo "  promote <src> <dst>       Promote between environments (one-way: staging→uat→prod)"
-    echo "  watch [staging|prod] Watch GitHub Actions build status and logs"
+    echo -e "${YELLOW}Deployment Commands (Travis CI):${NC}"
+    echo "  deploy [\"message\"]         Commit, push to main → Travis deploys to STAGING"
+    echo "  promote                    Promote staging → production (default)"
+    echo "  promote staging prod       Promote staging → production"
+    echo "  promote staging uat        Promote staging → UAT (optional)"
+    echo "  promote uat prod           Promote UAT → production"
+    echo "  watch [staging|prod]       Watch deployment health until new version appears"
     echo ""
     echo -e "${YELLOW}Staging Commands (staging.taskai.cc):${NC}"
     echo "  staging status       Show staging service status"
@@ -150,11 +152,10 @@ show_help() {
     echo "  prod version         Show production version info"
     echo ""
     echo -e "${YELLOW}Examples:${NC}"
-    echo "  $0 deploy \"feat: add dark mode\"       # Deploy staging → UAT → production"
-    echo "  $0 deploy \"fix: typo [skip-prod]\"     # Deploy staging → UAT only (no prod)"
-    echo "  $0 promote staging uat                # Promote staging → UAT"
-    echo "  $0 promote staging prod                # Promote staging → production"
-    echo "  $0 promote uat prod                    # Promote UAT → production"
+    echo "  $0 deploy \"feat: add dark mode\"       # Deploy to staging via Travis"
+    echo "  $0 promote                            # Promote staging → production"
+    echo "  $0 promote staging uat                # Promote staging → UAT (when needed)"
+    echo "  $0 promote uat prod                   # Promote UAT → production"
     echo "  $0 staging health                      # Check staging health"
     echo "  $0 prod health                         # Check production health"
     echo "  $0 staging logs api                    # View staging API logs"
@@ -162,7 +163,7 @@ show_help() {
     echo "  $0 db-migrate prod staging             # Copy production DB to staging"
 }
 
-# Deploy to staging (commit, push, GitHub Actions handles staging deploy)
+# Deploy to staging (commit, push to main — Travis CI deploys automatically)
 deploy_to_staging() {
     local commit_message="${1:-Deploy: automated deployment}"
 
@@ -174,8 +175,6 @@ deploy_to_staging() {
         git add -A
         git commit -m "$commit_message
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
 Co-Authored-By: Claude <noreply@anthropic.com>" || {
             print_error "Failed to commit changes"
             return 1
@@ -184,29 +183,37 @@ Co-Authored-By: Claude <noreply@anthropic.com>" || {
         print_status "No uncommitted changes found"
     fi
 
-    # Push to remote
-    print_status "Pushing to GitHub (triggers staging deploy)..."
+    # Push to remote — Travis CI picks up main branch pushes automatically
+    print_status "Pushing to main (triggers Travis CI: tests + staging deploy)..."
     git push origin main || {
-        print_error "Failed to push to GitHub"
+        print_error "Failed to push"
         return 1
     }
 
-    print_success "Code pushed to GitHub — staging deployment triggered"
-    print_status "Monitor: https://github.com/anchoo2kewl/taskai/actions"
+    print_success "Code pushed — Travis CI staging deployment triggered"
+    print_status "Monitor: https://app.travis-ci.com/github/anchoo2kewl/taskai"
     echo ""
 
-    # Wait and verify staging
-    print_status "Waiting for staging deployment (60 seconds)..."
-    sleep 60
+    # Wait for Travis to build + deploy (~5 min for fast deploy)
+    print_status "Waiting for staging deployment (~5 minutes)..."
+    sleep 120
 
     resolve_env staging
     print_status "Verifying staging deployment..."
-    local max_attempts=20
+    local max_attempts=40
     local attempt=1
 
     while [ $attempt -le $max_attempts ]; do
         if curl -f -s "https://$STAGING_DOMAIN/api/health" >/dev/null 2>&1; then
-            print_success "Staging deployment successful!"
+            # Check if the deployed version matches our commit
+            local deployed_commit=$(curl -s "https://$STAGING_DOMAIN/api/version" 2>/dev/null | jq -r '.backend.git_commit // empty')
+            local local_commit=$(git rev-parse --short HEAD)
+
+            if [[ -n "$deployed_commit" && "$deployed_commit" == "$local_commit"* ]]; then
+                print_success "Staging deployment successful! (commit: $deployed_commit)"
+            else
+                print_success "Staging is healthy (deployed: ${deployed_commit:-unknown}, pushed: $local_commit)"
+            fi
             echo ""
             echo -e "${CYAN}Staging URL:${NC} https://$STAGING_DOMAIN"
             echo -e "${CYAN}API Health:${NC} https://$STAGING_DOMAIN/api/health"
@@ -216,7 +223,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>" || {
             env_version staging
             echo ""
 
-            print_status "To promote to production: $0 promote"
+            print_status "To promote to production: $0 promote staging prod"
             return 0
         fi
 
@@ -225,17 +232,22 @@ Co-Authored-By: Claude <noreply@anthropic.com>" || {
         attempt=$((attempt + 1))
     done
 
-    print_warning "Staging not responding yet — deployment may still be in progress"
-    print_status "Check status: $0 staging health"
-    print_status "Check actions: https://github.com/anchoo2kewl/taskai/actions"
+    print_warning "Staging not responding yet — Travis build may still be running"
+    print_status "Check Travis: https://app.travis-ci.com/github/anchoo2kewl/taskai"
+    print_status "Check health: $0 staging health"
     return 1
 }
 
-# Promote between environments: staging → uat, staging → prod, uat → prod
-# Usage: promote <source> <destination>
+# Promote between environments — Travis CI deploys on branch push
+# Default: staging → prod (skip UAT). Use explicit args for UAT.
+# Usage: promote [source] [destination]
+#   promote                    → staging → prod (default)
+#   promote staging prod       → staging → prod
+#   promote staging uat        → staging → uat
+#   promote uat prod           → uat → prod
 promote() {
-    local src="${1:-}"
-    local dst="${2:-}"
+    local src="${1:-staging}"
+    local dst="${2:-prod}"
 
     # Normalize aliases
     case "$src" in
@@ -244,9 +256,7 @@ promote() {
         prod|production) src="prod" ;;
         *)
             print_error "Unknown source environment: '$src'"
-            echo "  Valid sources: staging, uat"
-            echo "  Usage: $0 promote <source> <destination>"
-            echo "  Example: $0 promote staging uat"
+            echo "  Usage: $0 promote [staging|uat] [uat|prod]"
             return 1
             ;;
     esac
@@ -255,194 +265,138 @@ promote() {
         prod|production) dst="prod" ;;
         *)
             print_error "Unknown destination environment: '$dst'"
-            echo "  Valid destinations: uat, prod"
-            echo "  Usage: $0 promote <source> <destination>"
-            echo "  Example: $0 promote staging prod"
+            echo "  Usage: $0 promote [staging|uat] [uat|prod]"
             return 1
             ;;
     esac
 
-    # Enforce one-way pipeline: staging → uat → prod (no reverse, no prod as source)
+    # Enforce one-way pipeline
     local allowed=0
     [[ "$src" == "staging" && "$dst" == "uat"  ]] && allowed=1
     [[ "$src" == "staging" && "$dst" == "prod" ]] && allowed=1
     [[ "$src" == "uat"     && "$dst" == "prod" ]] && allowed=1
     if [[ "$allowed" == "0" ]]; then
         print_error "Invalid promotion: $src → $dst"
-        echo "  Allowed paths:"
-        echo "    staging → uat"
-        echo "    staging → prod"
-        echo "    uat     → prod"
+        echo "  Allowed: staging→uat, staging→prod, uat→prod"
         return 1
     fi
 
-    # Check gh CLI
-    if ! command -v gh &> /dev/null; then
-        print_error "GitHub CLI (gh) is not installed. Install: brew install gh"
-        return 1
-    fi
-
+    # Resolve source ref
+    local src_ref branch_name
     if [[ "$dst" == "uat" ]]; then
-        print_header "Promoting staging → UAT"
-        print_status "Temporarily enabling force pushes on UAT branch..."
-        gh api repos/anchoo2kewl/taskai/branches/uat/protection -X PUT \
-            -H "Accept: application/vnd.github+json" \
-            --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":true,"required_linear_history":false}
-EOF
-        print_status "Force-pushing main → uat..."
-        git push origin main:uat --force || {
-            print_error "Force push to UAT failed"
-            return 1
-        }
-        print_status "Re-disabling force pushes on UAT branch..."
-        gh api repos/anchoo2kewl/taskai/branches/uat/protection -X PUT \
-            -H "Accept: application/vnd.github+json" \
-            --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"required_linear_history":false}
-EOF
-        print_success "UAT promoted from staging!"
-        echo -e "${CYAN}UAT URL:${NC} https://uat.taskai.cc"
-        echo -e "${CYAN}Monitor:${NC} https://github.com/anchoo2kewl/taskai/actions"
-
+        branch_name="uat"
+        src_ref="main"
     elif [[ "$dst" == "prod" ]]; then
-        # Resolve source SHA: uat HEAD or main HEAD
-        local src_ref
+        branch_name="production"
         if [[ "$src" == "uat" ]]; then
-            src_ref=$(git ls-remote origin uat | awk '{print $1}')
+            src_ref="uat"
         else
-            src_ref=$(git ls-remote origin main | awk '{print $1}')
+            src_ref="main"
         fi
-        [[ -z "$src_ref" ]] && { print_error "Could not resolve $src SHA"; return 1; }
-
-        print_header "Promoting $src → Production"
-        echo -e "${CYAN}SHA:${NC} $src_ref"
-        echo ""
-        print_status "Temporarily enabling force pushes on production branch..."
-        gh api repos/anchoo2kewl/taskai/branches/production/protection -X PUT \
-            -H "Accept: application/vnd.github+json" \
-            --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":true,"required_linear_history":false}
-EOF
-        print_status "Force-pushing $src → production..."
-        git push origin "$src_ref":production --force || {
-            print_error "Force push to production failed"
-            # Re-lock before returning
-            gh api repos/anchoo2kewl/taskai/branches/production/protection -X PUT \
-                -H "Accept: application/vnd.github+json" \
-                --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"required_linear_history":false}
-EOF
-            return 1
-        }
-        print_status "Re-locking production branch..."
-        gh api repos/anchoo2kewl/taskai/branches/production/protection -X PUT \
-            -H "Accept: application/vnd.github+json" \
-            --input - <<'EOF'
-{"required_status_checks":{"strict":true,"contexts":[]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null,"allow_force_pushes":false,"required_linear_history":false}
-EOF
-        print_success "Production deployment triggered via production branch push!"
-        echo -e "${CYAN}Production URL:${NC} https://taskai.cc"
-        echo -e "${CYAN}Monitor:${NC} https://github.com/anchoo2kewl/taskai/actions"
-        echo ""
-        print_status "After deployment completes, verify: $0 prod health"
     fi
+
+    local src_sha=$(git ls-remote origin "$src_ref" | awk '{print $1}')
+    [[ -z "$src_sha" ]] && { print_error "Could not resolve $src_ref SHA"; return 1; }
+
+    print_header "Promoting $src → ${dst} (Travis CI)"
+    echo -e "${CYAN}Source:${NC} $src_ref ($src_sha)"
+    echo -e "${CYAN}Target:${NC} $branch_name branch"
+    echo ""
+
+    # Push to target branch — Travis CI picks it up
+    print_status "Pushing $src_ref → $branch_name..."
+    git push origin "$src_sha":"refs/heads/$branch_name" --force || {
+        print_error "Push to $branch_name failed"
+        return 1
+    }
+
+    print_success "Pushed to $branch_name — Travis CI deployment triggered!"
+    print_status "Monitor: https://app.travis-ci.com/github/anchoo2kewl/taskai"
+    echo ""
+
+    # Wait and verify
+    local domain
+    if [[ "$dst" == "uat" ]]; then
+        domain="uat.taskai.cc"
+    else
+        domain="taskai.cc"
+    fi
+
+    print_status "Waiting for deployment (~5 minutes)..."
+    sleep 120
+
+    local max_attempts=40
+    local attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        if curl -f -s "https://$domain/api/health" >/dev/null 2>&1; then
+            local deployed_commit=$(curl -s "https://$domain/api/version" 2>/dev/null | jq -r '.backend.git_commit // empty')
+            local expected_short="${src_sha:0:7}"
+
+            if [[ -n "$deployed_commit" && "$deployed_commit" == "$expected_short"* ]]; then
+                print_success "${dst} deployment verified! (commit: $deployed_commit)"
+            else
+                print_success "${dst} is healthy (deployed: ${deployed_commit:-unknown}, expected: $expected_short)"
+            fi
+            echo ""
+            echo -e "${CYAN}URL:${NC} https://$domain"
+            env_version "$dst"
+            return 0
+        fi
+
+        print_status "Waiting for ${dst} (attempt $attempt/$max_attempts)..."
+        sleep 5
+        attempt=$((attempt + 1))
+    done
+
+    print_warning "${dst} not responding yet — Travis build may still be running"
+    print_status "Check Travis: https://app.travis-ci.com/github/anchoo2kewl/taskai"
+    return 1
 }
 
-# Watch GitHub Actions deployment status and logs
+# Watch deployment status
 watch_deployment() {
     local env="${1:-staging}"
 
-    # Check if gh CLI is available
-    if ! command -v gh &> /dev/null; then
-        print_error "GitHub CLI (gh) is not installed"
-        print_status "Install: brew install gh"
-        return 1
-    fi
-
-    # Determine which workflow to watch
-    local workflow_name
-    case "$env" in
-        staging)
-            workflow_name="CI"
-            print_header "Watching Staging Deployment (CI Workflow)"
-            ;;
-        prod|production)
-            workflow_name="Deploy to Production"
-            print_header "Watching Production Deployment"
-            ;;
-        *)
-            print_error "Invalid environment: $env"
-            print_status "Usage: $0 watch [staging|prod]"
-            return 1
-            ;;
-    esac
-
+    print_header "Watching ${env} deployment"
+    echo ""
+    print_status "Travis CI builds: https://app.travis-ci.com/github/anchoo2kewl/taskai"
     echo ""
 
-    # Get latest run
-    print_status "Fetching latest $workflow_name run..."
-    local run_info=$(gh run list --workflow="$workflow_name" --limit=1 --json databaseId,status,conclusion,displayTitle,createdAt,updatedAt,url 2>/dev/null)
+    resolve_env "$env"
+    local domain="$REMOTE_DOMAIN"
 
-    if [ -z "$run_info" ] || [ "$run_info" = "[]" ]; then
-        print_error "No $workflow_name runs found"
-        return 1
-    fi
-
-    # Parse run info
-    local run_id=$(echo "$run_info" | jq -r '.[0].databaseId')
-    local status=$(echo "$run_info" | jq -r '.[0].status')
-    local conclusion=$(echo "$run_info" | jq -r '.[0].conclusion')
-    local title=$(echo "$run_info" | jq -r '.[0].displayTitle')
-    local created_at=$(echo "$run_info" | jq -r '.[0].createdAt')
-    local url=$(echo "$run_info" | jq -r '.[0].url')
+    print_status "Polling https://$domain/api/health ..."
+    local max_attempts=60
+    local attempt=1
+    local last_commit=""
 
     # Display run summary
     echo -e "${CYAN}Run ID:${NC} $run_id"
     echo -e "${CYAN}Title:${NC} $title"
-    echo -e "${CYAN}Created:${NC} $created_at"
-    echo -e "${CYAN}Status:${NC} $status"
+    while [ $attempt -le $max_attempts ]; do
+        local commit=$(curl -s "https://$domain/api/version" 2>/dev/null | jq -r '.backend.git_commit // empty')
+        local healthy=$(curl -f -s "https://$domain/api/health" >/dev/null 2>&1 && echo "yes" || echo "no")
 
-    if [ "$conclusion" != "null" ]; then
-        if [ "$conclusion" = "success" ]; then
-            echo -e "${CYAN}Result:${NC} ${GREEN}✓ $conclusion${NC}"
+        if [[ "$healthy" == "yes" ]]; then
+            if [[ -n "$commit" && "$commit" != "$last_commit" ]]; then
+                if [[ -n "$last_commit" ]]; then
+                    print_success "New version deployed! $last_commit → $commit"
+                    env_version "$env"
+                    return 0
+                fi
+                last_commit="$commit"
+            fi
+            echo -e "  [${attempt}/${max_attempts}] healthy — commit: ${commit:-unknown}"
         else
-            echo -e "${CYAN}Result:${NC} ${RED}✗ $conclusion${NC}"
+            echo -e "  [${attempt}/${max_attempts}] ${RED}unhealthy${NC}"
         fi
-    fi
 
-    echo -e "${CYAN}URL:${NC} $url"
-    echo ""
+        sleep 5
+        attempt=$((attempt + 1))
+    done
 
-    # Show detailed status
-    print_status "Run details:"
-    gh run view "$run_id" 2>/dev/null
-    echo ""
-
-    # If run is in progress, offer to watch live
-    if [ "$status" = "in_progress" ] || [ "$status" = "queued" ]; then
-        print_status "Run is currently $status"
-        echo ""
-        read -p "$(echo -e ${YELLOW}Watch live logs? [y/N]:${NC} )" -n 1 -r
-        echo ""
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            print_status "Watching live logs (Ctrl+C to stop)..."
-            gh run watch "$run_id"
-        fi
-    elif [ "$conclusion" = "failure" ]; then
-        # Show failed logs
-        print_error "Run failed! Showing error logs..."
-        echo ""
-        gh run view "$run_id" --log-failed
-    else
-        # Show option to view full logs
-        echo ""
-        read -p "$(echo -e ${YELLOW}View full logs? [y/N]:${NC} )" -n 1 -r
-        echo ""
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            gh run view "$run_id" --log
-        fi
-    fi
+    print_warning "Timed out waiting for new deployment"
+    print_status "Check Travis: https://app.travis-ci.com/github/anchoo2kewl/taskai"
 }
 
 # Environment-specific operations

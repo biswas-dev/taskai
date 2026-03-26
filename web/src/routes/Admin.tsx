@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../state/AuthContext'
 import { api, type EmailProviderResponse, type AdminInvitation, type BackupStatus, type BackupSettings, type BackupRecord, type BackupFolder } from '../lib/api'
 import { version as frontendVersion } from '../lib/version'
+import AdminAnalytics from '../components/AdminAnalytics'
 
 // API URL with fallback for production (empty string = relative URL)
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -120,7 +121,15 @@ interface UserActivity {
   created_at: string
 }
 
-type AdminTab = 'users' | 'invitations' | 'email' | 'backup' | 'system'
+type AdminTab = 'users' | 'invitations' | 'email' | 'backup' | 'system' | 'analytics'
+
+interface VersionInfoRaw {
+  backend: { version: string; git_commit: string; build_time: string; go_version: string; platform: string }
+  runtime: { hostname: string; pid: number; port: number; uptime_seconds: number; started_at: string }
+  resources: { memory_alloc_mb: number; heap_inuse_mb: number; goroutines: number }
+  database: { type: string; migration_version: number; environment?: string }
+  container?: { memory_usage_mb: number; cpu_usage_ns: number }
+}
 
 interface VersionInfo {
   version: string
@@ -132,6 +141,9 @@ interface VersionInfo {
   db_version: number
   environment: string
   db_driver: string
+  uptime_seconds: number
+  goroutines: number
+  memory_mb: number
 }
 
 export default function Admin() {
@@ -730,8 +742,21 @@ export default function Admin() {
   const loadVersionInfo = async () => {
     try {
       setVersionLoading(true)
-      const data = await api.getVersion()
-      setVersionInfo(data)
+      const raw = await api.getVersion() as unknown as VersionInfoRaw
+      setVersionInfo({
+        version: raw.backend.version,
+        git_commit: raw.backend.git_commit,
+        build_time: raw.backend.build_time,
+        go_version: raw.backend.go_version,
+        platform: raw.backend.platform,
+        server_time: raw.runtime.started_at,
+        db_version: raw.database.migration_version,
+        environment: raw.database.environment || (raw.backend.version === 'dev' ? 'development' : 'production'),
+        db_driver: raw.database.type,
+        uptime_seconds: raw.runtime.uptime_seconds,
+        goroutines: raw.resources.goroutines,
+        memory_mb: raw.resources.memory_alloc_mb,
+      })
     } catch (err) {
       console.error('Failed to load version info:', err)
     } finally {
@@ -874,6 +899,16 @@ export default function Admin() {
               }`}
             >
               System
+            </button>
+            <button
+              onClick={() => handleTabChange('analytics')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'analytics'
+                  ? 'bg-primary-500/10 text-primary-400 border border-primary-500/30'
+                  : 'text-dark-text-secondary hover:text-dark-text-primary hover:bg-dark-bg-tertiary/30'
+              }`}
+            >
+              Analytics
             </button>
           </div>
         </div>
@@ -1377,7 +1412,7 @@ export default function Admin() {
               {/* Subtab switcher */}
               <div className="flex border-b border-dark-border-subtle">
                 {(['manual', 'automated'] as const).map(sub => (
-                  <button key={sub} onClick={() => setBackupSubTab(sub)}
+                  <button key={sub} onClick={() => { setBackupSubTab(sub); setSearchParams({ tab: 'backup', subtab: sub }) }}
                     className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                       backupSubTab === sub
                         ? 'border-primary-500 text-primary-400'
@@ -2393,6 +2428,11 @@ export default function Admin() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Analytics Tab */}
+          {activeTab === 'analytics' && (
+            <AdminAnalytics users={users} />
           )}
         </div>
       </div>

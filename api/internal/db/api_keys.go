@@ -121,8 +121,8 @@ func (db *DB) GetAPIKeysByUserID(ctx context.Context, userID int64) ([]APIKey, e
 	return keys, nil
 }
 
-// ValidateAPIKey checks if an API key is valid and returns the user ID
-func (db *DB) ValidateAPIKey(ctx context.Context, key string) (int64, error) {
+// ValidateAPIKey checks if an API key is valid and returns the user ID and API key ID
+func (db *DB) ValidateAPIKey(ctx context.Context, key string) (int64, int64, error) {
 	keyHash := HashAPIKey(key)
 
 	apiKeyEntity, err := db.Client.APIKey.Query().
@@ -130,14 +130,14 @@ func (db *DB) ValidateAPIKey(ctx context.Context, key string) (int64, error) {
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return 0, fmt.Errorf("invalid API key")
+			return 0, 0, fmt.Errorf("invalid API key")
 		}
-		return 0, fmt.Errorf("failed to validate API key: %w", err)
+		return 0, 0, fmt.Errorf("failed to validate API key: %w", err)
 	}
 
 	// Check expiration
 	if apiKeyEntity.ExpiresAt != nil && apiKeyEntity.ExpiresAt.Before(time.Now()) {
-		return 0, fmt.Errorf("API key expired")
+		return 0, 0, fmt.Errorf("API key expired")
 	}
 
 	// Update last used timestamp
@@ -150,7 +150,7 @@ func (db *DB) ValidateAPIKey(ctx context.Context, key string) (int64, error) {
 		db.logger.Warn("Failed to update API key last_used_at", zap.Error(err))
 	}
 
-	return apiKeyEntity.UserID, nil
+	return apiKeyEntity.UserID, apiKeyEntity.ID, nil
 }
 
 // DeleteAPIKey removes an API key
@@ -177,21 +177,21 @@ func (db *DB) DeleteAPIKey(ctx context.Context, keyID, userID int64) error {
 	return nil
 }
 
-// GetUserByAPIKey retrieves user info using an API key
-func (db *DB) GetUserByAPIKey(ctx context.Context, key string) (int64, string, error) {
-	userID, err := db.ValidateAPIKey(ctx, key)
+// GetUserByAPIKey retrieves user info using an API key and returns (userID, email, apiKeyID, error)
+func (db *DB) GetUserByAPIKey(ctx context.Context, key string) (int64, string, int64, error) {
+	userID, apiKeyID, err := db.ValidateAPIKey(ctx, key)
 	if err != nil {
-		return 0, "", err
+		return 0, "", 0, err
 	}
 
 	// Get user email
 	userEntity, err := db.Client.User.Get(ctx, userID)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return 0, "", fmt.Errorf("user not found")
+			return 0, "", 0, fmt.Errorf("user not found")
 		}
-		return 0, "", fmt.Errorf("failed to get user: %w", err)
+		return 0, "", 0, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	return userID, userEntity.Email, nil
+	return userID, userEntity.Email, apiKeyID, nil
 }

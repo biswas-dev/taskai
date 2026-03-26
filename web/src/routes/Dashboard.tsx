@@ -9,8 +9,11 @@ import CommandPalette, { searchShortcutLabel } from '../components/CommandPalett
 import NotificationBell from '../components/ProjectInvitationBanner'
 import { NotificationProvider } from '../state/NotificationContext'
 import { Project } from '../lib/api'
+import { usePageViewTracker } from '../lib/pageViewTracker'
 
 export default function Dashboard() {
+  // Track page views for analytics
+  usePageViewTracker()
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()

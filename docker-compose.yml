@@ -95,6 +95,8 @@ services:
       - OAUTH_STATE_SECRET=${OAUTH_STATE_SECRET:-}
       - OAUTH_SUCCESS_URL=${OAUTH_SUCCESS_URL:-}
       - OAUTH_ERROR_URL=${OAUTH_ERROR_URL:-}
+      # Backup (Google Drive)
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-}
       # APM — set APM_ENABLED=true to activate tracing.
       # Change OTEL_EXPORTER_OTLP_ENDPOINT to switch providers (no code changes).
       - APM_ENABLED=${APM_ENABLED:-false}
