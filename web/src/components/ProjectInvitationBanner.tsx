@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { useNotifications } from '../state/NotificationContext'
 
@@ -113,7 +114,7 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {isOpen && (
+      {isOpen && createPortal(
         <div ref={dropdownRef} style={dropdownStyle} className="bg-dark-bg-primary border border-dark-border-subtle rounded-lg shadow-xl z-[9999] flex flex-col overflow-hidden">
           {/* Tabs */}
           <div className="flex border-b border-dark-border-subtle">
@@ -230,7 +231,8 @@ export default function NotificationBell() {
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </>
   )
