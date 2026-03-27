@@ -1,0 +1,45 @@
+yes, looks ok right, can you push to prod?
+
+---
+
+we use go-backup in ~/play/blog and ~/play/elephanto, do those require changes, they seem to be working with backups. It stopped working after Mar 11
+
+---
+
+Please make sure we change elephanto to work the exact same way as taskai, using go-backup
+
+---
+
+don't generate, we already have ones in the environment, grab and use them, remember elephanto uses circleCI
+
+---
+
+can you generate new encryption key for each env. Also, can you get the oath key password from within the environment and oauth callback url for each user
+
+---
+
+No, that is not how secrets work, we need to have the sevrets somewhere in secret manager, they cannot live in .env because they get nuked moment server is deployed
+
+---
+
+what are the oAuth callback urls, one key is fine for all env
+
+---
+
+we just have these three, https://elephantoevents.ca/api/admin/backup/oauth/callback, https://staging.velvethour.ca/api/admin/backup/oauth/callback https://uat.velvethour.ca/api/admin/backup/oauth/callback, remember, elephantoevents is same as velvethour
+
+---
+
+yes, let's upgrade everything so that it works, check the keys work
+
+---
+
+please use API and do it yourself REDACTED
+
+---
+
+what should I approve in circleCI, do it yourself you have full access
+
+---
+
+please address all comments, for tasks in todo. We fixed these tasks but QA rejected, read all description and comments. Once you are satisfied, comment, work on a RALPH loop for each task, once done, move to testing swim lane. Make sure you address the comments since we fixed this once and task was rejected, Understand why it was rejected. If you are confused, please pause, ask me and then proceed once I clarify
