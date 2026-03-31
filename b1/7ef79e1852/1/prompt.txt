@@ -1,0 +1,123 @@
+yes, looks ok right, can you push to prod?
+
+---
+
+we use go-backup in ~/play/blog and ~/play/elephanto, do those require changes, they seem to be working with backups. It stopped working after Mar 11
+
+---
+
+Please make sure we change elephanto to work the exact same way as taskai, using go-backup
+
+---
+
+don't generate, we already have ones in the environment, grab and use them, remember elephanto uses circleCI
+
+---
+
+can you generate new encryption key for each env. Also, can you get the oath key password from within the environment and oauth callback url for each user
+
+---
+
+No, that is not how secrets work, we need to have the sevrets somewhere in secret manager, they cannot live in .env because they get nuked moment server is deployed
+
+---
+
+what are the oAuth callback urls, one key is fine for all env
+
+---
+
+we just have these three, https://elephantoevents.ca/api/admin/backup/oauth/callback, https://staging.velvethour.ca/api/admin/backup/oauth/callback https://uat.velvethour.ca/api/admin/backup/oauth/callback, remember, elephantoevents is same as velvethour
+
+---
+
+yes, let's upgrade everything so that it works, check the keys work
+
+---
+
+please use API and do it yourself REDACTED
+
+---
+
+what should I approve in circleCI, do it yourself you have full access
+
+---
+
+please address all comments, for tasks in todo. We fixed these tasks but QA rejected, read all description and comments. Once you are satisfied, comment, work on a RALPH loop for each task, once done, move to testing swim lane. Make sure you address the comments since we fixed this once and task was rejected, Understand why it was rejected. If you are confused, please pause, ask me and then proceed once I clarify
+
+---
+
+yes please, lets get into prod, monitor
+
+---
+
+backup google drive link failing Access blocked: This app’s request is invalid
+You can’t sign in because this app sent an invalid request. You can try again later, or contact the developer about this issue. Learn more about this error
+If you are a developer of this app, see error details.
+Error 400: redirect_uri_mismatch Error 400: redirect_uri_mismatch
+
+You can't sign in to this app because it doesn't comply with Google's OAuth 2.0 policy.
+
+If you're the app developer, register the redirect URI in the Google Cloud Console.
+Request details: redirect_uri=https://elephantoevents.ca/api/admin/backup/oauth/callback flowName=GeneralOAuthFlow
+
+---
+
+taskai is using a different application
+
+---
+
+Client ID
+561525101660-agamenlvpdcv14p0room0t4ejn7nn8f7.apps.googleusercontent.com
+Creation date
+
+---
+
+REDACTED
+
+---
+
+manual failed but connected backup: upload failed: gdrive: upload returned 403: { "error": { "code": 403, "message": "Request had insufficient authentication scopes.", "errors": [ { "message": "Insufficient Permission", "domain": "global", "reason": "insufficientPermissions" } ], "status": "PERMISSION_DENIED", "details": [ { "@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "domain": "googleapis.com", "metadata": { "service": "drive.googleapis.com", "method": "google.apps.drive.v3.DriveFiles.Create" } } ] } }
+where is the section to select the folder and calendar, amke it same as taskai
+
+---
+
+I see the Google Drive folder but nothing is coming up backup: upload failed: gdrive: upload returned 403: { "error": { "code": 403, "message": "Request had insufficient authentication scopes.", "errors": [ { "message": "Insufficient Permission", "domain": "global", "reason": "insufficientPermissions" } ], "status": "PERMISSION_DENIED", "details": [ { "@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "ACCESS_TOKEN_SCOPE_INSUFFICIENT", "domain": "googleapis.com", "metadata": { "service": "drive.googleapis.com", "method": "google.apps.drive.v3.DriveFiles.Create" } } ] } }
+
+---
+
+where are scopes?
+
+---
+
+is this good?
+
+---
+
+I am not seeing some of the changes pushed, were all changes pushed to prod? some of the tasks were moved to to do again by qa, please read last comment, https://taskai.cc/app/projects/3
+
+---
+
+wait, we just moved all harbor images to s3 backblaze, is that the issue now, check s3 keys from ~/play/blog or what is deployed anyway
+
+---
+
+So what im saying here is that the font size for the question - whay type of connection arecyou currently seeking - the responses look to be a larger font than the responses radio buttons for the question below "Casual dating" looks to be a larger font than "a new beginning"
+
+---
+
+Can you guaantee new image was fixed now, like really guarangee
+
+---
+
+Can you guaantee new image was fixed now, like really gaurantee?
+
+---
+
+<task-notification>
+<task-id>bjo7cdb1t</task-id>
+<tool-use-id>toolu_018bDu2jD4ytftAmPxxwxyQc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/bjo7cdb1t.output</output-file>
+<status>failed</status>
+<summary>Background command "Start Vite dev server on port 5174 pointed to prod" failed with exit code 144</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f825aa2e-55c5-483f-9330-8c774c3f137a/tasks/bjo7cdb1t.output
