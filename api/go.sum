@@ -63,6 +63,8 @@ github.com/anchoo2kewl/go-wiki v0.1.3 h1:LcjHTVuM1oYPE7Cdpy0bhU+y4rZNFryrPetDvaI
 github.com/anchoo2kewl/go-wiki v0.1.3/go.mod h1:SdNfnXOnrAfDdswO14eYvIb12gA5eacOtz+cz3lAnQw=
 github.com/anchoo2kewl/go-wiki v0.1.6 h1:Vmzm90GDR6z5/Lu7Jbsq1pi9aX13DjbsrPMatraQTzs=
 github.com/anchoo2kewl/go-wiki v0.1.6/go.mod h1:SdNfnXOnrAfDdswO14eYvIb12gA5eacOtz+cz3lAnQw=
+github.com/anchoo2kewl/go-wiki v0.1.7 h1:IeiAwnNcCp1W71jJ0hTWPxMK8bMXUaG1JKndzervktA=
+github.com/anchoo2kewl/go-wiki v0.1.7/go.mod h1:SdNfnXOnrAfDdswO14eYvIb12gA5eacOtz+cz3lAnQw=
 github.com/apparentlymart/go-textseg/v15 v15.0.0 h1:uYvfpb3DyLSCGWnctWKGj857c6ew1u1fNQOlOtuGxQY=
 github.com/apparentlymart/go-textseg/v15 v15.0.0/go.mod h1:K8XmNZdhEBkdlyDdvbmmsvpAG721bKi0joRfFdHIWJ4=
 github.com/bmatcuk/doublestar v1.3.4 h1:gPypJ5xD31uhX6Tf54sDPUOBXTqKH4c9aPY66CyQrS0=
