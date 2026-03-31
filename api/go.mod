@@ -10,7 +10,7 @@ require (
 	github.com/anchoo2kewl/go-backup/pgstore v0.1.10
 	github.com/anchoo2kewl/go-draw v0.8.1
 	github.com/anchoo2kewl/go-login v0.2.1
-	github.com/anchoo2kewl/go-wiki v0.1.7
+	github.com/anchoo2kewl/go-wiki v0.1.8
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1

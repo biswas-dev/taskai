@@ -120,8 +120,10 @@ html.light .prose {
 .prose table {
   border-collapse: collapse;
   width: 100%;
+}
+
+.prose .table-wrapper {
   overflow-x: auto;
-  display: block;
 }
 
 .prose thead {
