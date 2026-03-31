@@ -1,0 +1,1 @@
+this is still not showing up as a table: test was written by claude code, seems like proper markdown, not rendered correctly
