@@ -115,3 +115,56 @@ html.light .prose {
   --tw-prose-th-borders: #d1d5db;
   --tw-prose-td-borders: #e5e7eb;
 }
+
+/* ── Wiki table styling ── */
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+
+.prose thead {
+  border-bottom: 2px solid var(--tw-prose-th-borders);
+}
+
+.prose thead th {
+  padding: 0.625rem 0.75rem;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.prose tbody td {
+  padding: 0.5rem 0.75rem;
+}
+
+.prose tbody tr {
+  border-bottom: 1px solid var(--tw-prose-td-borders);
+}
+
+.prose tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Dark mode: ensure table borders are visible */
+.prose-invert {
+  --tw-prose-th-borders: #4b5563;
+  --tw-prose-td-borders: #374151;
+}
+
+.prose-invert thead {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.prose-invert tbody tr:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.light .prose tbody tr:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+html.light .prose thead {
+  background: rgba(0, 0, 0, 0.02);
+}

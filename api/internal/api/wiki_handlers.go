@@ -31,6 +31,7 @@ type WikiPageResponse struct {
 	CreatorName *string   `json:"creator_name,omitempty"`
 	UpdatedBy   *int64    `json:"updated_by,omitempty"`
 	UpdaterName *string   `json:"updater_name,omitempty"`
+	AgentName   *string   `json:"agent_name,omitempty"`
 	Content     *string   `json:"content,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -85,6 +86,22 @@ func (s *Server) HandleListWikiPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Bulk-fetch agent_name (not in Ent schema) for all pages in this project
+	agentNames := make(map[int64]*string)
+	if len(pages) > 0 {
+		rows, qErr := s.db.QueryContext(ctx, `SELECT id, agent_name FROM wiki_pages WHERE project_id = $1`, projectID)
+		if qErr == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var id int64
+				var an *string
+				if scanErr := rows.Scan(&id, &an); scanErr == nil && an != nil {
+					agentNames[id] = an
+				}
+			}
+		}
+	}
+
 	// Convert to response format
 	response := make([]WikiPageResponse, 0, len(pages))
 	for _, p := range pages {
@@ -103,6 +120,9 @@ func (s *Server) HandleListWikiPages(w http.ResponseWriter, r *http.Request) {
 		}
 		if p.Edges.Updater != nil && p.Edges.Updater.Name != nil {
 			wp.UpdaterName = p.Edges.Updater.Name
+		}
+		if an, ok := agentNames[p.ID]; ok {
+			wp.AgentName = an
 		}
 		response = append(response, wp)
 	}
@@ -277,6 +297,11 @@ func (s *Server) HandleGetWikiPage(w http.ResponseWriter, r *http.Request) {
 	if page.Edges.Updater != nil && page.Edges.Updater.Name != nil {
 		response.UpdaterName = page.Edges.Updater.Name
 	}
+
+	// Fetch agent_name (not in Ent schema)
+	var agentName *string
+	_ = s.db.QueryRowContext(ctx, `SELECT agent_name FROM wiki_pages WHERE id = $1`, page.ID).Scan(&agentName)
+	response.AgentName = agentName
 
 	respondJSON(w, http.StatusOK, response)
 }

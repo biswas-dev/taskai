@@ -149,6 +149,7 @@ export interface WikiPage {
   creator_name?: string
   updated_by?: number
   updater_name?: string
+  agent_name?: string | null
   created_at: string
   updated_at: string
 }

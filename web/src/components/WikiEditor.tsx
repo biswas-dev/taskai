@@ -1572,12 +1572,18 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
                     <>
                       <span className="text-dark-border-subtle">·</span>
                       <span>
-                        Last edited{lastEditedBy ? <> by{' '}
-                          <Link to={`/app/users/${page.updated_by ?? page.created_by}`} className="text-dark-text-secondary hover:text-primary-400 transition-colors">
-                            {lastEditedBy}
-                          </Link>
-                        </> : ''}{' '}
-                        · {new Date(lastEditedAt).toLocaleString()}
+                        Last edited by{' '}
+                        <Link to={`/app/users/${page.updated_by ?? page.created_by}`} className="text-dark-text-secondary hover:text-primary-400 transition-colors">
+                          {page.agent_name
+                            ? `${page.agent_name} for ${lastEditedBy || page.creator_name || `User ${page.updated_by ?? page.created_by}`}`
+                            : lastEditedBy || `User ${page.updated_by ?? page.created_by}`}
+                        </Link>
+                        {page.agent_name && (
+                          <span className="inline-flex items-center ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                            AI
+                          </span>
+                        )}
+                        {' '}· {new Date(lastEditedAt).toLocaleString()}
                       </span>
                     </>
                   )}
