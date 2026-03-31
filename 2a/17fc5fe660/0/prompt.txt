@@ -1,0 +1,12 @@
+<task-notification>
+<task-id>b2qanops3</task-id>
+<tool-use-id>toolu_01TM7QssdNUMRBXov1Nj7qT6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/b2qanops3.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll staging build" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/b2qanops3.output
+
+---
+
+https://taskai.cc/app/projects/13?tab=wiki&page=54  WHAT ARE YOU FIXING, PLEASE DEPLOY LOCALLY TO GUARANTEE THE FIX WORKS BEFORE WE PUSH TO STAGING
