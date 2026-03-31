@@ -176,3 +176,7 @@ works now but the top table is in bold, why? look at second table looks normal
 yes it has H2 document.querySelector('.prose table')?.parentElement?.tagName
 
 'H2'
+
+---
+
+pergect let's move to staging then production first push and release go-wiki
