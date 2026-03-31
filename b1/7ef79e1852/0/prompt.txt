@@ -1,0 +1,1 @@
+two issues, this page https://taskai.cc/app/projects/13?tab=wiki&page=54 was created by LLM should show same as comments, Claude Code via Anshuman Biswas (get the exact format, we use this when comments come from LLM), also, look at the tables, they are not being rendered properly https://taskai.cc/app/projects/13?tab=wiki&page=54, do we need to use go-wiki?
