@@ -135,12 +135,13 @@ echo "=== Syncing source to server ==="
 $SSH_CMD "mkdir -p $SOURCE_DIR"
 
 # Use git archive to create a clean tarball (no .git, respects .gitignore)
-git archive --format=tar HEAD | gzip > /tmp/taskai-deploy.tar.gz
-$SCP_CMD /tmp/taskai-deploy.tar.gz "$SERVER_USER@$SERVER_IP:/tmp/taskai-deploy.tar.gz"
-rm -f /tmp/taskai-deploy.tar.gz
+TARBALL="/tmp/taskai-deploy-$$.tar.gz"
+git archive --format=tar HEAD | gzip > "$TARBALL"
+$SCP_CMD "$TARBALL" "$SERVER_USER@$SERVER_IP:$TARBALL"
 
-# Extract on server
-$SSH_CMD "cd $SOURCE_DIR && tar xzf /tmp/taskai-deploy.tar.gz && rm -f /tmp/taskai-deploy.tar.gz"
+# Extract on server (delete tarball after extraction, then clean local copy)
+$SSH_CMD "cd $SOURCE_DIR && tar xzf $TARBALL && rm -f $TARBALL"
+rm -f "$TARBALL"
 echo "Source synced"
 
 # --- Step 2: Copy deployment scripts and run nginx setup ---
