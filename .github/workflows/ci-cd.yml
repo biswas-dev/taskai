@@ -1,0 +1,170 @@
+# CI/CD Pipeline for TaskAI (taskai.cc)
+#
+# TaskAI deploys by SSH'ing to the target server and building natively there
+# (no Harbor registry). Tests run in parallel with staging deploy (fix-forward).
+#
+# Runners (org-level, biswas-dev):
+#   ARM64: staging-arm64 (129.213.82.37), uat-arm64 (92.4.83.28)
+#   x64:   prod-x64-1/2 (31.97.102.48)
+#
+# Flow:
+#   main push       → test (Go + Node, parallel) + deploy staging
+#   uat push        → deploy UAT
+#   production push → deploy production
+#   PR              → test only
+#
+# Required secrets (set in GitHub org/repo):
+#   STAGING_SSH_KEY_BASE64 / UAT_SSH_KEY_BASE64 / PRODUCTION_SSH_KEY_BASE64
+#   STAGING_DB_DSN, STAGING_JWT_SECRET, STAGING_LOGIN_GITHUB_CLIENT_ID, etc.
+#   UAT_DB_DSN, UAT_JWT_SECRET, etc.
+#   PRODUCTION_DB_DSN, PRODUCTION_JWT_SECRET, etc.
+#   DD_API_KEY, DD_SITE
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, uat, production]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ── API Tests (Go) ─────────────────────────────────────────────────────
+  test-api:
+    name: "API Tests (Go)"
+    runs-on: [self-hosted, Linux, X64]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+
+    env:
+      GOTOOLCHAIN: local
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+          cache-dependency-path: api/go.sum
+
+      - name: Run Go vet
+        working-directory: api
+        run: go vet ./...
+
+      - name: Run tests
+        working-directory: api
+        run: |
+          go test -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v /e2e)
+          go tool cover -func=coverage.out | tail -1
+        timeout-minutes: 10
+
+  # ── Web Tests (Node) ───────────────────────────────────────────────────
+  test-web:
+    name: "Web Tests"
+    runs-on: [self-hosted, Linux, X64]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Lint
+        working-directory: web
+        run: npx eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 5
+
+      - name: Type check
+        working-directory: web
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        working-directory: web
+        run: npx vitest run
+        timeout-minutes: 10
+
+  # ── Deploy Staging (builds on server via SSH, native ARM64) ────────────
+  deploy-staging:
+    name: "Deploy to Staging"
+    runs-on: [self-hosted, Linux, ARM64]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+
+    env:
+      STAGING_SSH_KEY_BASE64: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      STAGING_DB_DSN: ${{ secrets.STAGING_DB_DSN }}
+      STAGING_JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
+      STAGING_LOGIN_GITHUB_CLIENT_ID: ${{ secrets.STAGING_LOGIN_GITHUB_CLIENT_ID }}
+      STAGING_LOGIN_GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_LOGIN_GITHUB_CLIENT_SECRET }}
+      STAGING_OAUTH_STATE_SECRET: ${{ secrets.STAGING_OAUTH_STATE_SECRET }}
+      STAGING_GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
+      STAGING_GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_SITE: ${{ secrets.DD_SITE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: bash deployment/scripts/travis-deploy-fast.sh staging
+
+  # ── Deploy UAT ─────────────────────────────────────────────────────────
+  deploy-uat:
+    name: "Deploy to UAT"
+    runs-on: [self-hosted, Linux, ARM64]
+    if: github.ref == 'refs/heads/uat' && github.event_name == 'push'
+    environment: uat
+
+    env:
+      UAT_SSH_KEY_BASE64: ${{ secrets.UAT_SSH_PRIVATE_KEY }}
+      UAT_DB_DSN: ${{ secrets.UAT_DB_DSN }}
+      UAT_JWT_SECRET: ${{ secrets.UAT_JWT_SECRET }}
+      UAT_LOGIN_GITHUB_CLIENT_ID: ${{ secrets.UAT_LOGIN_GITHUB_CLIENT_ID }}
+      UAT_LOGIN_GITHUB_CLIENT_SECRET: ${{ secrets.UAT_LOGIN_GITHUB_CLIENT_SECRET }}
+      UAT_OAUTH_STATE_SECRET: ${{ secrets.UAT_OAUTH_STATE_SECRET }}
+      UAT_GOOGLE_CLIENT_ID: ${{ secrets.UAT_GOOGLE_CLIENT_ID }}
+      UAT_GOOGLE_CLIENT_SECRET: ${{ secrets.UAT_GOOGLE_CLIENT_SECRET }}
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_SITE: ${{ secrets.DD_SITE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to UAT
+        run: bash deployment/scripts/travis-deploy-fast.sh uat
+
+  # ── Deploy Production ──────────────────────────────────────────────────
+  deploy-production:
+    name: "Deploy to Production"
+    runs-on: [self-hosted, Linux, X64, prod]
+    if: github.ref == 'refs/heads/production' && github.event_name == 'push'
+    environment: production
+
+    env:
+      PRODUCTION_SSH_KEY_BASE64: ${{ secrets.SSH_PRIVATE_KEY }}
+      PRODUCTION_DB_DSN: ${{ secrets.PRODUCTION_DB_DSN }}
+      PRODUCTION_JWT_SECRET: ${{ secrets.PRODUCTION_JWT_SECRET }}
+      PRODUCTION_LOGIN_GITHUB_CLIENT_ID: ${{ secrets.PRODUCTION_LOGIN_GITHUB_CLIENT_ID }}
+      PRODUCTION_LOGIN_GITHUB_CLIENT_SECRET: ${{ secrets.PRODUCTION_LOGIN_GITHUB_CLIENT_SECRET }}
+      PRODUCTION_OAUTH_STATE_SECRET: ${{ secrets.PRODUCTION_OAUTH_STATE_SECRET }}
+      PRODUCTION_GOOGLE_CLIENT_ID: ${{ secrets.PRODUCTION_GOOGLE_CLIENT_ID }}
+      PRODUCTION_GOOGLE_CLIENT_SECRET: ${{ secrets.PRODUCTION_GOOGLE_CLIENT_SECRET }}
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_SITE: ${{ secrets.DD_SITE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: bash deployment/scripts/travis-deploy-fast.sh production

@@ -106,7 +106,13 @@ if [ -z "$SSH_KEY_VALUE" ]; then
 fi
 
 mkdir -p ~/.ssh
-echo "$SSH_KEY_VALUE" | base64 --decode > ~/.ssh/deploy_key
+if echo "$SSH_KEY_VALUE" | head -1 | grep -q "BEGIN"; then
+  # Raw PEM key (GitHub Actions)
+  echo "$SSH_KEY_VALUE" > ~/.ssh/deploy_key
+else
+  # Base64-encoded key (Travis CI)
+  echo "$SSH_KEY_VALUE" | base64 --decode > ~/.ssh/deploy_key
+fi
 chmod 600 ~/.ssh/deploy_key
 ssh-keyscan "$SERVER_IP" >> ~/.ssh/known_hosts 2>/dev/null
 
