@@ -1,0 +1,186 @@
+<task-notification>
+<task-id>b2qanops3</task-id>
+<tool-use-id>toolu_01TM7QssdNUMRBXov1Nj7qT6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/b2qanops3.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll staging build" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/b2qanops3.output
+
+---
+
+https://taskai.cc/app/projects/13?tab=wiki&page=54  WHAT ARE YOU FIXING, PLEASE DEPLOY LOCALLY TO GUARANTEE THE FIX WORKS BEFORE WE PUSH TO STAGING
+
+---
+
+why did you push, I clearly mentioned, DO NOT PUSH, run locally, with prod VITE and let me test
+
+---
+
+<task-notification>
+<task-id>b0ao0lsv6</task-id>
+<tool-use-id>toolu_01KwUB58feK1tT19YhHNGKuo</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/b0ao0lsv6.output</output-file>
+<status>completed</status>
+<summary>Background command "Start frontend pointing to prod" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/b0ao0lsv6.output
+
+---
+
+<task-notification>
+<task-id>bgyrdnelv</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/bgyrdnelv.output</output-file>
+<status>completed</status>
+<summary>Background command "Start frontend: API→prod, preview→local" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/bgyrdnelv.output
+
+---
+
+stuck at Loading preview...
+
+---
+
+<task-notification>
+<task-id>b2rz325a7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/b2rz325a7.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll staging build" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/b2rz325a7.output
+
+---
+
+<task-notification>
+<task-id>bqcjz50j7</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/bqcjz50j7.output</output-file>
+<status>completed</status>
+<summary>Background command "Restart frontend with VITE_API_URL="" to use relative URLs" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/89ff8673-63e0-409e-8bbd-7f43c3def59e/tasks/bqcjz50j7.output
+
+---
+
+still stuck on loading preview
+
+---
+
+ok see, not rendered
+
+---
+
+yes, promote and test
+
+---
+
+Still does not work, how hard is this?
+
+---
+
+run locally
+
+---
+
+Same issue Loading preview... I thought we fixed this
+
+---
+
+Still not working, why? This is simple markdown rendering
+
+---
+
+Still not working, there must be an automated way to test and fix, first reproduce the issue, then fix then test, simple
+
+---
+
+Still showing loading preview first100="# AskBenny — Infrastructure Reconnaissance\n\nLast updated: 2026-03-31\n\n---\n\n## DNS & Network Analysis"
+WikiEditor.helpers.ts:363  POST http://localhost:8080/api/wiki/preview net::ERR_CONNECTION_REFUSED
+fetchPreview @ WikiEditor.helpers.ts:363
+abortAndFetchPreview @ WikiEditor.tsx:431
+(anonymous) @ WikiEditor.tsx:1102
+(anonymous) @ WikiEditor.tsx:1115
+commitHookEffectListMount @ chunk-NUMECXU6.js?v=a032d356:16915
+commitPassiveMountOnFiber @ chunk-NUMECXU6.js?v=a032d356:18156
+commitPassiveMountEffects_complete @ chunk-NUMECXU6.js?v=a032d356:18129
+commitPassiveMountEffects_begin @ chunk-NUMECXU6.js?v=a032d356:18119
+commitPassiveMountEffects @ chunk-NUMECXU6.js?v=a032d356:18109
+flushPassiveEffectsImpl @ chunk-NUMECXU6.js?v=a032d356:19490
+flushPassiveEffects @ chunk-NUMECXU6.js?v=a032d356:19447
+(anonymous) @ chunk-NUMECXU6.js?v=a032d356:19328
+workLoop @ chunk-NUMECXU6.js?v=a032d356:197
+flushWork @ chunk-NUMECXU6.js?v=a032d356:176
+performWorkUntilDeadline @ chunk-NUMECXU6.js?v=a032d356:384Understand this error
+NotificationContext.tsx:69 WebSocket connection to 'ws://localhost:8080/api/ws/user?REDACTED' failed: 
+connect @ NotificationContext.tsx:69
+(anonymous) @ NotificationContext.tsx:98Understand this error
+NotificationContext.tsx:69 WebSocket connection to 'ws://localhost:8080/api/ws/user?REDACTED' failed: 
+connect @ NotificationContext.tsx:69
+(anonymous) @ NotificationContext.tsx:98Understand this error
+NotificationContext.tsx:69 WebSocket connection to 'ws://localhost:8080/api/ws/user?REDACTED' failed: 
+connect @ NotificationContext.tsx:69
+(anonymous) @ NotificationContext.tsx:98Understand this error
+
+---
+
+[PREVIEW DEBUG] len=7768 hasNewlines=true hasTables=true first100="# AskBenny — Infrastructure Reconnaissance\n\nLast updated: 2026-03-31\n\n---\n\n## DNS & Network Analysis"
+
+---
+
+hard refresh they look like shit
+
+---
+
+hard refresh still same issue
+
+---
+
+[PREVIEW RESPONSE] len=0 hasTable=false first200=""
+
+---
+
+why can this not be tested using automated tests?
+
+---
+
+same issue, how can you not fix such a simple thing?
+
+---
+
+document.querySelector('.prose')?.innerHTML?.includes('<table>')
+
+true
+
+---
+
+document.querySelectorAll('.prose table').length
+
+4
+  document.querySelector('.prose')?.innerText?.includes('|---|')
+
+true
+
+---
+
+other tables are not broken I see 4, just this one is not shown, can you compare what is stored in db?
+
+---
+
+works now but the top table is in bold, why? look at second table looks normal
+
+---
+
+yes it has H2 document.querySelector('.prose table')?.parentElement?.tagName
+
+'H2'
+
+---
+
+pergect let's move to staging then production first push and release go-wiki
+
+---
+
+can you save the way to start server with pointing to prod plus allowing rendering wiki based on other server too? no loading error

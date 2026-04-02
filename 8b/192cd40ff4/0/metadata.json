@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "8b192cd40ff4",
+  "session_id": "89ff8673-63e0-409e-8bbd-7f43c3def59e",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-02T12:05:39.437285Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "api/internal/api/github_handlers.go",
+    "script/wiki-preview-server.go"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6[1m]",
+  "turn_id": "6595c0013f84",
+  "token_usage": {
+    "input_tokens": 808,
+    "cache_creation_tokens": 3060822,
+    "cache_read_tokens": 218634812,
+    "output_tokens": 247292,
+    "api_call_count": 679
+  },
+  "session_metrics": {
+    "turn_count": 47
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-02T12:05:34.584629Z",
+    "agent_lines": 54,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 54,
+    "agent_percentage": 100
+  }
+}
