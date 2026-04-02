@@ -1,0 +1,1 @@
+i noticed the github sync does not pull a new sprint, this is a daily sync but must pull new sprints or tags apart for issues
