@@ -2883,6 +2883,8 @@ func (s *Server) runAutoSync(ctx context.Context) {
 			}
 			req.PullTasks = true
 			req.PullComments = true
+			req.PullSprints = true
+			req.PullTags = true
 
 			s.runGitHubImportCore(syncCtx, proj.ID, proj.Owner, proj.Repo, proj.Token, proj.ProjectURL, req, "auto")
 		}()
