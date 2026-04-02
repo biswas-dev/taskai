@@ -1,0 +1,14 @@
+Set up GitHub Actions self-hosted runners and migrate all ~/play projects
+  from Travis CI. AgentShield is paused. Plan is at ~/.claude/plans/dynamic-weaving-shamir.md
+
+---
+
+yes, also reuse runners, only 2 runners on staging (use uat instance), and 2 on production
+
+---
+
+le'ts use biswas-dev
+
+---
+
+Done
