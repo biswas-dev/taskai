@@ -2943,6 +2943,91 @@ func (s *Server) runGitHubImportCore(ctx context.Context, projectID int, owner, 
 	noop := func(stage, msg string, current, total int) {}
 	_ = noop
 
+	// --- Import Sprints from Milestones ---
+	if req.PullSprints {
+		var milestones []ghMilestone
+		if err := fetchGitHubJSON(ctx, token, base+"/milestones?state=all&per_page=100", &milestones); err != nil {
+			s.logger.Error("auto-sync: failed to fetch milestones", zap.Int("project_id", projectID), zap.Error(err))
+		} else {
+			for _, m := range milestones {
+				status := "active"
+				if m.State == "closed" {
+					status = "completed"
+				}
+
+				var dueDate *string
+				if m.DueOn != "" {
+					t, err := time.Parse(time.RFC3339, m.DueOn)
+					if err == nil {
+						s := t.Format("2006-01-02")
+						dueDate = &s
+					}
+				}
+
+				var existingID int64
+				err := s.db.QueryRowContext(ctx, `
+					SELECT id FROM sprints WHERE project_id = $1 AND github_milestone_number = $2
+				`, projectID, m.Number).Scan(&existingID)
+
+				if err == sql.ErrNoRows {
+					nameErr := s.db.QueryRowContext(ctx, `
+						SELECT id FROM sprints WHERE project_id = $1 AND name = $2 AND github_milestone_number IS NULL
+					`, projectID, m.Title).Scan(&existingID)
+					if nameErr == nil {
+						_, _ = s.db.ExecContext(ctx, `
+							UPDATE sprints SET github_milestone_number = $1, status = $2, end_date = COALESCE($3, end_date) WHERE id = $4
+						`, m.Number, status, dueDate, existingID)
+					} else {
+						_ = s.db.QueryRowContext(ctx, `
+							INSERT INTO sprints (project_id, name, status, end_date, github_milestone_number)
+							VALUES ($1, $2, $3, $4, $5)
+							ON CONFLICT (project_id, github_milestone_number) DO NOTHING
+							RETURNING id
+						`, projectID, m.Title, status, dueDate, m.Number).Scan(&existingID)
+					}
+				} else if err == nil {
+					_, _ = s.db.ExecContext(ctx, `
+						UPDATE sprints SET name = $1, status = $2, end_date = $3 WHERE id = $4
+					`, m.Title, status, dueDate, existingID)
+				}
+			}
+			s.logger.Info("auto-sync: imported milestones", zap.Int("project_id", projectID), zap.Int("count", len(milestones)))
+		}
+	}
+
+	// --- Import Tags from Labels ---
+	if req.PullTags {
+		var labels []ghLabel
+		if err := fetchGitHubJSON(ctx, token, base+"/labels?per_page=100", &labels); err != nil {
+			s.logger.Error("auto-sync: failed to fetch labels", zap.Int("project_id", projectID), zap.Error(err))
+		} else {
+			for _, l := range labels {
+				color := "#" + l.Color
+				if l.Color == "" {
+					color = "#6B7280"
+				}
+
+				var existingID int64
+				err := s.db.QueryRowContext(ctx, `
+					SELECT id FROM tags WHERE project_id = $1 AND github_label_name = $2
+				`, projectID, l.Name).Scan(&existingID)
+
+				if err == sql.ErrNoRows {
+					_, _ = s.db.ExecContext(ctx, `
+						INSERT INTO tags (project_id, name, color, github_label_name)
+						VALUES ($1, $2, $3, $4)
+						ON CONFLICT (project_id, github_label_name) DO NOTHING
+					`, projectID, l.Name, color, l.Name)
+				} else if err == nil {
+					_, _ = s.db.ExecContext(ctx, `
+						UPDATE tags SET name = $1, color = $2 WHERE id = $3
+					`, l.Name, color, existingID)
+				}
+			}
+			s.logger.Info("auto-sync: imported labels", zap.Int("project_id", projectID), zap.Int("count", len(labels)))
+		}
+	}
+
 	// --- Import Tasks from Issues ---
 	// allIssues is declared here so the comment section below can also use it for filtering.
 	var allIssues []ghIssue
