@@ -8,7 +8,7 @@ require (
 	github.com/anchoo2kewl/go-backup v0.1.10
 	github.com/anchoo2kewl/go-backup/gdrive v0.1.10
 	github.com/anchoo2kewl/go-backup/pgstore v0.1.10
-	github.com/anchoo2kewl/go-draw v0.8.1
+	github.com/anchoo2kewl/go-draw v0.9.0
 	github.com/anchoo2kewl/go-login v0.2.1
 	github.com/anchoo2kewl/go-wiki v0.1.8
 	github.com/go-chi/chi/v5 v5.2.5
