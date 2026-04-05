@@ -55,8 +55,8 @@ github.com/anchoo2kewl/go-backup/gdrive v0.1.10 h1:SgWR7kVR4IoFVRJ86dTVr+1uDqmjV
 github.com/anchoo2kewl/go-backup/gdrive v0.1.10/go.mod h1:RHmv/5R1Ifj9FWbs8/vJuwHj44/mq+w6WyTic9Yiv5I=
 github.com/anchoo2kewl/go-backup/pgstore v0.1.10 h1:L5ZB0vgHewKu0rgb6BMkWb7rdtNyC0rPTpideyFxXV4=
 github.com/anchoo2kewl/go-backup/pgstore v0.1.10/go.mod h1:7IDce5I2k0M+LdcIUpJzAhEJdPCc/Xh+J5ySr+6GKAY=
-github.com/anchoo2kewl/go-draw v0.9.1 h1:dCOTPulrFA8n8rgJZgljJzf5/5+n4T3aD0sngKlWdII=
-github.com/anchoo2kewl/go-draw v0.9.1/go.mod h1:46A+iuRBWucLLoa9z5U4+agNNQQ/Am0gFJhInW6SOJI=
+github.com/anchoo2kewl/go-draw v0.9.2 h1:eonfrgL3k1csbgCyGO3U3GrcKtdVJY182z0lqbxy5j4=
+github.com/anchoo2kewl/go-draw v0.9.2/go.mod h1:46A+iuRBWucLLoa9z5U4+agNNQQ/Am0gFJhInW6SOJI=
 github.com/anchoo2kewl/go-login v0.2.1 h1:u7YzEEeCUlAvxBTb19yVVHcAH0LtCaW5/wtqbDTb7RA=
 github.com/anchoo2kewl/go-login v0.2.1/go.mod h1:EyE+DCIMUFTm95JcDtlgqYBOypCBmok/0gO15fCvHvY=
 github.com/anchoo2kewl/go-wiki v0.1.8 h1:r9t1+NNYTEc+ERlrofVwj4WkWIZSituv6HTLAS7nc/Y=
