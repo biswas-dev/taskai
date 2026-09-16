@@ -29,6 +29,10 @@ type WikiPage struct {
 	CreatedBy int64 `json:"created_by,omitempty"`
 	// UpdatedBy holds the value of the "updated_by" field.
 	UpdatedBy *int64 `json:"updated_by,omitempty"`
+	// ParentID holds the value of the "parent_id" field.
+	ParentID *int64 `json:"parent_id,omitempty"`
+	// Position holds the value of the "position" field.
+	Position int `json:"position,omitempty"`
 	// Content holds the value of the "content" field.
 	Content string `json:"content,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -49,6 +53,10 @@ type WikiPageEdges struct {
 	Creator *User `json:"creator,omitempty"`
 	// Updater holds the value of the updater edge.
 	Updater *User `json:"updater,omitempty"`
+	// Parent holds the value of the parent edge.
+	Parent *WikiPage `json:"parent,omitempty"`
+	// Children holds the value of the children edge.
+	Children []*WikiPage `json:"children,omitempty"`
 	// YjsUpdates holds the value of the yjs_updates edge.
 	YjsUpdates []*YjsUpdate `json:"yjs_updates,omitempty"`
 	// Versions holds the value of the versions edge.
@@ -59,7 +67,7 @@ type WikiPageEdges struct {
 	Blocks []*WikiBlock `json:"blocks,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [7]bool
+	loadedTypes [9]bool
 }
 
 // ProjectOrErr returns the Project value or an error if the edge
@@ -95,10 +103,30 @@ func (e WikiPageEdges) UpdaterOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "updater"}
 }
 
+// ParentOrErr returns the Parent value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e WikiPageEdges) ParentOrErr() (*WikiPage, error) {
+	if e.Parent != nil {
+		return e.Parent, nil
+	} else if e.loadedTypes[3] {
+		return nil, &NotFoundError{label: wikipage.Label}
+	}
+	return nil, &NotLoadedError{edge: "parent"}
+}
+
+// ChildrenOrErr returns the Children value or an error if the edge
+// was not loaded in eager-loading.
+func (e WikiPageEdges) ChildrenOrErr() ([]*WikiPage, error) {
+	if e.loadedTypes[4] {
+		return e.Children, nil
+	}
+	return nil, &NotLoadedError{edge: "children"}
+}
+
 // YjsUpdatesOrErr returns the YjsUpdates value or an error if the edge
 // was not loaded in eager-loading.
 func (e WikiPageEdges) YjsUpdatesOrErr() ([]*YjsUpdate, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[5] {
 		return e.YjsUpdates, nil
 	}
 	return nil, &NotLoadedError{edge: "yjs_updates"}
@@ -107,7 +135,7 @@ func (e WikiPageEdges) YjsUpdatesOrErr() ([]*YjsUpdate, error) {
 // VersionsOrErr returns the Versions value or an error if the edge
 // was not loaded in eager-loading.
 func (e WikiPageEdges) VersionsOrErr() ([]*PageVersion, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[6] {
 		return e.Versions, nil
 	}
 	return nil, &NotLoadedError{edge: "versions"}
@@ -116,7 +144,7 @@ func (e WikiPageEdges) VersionsOrErr() ([]*PageVersion, error) {
 // WikiPageVersionsOrErr returns the WikiPageVersions value or an error if the edge
 // was not loaded in eager-loading.
 func (e WikiPageEdges) WikiPageVersionsOrErr() ([]*WikiPageVersion, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[7] {
 		return e.WikiPageVersions, nil
 	}
 	return nil, &NotLoadedError{edge: "wiki_page_versions"}
@@ -125,7 +153,7 @@ func (e WikiPageEdges) WikiPageVersionsOrErr() ([]*WikiPageVersion, error) {
 // BlocksOrErr returns the Blocks value or an error if the edge
 // was not loaded in eager-loading.
 func (e WikiPageEdges) BlocksOrErr() ([]*WikiBlock, error) {
-	if e.loadedTypes[6] {
+	if e.loadedTypes[8] {
 		return e.Blocks, nil
 	}
 	return nil, &NotLoadedError{edge: "blocks"}
@@ -136,7 +164,7 @@ func (*WikiPage) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case wikipage.FieldID, wikipage.FieldProjectID, wikipage.FieldCreatedBy, wikipage.FieldUpdatedBy:
+		case wikipage.FieldID, wikipage.FieldProjectID, wikipage.FieldCreatedBy, wikipage.FieldUpdatedBy, wikipage.FieldParentID, wikipage.FieldPosition:
 			values[i] = new(sql.NullInt64)
 		case wikipage.FieldTitle, wikipage.FieldSlug, wikipage.FieldContent:
 			values[i] = new(sql.NullString)
@@ -194,6 +222,19 @@ func (_m *WikiPage) assignValues(columns []string, values []any) error {
 				_m.UpdatedBy = new(int64)
 				*_m.UpdatedBy = value.Int64
 			}
+		case wikipage.FieldParentID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field parent_id", values[i])
+			} else if value.Valid {
+				_m.ParentID = new(int64)
+				*_m.ParentID = value.Int64
+			}
+		case wikipage.FieldPosition:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field position", values[i])
+			} else if value.Valid {
+				_m.Position = int(value.Int64)
+			}
 		case wikipage.FieldContent:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field content", values[i])
@@ -238,6 +279,16 @@ func (_m *WikiPage) QueryCreator() *UserQuery {
 // QueryUpdater queries the "updater" edge of the WikiPage entity.
 func (_m *WikiPage) QueryUpdater() *UserQuery {
 	return NewWikiPageClient(_m.config).QueryUpdater(_m)
+}
+
+// QueryParent queries the "parent" edge of the WikiPage entity.
+func (_m *WikiPage) QueryParent() *WikiPageQuery {
+	return NewWikiPageClient(_m.config).QueryParent(_m)
+}
+
+// QueryChildren queries the "children" edge of the WikiPage entity.
+func (_m *WikiPage) QueryChildren() *WikiPageQuery {
+	return NewWikiPageClient(_m.config).QueryChildren(_m)
 }
 
 // QueryYjsUpdates queries the "yjs_updates" edge of the WikiPage entity.
@@ -299,6 +350,14 @@ func (_m *WikiPage) String() string {
 		builder.WriteString("updated_by=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	if v := _m.ParentID; v != nil {
+		builder.WriteString("parent_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("position=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Position))
 	builder.WriteString(", ")
 	builder.WriteString("content=")
 	builder.WriteString(_m.Content)

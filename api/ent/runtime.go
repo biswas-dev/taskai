@@ -519,16 +519,20 @@ func init() {
 			return nil
 		}
 	}()
+	// wikipageDescPosition is the schema descriptor for position field.
+	wikipageDescPosition := wikipageFields[7].Descriptor()
+	// wikipage.DefaultPosition holds the default value on creation for the position field.
+	wikipage.DefaultPosition = wikipageDescPosition.Default.(int)
 	// wikipageDescContent is the schema descriptor for content field.
-	wikipageDescContent := wikipageFields[6].Descriptor()
+	wikipageDescContent := wikipageFields[8].Descriptor()
 	// wikipage.DefaultContent holds the default value on creation for the content field.
 	wikipage.DefaultContent = wikipageDescContent.Default.(string)
 	// wikipageDescCreatedAt is the schema descriptor for created_at field.
-	wikipageDescCreatedAt := wikipageFields[7].Descriptor()
+	wikipageDescCreatedAt := wikipageFields[9].Descriptor()
 	// wikipage.DefaultCreatedAt holds the default value on creation for the created_at field.
 	wikipage.DefaultCreatedAt = wikipageDescCreatedAt.Default.(func() time.Time)
 	// wikipageDescUpdatedAt is the schema descriptor for updated_at field.
-	wikipageDescUpdatedAt := wikipageFields[8].Descriptor()
+	wikipageDescUpdatedAt := wikipageFields[10].Descriptor()
 	// wikipage.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	wikipage.DefaultUpdatedAt = wikipageDescUpdatedAt.Default.(func() time.Time)
 	// wikipage.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

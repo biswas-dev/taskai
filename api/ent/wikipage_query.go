@@ -32,6 +32,8 @@ type WikiPageQuery struct {
 	withProject          *ProjectQuery
 	withCreator          *UserQuery
 	withUpdater          *UserQuery
+	withParent           *WikiPageQuery
+	withChildren         *WikiPageQuery
 	withYjsUpdates       *YjsUpdateQuery
 	withVersions         *PageVersionQuery
 	withWikiPageVersions *WikiPageVersionQuery
@@ -131,6 +133,50 @@ func (_q *WikiPageQuery) QueryUpdater() *UserQuery {
 			sqlgraph.From(wikipage.Table, wikipage.FieldID, selector),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, wikipage.UpdaterTable, wikipage.UpdaterColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryParent chains the current query on the "parent" edge.
+func (_q *WikiPageQuery) QueryParent() *WikiPageQuery {
+	query := (&WikiPageClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(wikipage.Table, wikipage.FieldID, selector),
+			sqlgraph.To(wikipage.Table, wikipage.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, wikipage.ParentTable, wikipage.ParentColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryChildren chains the current query on the "children" edge.
+func (_q *WikiPageQuery) QueryChildren() *WikiPageQuery {
+	query := (&WikiPageClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(wikipage.Table, wikipage.FieldID, selector),
+			sqlgraph.To(wikipage.Table, wikipage.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, wikipage.ChildrenTable, wikipage.ChildrenColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -421,6 +467,8 @@ func (_q *WikiPageQuery) Clone() *WikiPageQuery {
 		withProject:          _q.withProject.Clone(),
 		withCreator:          _q.withCreator.Clone(),
 		withUpdater:          _q.withUpdater.Clone(),
+		withParent:           _q.withParent.Clone(),
+		withChildren:         _q.withChildren.Clone(),
 		withYjsUpdates:       _q.withYjsUpdates.Clone(),
 		withVersions:         _q.withVersions.Clone(),
 		withWikiPageVersions: _q.withWikiPageVersions.Clone(),
@@ -461,6 +509,28 @@ func (_q *WikiPageQuery) WithUpdater(opts ...func(*UserQuery)) *WikiPageQuery {
 		opt(query)
 	}
 	_q.withUpdater = query
+	return _q
+}
+
+// WithParent tells the query-builder to eager-load the nodes that are connected to
+// the "parent" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *WikiPageQuery) WithParent(opts ...func(*WikiPageQuery)) *WikiPageQuery {
+	query := (&WikiPageClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withParent = query
+	return _q
+}
+
+// WithChildren tells the query-builder to eager-load the nodes that are connected to
+// the "children" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *WikiPageQuery) WithChildren(opts ...func(*WikiPageQuery)) *WikiPageQuery {
+	query := (&WikiPageClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withChildren = query
 	return _q
 }
 
@@ -586,10 +656,12 @@ func (_q *WikiPageQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Wik
 	var (
 		nodes       = []*WikiPage{}
 		_spec       = _q.querySpec()
-		loadedTypes = [7]bool{
+		loadedTypes = [9]bool{
 			_q.withProject != nil,
 			_q.withCreator != nil,
 			_q.withUpdater != nil,
+			_q.withParent != nil,
+			_q.withChildren != nil,
 			_q.withYjsUpdates != nil,
 			_q.withVersions != nil,
 			_q.withWikiPageVersions != nil,
@@ -629,6 +701,19 @@ func (_q *WikiPageQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Wik
 	if query := _q.withUpdater; query != nil {
 		if err := _q.loadUpdater(ctx, query, nodes, nil,
 			func(n *WikiPage, e *User) { n.Edges.Updater = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withParent; query != nil {
+		if err := _q.loadParent(ctx, query, nodes, nil,
+			func(n *WikiPage, e *WikiPage) { n.Edges.Parent = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withChildren; query != nil {
+		if err := _q.loadChildren(ctx, query, nodes,
+			func(n *WikiPage) { n.Edges.Children = []*WikiPage{} },
+			func(n *WikiPage, e *WikiPage) { n.Edges.Children = append(n.Edges.Children, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -750,6 +835,71 @@ func (_q *WikiPageQuery) loadUpdater(ctx context.Context, query *UserQuery, node
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
+	}
+	return nil
+}
+func (_q *WikiPageQuery) loadParent(ctx context.Context, query *WikiPageQuery, nodes []*WikiPage, init func(*WikiPage), assign func(*WikiPage, *WikiPage)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*WikiPage)
+	for i := range nodes {
+		if nodes[i].ParentID == nil {
+			continue
+		}
+		fk := *nodes[i].ParentID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(wikipage.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "parent_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *WikiPageQuery) loadChildren(ctx context.Context, query *WikiPageQuery, nodes []*WikiPage, init func(*WikiPage), assign func(*WikiPage, *WikiPage)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*WikiPage)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(wikipage.FieldParentID)
+	}
+	query.Where(predicate.WikiPage(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(wikipage.ChildrenColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.ParentID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "parent_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "parent_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }
@@ -907,6 +1057,9 @@ func (_q *WikiPageQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withUpdater != nil {
 			_spec.Node.AddColumnOnce(wikipage.FieldUpdatedBy)
+		}
+		if _q.withParent != nil {
+			_spec.Node.AddColumnOnce(wikipage.FieldParentID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

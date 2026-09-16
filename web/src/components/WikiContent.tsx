@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import { api, WikiPage, WikiAnnotation, AnnotationColor, AnnotationComment } from '../lib/api'
 import WikiEditor from './WikiEditor'
 import WikiAnnotationSidebar from './WikiAnnotationSidebar'
+import WikiPageTree from './WikiPageTree'
+import { getWikiAncestors, getWikiDepth, WIKI_MAX_DEPTH } from '../lib/wikiTree'
 import { useSync } from '../state/SyncContext'
 
 interface WikiContentProps {
@@ -19,9 +21,6 @@ export default function WikiContent({ projectId }: WikiContentProps) {
   const [pages, setPages] = useState<WikiPage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
-  const [newPageTitle, setNewPageTitle] = useState('')
-  const [showNewPageInput, setShowNewPageInput] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
   const [annotations, setAnnotations] = useState<WikiAnnotation[]>([])
@@ -94,7 +93,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
       if (!silent) setLoading(true)
       setError(null)
       const pagesData = await api.getWikiPages(Number(projectId))
-      setPages(pagesData.sort((a, b) => b.updated_at.localeCompare(a.updated_at)))
+      setPages(pagesData)
     } catch (err) {
       if (silent) throw err
       setError(err instanceof Error ? err.message : 'Failed to load wiki pages')
@@ -134,46 +133,72 @@ export default function WikiContent({ projectId }: WikiContentProps) {
     })
   }, [loadAnnotations, loadPages, projectId, registerSyncTask])
 
-  const handleCreatePage = async () => {
-    if (!newPageTitle.trim() || !projectId) return
+  const selectPage = useCallback((pageId: number) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.set('page', String(pageId))
+      next.delete('annotation')
+      return next
+    })
+  }, [setSearchParams])
+
+  const clearSelectedPage = useCallback(() => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('page')
+      next.delete('annotation')
+      return next
+    })
+  }, [setSearchParams])
+
+  const handleCreatePage = useCallback(async (title: string, parentId: number | null): Promise<WikiPage | null> => {
+    if (!title.trim() || !projectId) return null
     try {
-      setCreating(true)
-      const newPage = await api.createWikiPage(Number(projectId), newPageTitle.trim())
-      setPages([newPage, ...pages])
-      setNewPageTitle('')
-      setShowNewPageInput(false)
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev)
-        next.set('page', String(newPage.id))
-        return next
-      })
+      const newPage = await api.createWikiPage(Number(projectId), title.trim(), parentId)
+      setPages(prev => [...prev, newPage])
+      selectPage(newPage.id)
+      return newPage
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to create page')
-    } finally {
-      setCreating(false)
+      return null
     }
-  }
+  }, [projectId, selectPage])
 
   const handlePageUpdate = useCallback((updated: WikiPage) => {
     setPages(prev => prev.map(p => (p.id === updated.id ? { ...p, ...updated } : p)))
   }, [])
 
-  const handleDeletePage = async (pageId: number) => {
-    if (!confirm('Are you sure you want to delete this wiki page?')) return
+  const handleMovePage = useCallback(async (pageId: number, parentId: number | null) => {
+    // Optimistic: reflect the move immediately, then reconcile with the server's response.
+    const snapshot = pages
+    setPages(prev => prev.map(p => (p.id === pageId ? { ...p, parent_id: parentId } : p)))
+    try {
+      const updated = await api.updateWikiPage(pageId, { parent_id: parentId })
+      setPages(prev => prev.map(p => (p.id === pageId ? { ...p, ...updated } : p)))
+    } catch (err) {
+      setPages(snapshot)
+      alert(err instanceof Error ? err.message : 'Failed to move page')
+    }
+  }, [pages])
+
+  const handleDeletePage = useCallback(async (pageId: number) => {
+    const page = pages.find(p => p.id === pageId)
+    const childCount = pages.filter(p => p.parent_id === pageId).length
+    const message = childCount > 0
+      ? `Delete "${page?.title ?? 'this page'}"? Its ${childCount} sub-page${childCount === 1 ? '' : 's'} will be kept and moved up one level.`
+      : `Are you sure you want to delete "${page?.title ?? 'this page'}"?`
+    if (!confirm(message)) return
     try {
       await api.deleteWikiPage(pageId)
-      setPages(pages.filter(p => p.id !== pageId))
-      if (selectedPageId === String(pageId)) {
-        setSearchParams(prev => {
-          const next = new URLSearchParams(prev)
-          next.delete('page')
-          return next
-        })
-      }
+      const grandparent = page?.parent_id ?? null
+      setPages(prev => prev
+        .filter(p => p.id !== pageId)
+        .map(p => (p.parent_id === pageId ? { ...p, parent_id: grandparent } : p)))
+      if (selectedPageId === String(pageId)) clearSelectedPage()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete page')
     }
-  }
+  }, [clearSelectedPage, pages, selectedPageId])
 
   const handleAnnotationCreate = useCallback(async (info: {
     startOffset: number; endOffset: number; selectedText: string; color: AnnotationColor
@@ -232,9 +257,11 @@ export default function WikiContent({ projectId }: WikiContentProps) {
   const annotationTotal = annotations.length
   const unresolvedAnnotationTotal = annotations.filter(a => !a.resolved).length
   const hasAnnotationComments = annotations.some(a => a.comments.length > 0)
-  const filteredPages = searchQuery
-    ? pages.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()))
-    : pages
+  const ancestors = selectedPage ? getWikiAncestors(pages, selectedPage.id) : []
+  const childPages = selectedPage
+    ? pages.filter(p => p.parent_id === selectedPage.id).sort((a, b) => a.position - b.position || a.title.localeCompare(b.title))
+    : []
+  const selectedDepth = selectedPage ? getWikiDepth(pages, selectedPage.id) : 0
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -250,98 +277,83 @@ export default function WikiContent({ projectId }: WikiContentProps) {
           />
         </div>
 
-        <div className="p-4 border-b border-dark-border-subtle">
-          {!showNewPageInput ? (
-            <button
-              onClick={() => setShowNewPageInput(true)}
-              className="w-full px-3 py-2 bg-primary-600 text-white rounded hover:bg-primary-500 transition-colors text-sm font-medium shadow-sm"
-            >
-              + New Page
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <input
-                type="text"
-                placeholder="Page title..."
-                value={newPageTitle}
-                onChange={(e) => setNewPageTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleCreatePage()}
-                autoFocus
-                className="w-full px-3 py-2 bg-dark-bg-primary border border-dark-border-subtle rounded text-sm text-dark-text-primary placeholder-dark-text-tertiary focus:outline-none focus:border-primary-500"
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={handleCreatePage}
-                  disabled={creating || !newPageTitle.trim()}
-                  className="flex-1 px-3 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-500 transition-colors text-sm disabled:opacity-50"
-                >
-                  {creating ? 'Creating...' : 'Create'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowNewPageInput(false)
-                    setNewPageTitle('')
-                  }}
-                  className="flex-1 px-3 py-1.5 bg-dark-bg-tertiary text-dark-text-secondary rounded hover:bg-dark-bg-tertiary/80 transition-colors text-sm"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="p-4 text-center text-dark-text-tertiary text-sm">Loading...</div>
-          ) : error ? (
-            <div className="p-4 text-center text-red-400 text-sm">{error}</div>
-          ) : filteredPages.length === 0 ? (
-            <div className="p-4 text-center text-dark-text-tertiary text-sm">
-              {searchQuery ? 'No matching pages' : 'No pages yet'}
-            </div>
-          ) : (
-            <div className="py-2">
-              {filteredPages.map((page) => (
-                <div
-                  key={page.id}
-                  className={`px-4 py-2 cursor-pointer hover:bg-dark-bg-tertiary transition-colors group ${
-                    selectedPageId === String(page.id) ? 'bg-dark-bg-tertiary border-l-2 border-primary-500' : ''
-                  }`}
-                  onClick={() => setSearchParams(prev => {
-                    const next = new URLSearchParams(prev)
-                    next.set('page', String(page.id))
-                    return next
-                  })}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-dark-text-primary truncate">{page.title}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDeletePage(page.id)
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition-opacity"
-                      title="Delete page"
-                    >
-                      <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div className="text-xs text-dark-text-tertiary mt-1">
-                    Updated {new Date(page.updated_at).toLocaleDateString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {loading ? (
+          <div className="p-4 text-center text-dark-text-tertiary text-sm">Loading...</div>
+        ) : error ? (
+          <div className="p-4 text-center text-red-400 text-sm">{error}</div>
+        ) : (
+          <WikiPageTree
+            projectId={Number(projectId)}
+            pages={pages}
+            selectedPageId={selectedPageId ? Number(selectedPageId) : null}
+            searchQuery={searchQuery}
+            onSelect={selectPage}
+            onCreate={handleCreatePage}
+            onMove={handleMovePage}
+            onDelete={handleDeletePage}
+          />
+        )}
       </div>
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden relative">
         <div className="flex-1 flex flex-col overflow-hidden">
+        {selectedPage && (
+          <>
+            {/* Breadcrumbs */}
+            <nav
+              aria-label="Page location"
+              className="flex items-center justify-between gap-3 px-6 py-2 border-b border-dark-border-subtle/60 bg-dark-bg-secondary/40 text-xs"
+            >
+              <ol className="flex items-center gap-1 min-w-0 overflow-hidden">
+                <li className="shrink-0">
+                  <button
+                    type="button"
+                    onClick={clearSelectedPage}
+                    className="text-dark-text-tertiary hover:text-dark-text-primary transition-colors"
+                  >
+                    Wiki
+                  </button>
+                </li>
+                {ancestors.map(a => (
+                  <li key={a.id} className="flex items-center gap-1 min-w-0">
+                    <span className="text-dark-text-quaternary" aria-hidden="true">/</span>
+                    <button
+                      type="button"
+                      onClick={() => selectPage(a.id)}
+                      className="truncate max-w-[12rem] text-dark-text-tertiary hover:text-dark-text-primary transition-colors"
+                    >
+                      {a.title}
+                    </button>
+                  </li>
+                ))}
+                <li className="flex items-center gap-1 min-w-0" aria-current="page">
+                  <span className="text-dark-text-quaternary" aria-hidden="true">/</span>
+                  <span className="truncate max-w-[16rem] text-dark-text-primary font-medium">{selectedPage.title}</span>
+                </li>
+              </ol>
+              <span className="shrink-0 text-dark-text-quaternary tabular-nums" title="Nesting level">
+                Level {selectedDepth}/{WIKI_MAX_DEPTH}
+              </span>
+            </nav>
+
+            {childPages.length > 0 && (
+              <div className="flex items-center gap-2 px-6 py-1.5 border-b border-dark-border-subtle/60 text-xs overflow-x-auto">
+                <span className="shrink-0 text-dark-text-tertiary">Sub-pages:</span>
+                {childPages.map(c => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => selectPage(c.id)}
+                    className="shrink-0 px-2 py-0.5 rounded-full bg-dark-bg-tertiary text-dark-text-secondary hover:text-dark-text-primary hover:bg-dark-bg-tertiary/80 transition-colors max-w-[14rem] truncate"
+                  >
+                    {c.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
         {selectedPage ? (
           <WikiEditor
             key={selectedPage.id}

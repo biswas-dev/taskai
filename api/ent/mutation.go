@@ -22971,6 +22971,8 @@ type WikiPageMutation struct {
 	id                        *int64
 	title                     *string
 	slug                      *string
+	position                  *int
+	addposition               *int
 	content                   *string
 	created_at                *time.Time
 	updated_at                *time.Time
@@ -22981,6 +22983,11 @@ type WikiPageMutation struct {
 	clearedcreator            bool
 	updater                   *int64
 	clearedupdater            bool
+	parent                    *int64
+	clearedparent             bool
+	children                  map[int64]struct{}
+	removedchildren           map[int64]struct{}
+	clearedchildren           bool
 	yjs_updates               map[int64]struct{}
 	removedyjs_updates        map[int64]struct{}
 	clearedyjs_updates        bool
@@ -23295,6 +23302,111 @@ func (m *WikiPageMutation) ResetUpdatedBy() {
 	delete(m.clearedFields, wikipage.FieldUpdatedBy)
 }
 
+// SetParentID sets the "parent_id" field.
+func (m *WikiPageMutation) SetParentID(i int64) {
+	m.parent = &i
+}
+
+// ParentID returns the value of the "parent_id" field in the mutation.
+func (m *WikiPageMutation) ParentID() (r int64, exists bool) {
+	v := m.parent
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldParentID returns the old "parent_id" field's value of the WikiPage entity.
+// If the WikiPage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WikiPageMutation) OldParentID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldParentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldParentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldParentID: %w", err)
+	}
+	return oldValue.ParentID, nil
+}
+
+// ClearParentID clears the value of the "parent_id" field.
+func (m *WikiPageMutation) ClearParentID() {
+	m.parent = nil
+	m.clearedFields[wikipage.FieldParentID] = struct{}{}
+}
+
+// ParentIDCleared returns if the "parent_id" field was cleared in this mutation.
+func (m *WikiPageMutation) ParentIDCleared() bool {
+	_, ok := m.clearedFields[wikipage.FieldParentID]
+	return ok
+}
+
+// ResetParentID resets all changes to the "parent_id" field.
+func (m *WikiPageMutation) ResetParentID() {
+	m.parent = nil
+	delete(m.clearedFields, wikipage.FieldParentID)
+}
+
+// SetPosition sets the "position" field.
+func (m *WikiPageMutation) SetPosition(i int) {
+	m.position = &i
+	m.addposition = nil
+}
+
+// Position returns the value of the "position" field in the mutation.
+func (m *WikiPageMutation) Position() (r int, exists bool) {
+	v := m.position
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPosition returns the old "position" field's value of the WikiPage entity.
+// If the WikiPage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WikiPageMutation) OldPosition(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPosition is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPosition requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPosition: %w", err)
+	}
+	return oldValue.Position, nil
+}
+
+// AddPosition adds i to the "position" field.
+func (m *WikiPageMutation) AddPosition(i int) {
+	if m.addposition != nil {
+		*m.addposition += i
+	} else {
+		m.addposition = &i
+	}
+}
+
+// AddedPosition returns the value that was added to the "position" field in this mutation.
+func (m *WikiPageMutation) AddedPosition() (r int, exists bool) {
+	v := m.addposition
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPosition resets all changes to the "position" field.
+func (m *WikiPageMutation) ResetPosition() {
+	m.position = nil
+	m.addposition = nil
+}
+
 // SetContent sets the "content" field.
 func (m *WikiPageMutation) SetContent(s string) {
 	m.content = &s
@@ -23521,6 +23633,87 @@ func (m *WikiPageMutation) UpdaterIDs() (ids []int64) {
 func (m *WikiPageMutation) ResetUpdater() {
 	m.updater = nil
 	m.clearedupdater = false
+}
+
+// ClearParent clears the "parent" edge to the WikiPage entity.
+func (m *WikiPageMutation) ClearParent() {
+	m.clearedparent = true
+	m.clearedFields[wikipage.FieldParentID] = struct{}{}
+}
+
+// ParentCleared reports if the "parent" edge to the WikiPage entity was cleared.
+func (m *WikiPageMutation) ParentCleared() bool {
+	return m.ParentIDCleared() || m.clearedparent
+}
+
+// ParentIDs returns the "parent" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ParentID instead. It exists only for internal usage by the builders.
+func (m *WikiPageMutation) ParentIDs() (ids []int64) {
+	if id := m.parent; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetParent resets all changes to the "parent" edge.
+func (m *WikiPageMutation) ResetParent() {
+	m.parent = nil
+	m.clearedparent = false
+}
+
+// AddChildIDs adds the "children" edge to the WikiPage entity by ids.
+func (m *WikiPageMutation) AddChildIDs(ids ...int64) {
+	if m.children == nil {
+		m.children = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.children[ids[i]] = struct{}{}
+	}
+}
+
+// ClearChildren clears the "children" edge to the WikiPage entity.
+func (m *WikiPageMutation) ClearChildren() {
+	m.clearedchildren = true
+}
+
+// ChildrenCleared reports if the "children" edge to the WikiPage entity was cleared.
+func (m *WikiPageMutation) ChildrenCleared() bool {
+	return m.clearedchildren
+}
+
+// RemoveChildIDs removes the "children" edge to the WikiPage entity by IDs.
+func (m *WikiPageMutation) RemoveChildIDs(ids ...int64) {
+	if m.removedchildren == nil {
+		m.removedchildren = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.children, ids[i])
+		m.removedchildren[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedChildren returns the removed IDs of the "children" edge to the WikiPage entity.
+func (m *WikiPageMutation) RemovedChildrenIDs() (ids []int64) {
+	for id := range m.removedchildren {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ChildrenIDs returns the "children" edge IDs in the mutation.
+func (m *WikiPageMutation) ChildrenIDs() (ids []int64) {
+	for id := range m.children {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetChildren resets all changes to the "children" edge.
+func (m *WikiPageMutation) ResetChildren() {
+	m.children = nil
+	m.clearedchildren = false
+	m.removedchildren = nil
 }
 
 // AddYjsUpdateIDs adds the "yjs_updates" edge to the YjsUpdate entity by ids.
@@ -23773,7 +23966,7 @@ func (m *WikiPageMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WikiPageMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 10)
 	if m.project != nil {
 		fields = append(fields, wikipage.FieldProjectID)
 	}
@@ -23788,6 +23981,12 @@ func (m *WikiPageMutation) Fields() []string {
 	}
 	if m.updater != nil {
 		fields = append(fields, wikipage.FieldUpdatedBy)
+	}
+	if m.parent != nil {
+		fields = append(fields, wikipage.FieldParentID)
+	}
+	if m.position != nil {
+		fields = append(fields, wikipage.FieldPosition)
 	}
 	if m.content != nil {
 		fields = append(fields, wikipage.FieldContent)
@@ -23816,6 +24015,10 @@ func (m *WikiPageMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedBy()
 	case wikipage.FieldUpdatedBy:
 		return m.UpdatedBy()
+	case wikipage.FieldParentID:
+		return m.ParentID()
+	case wikipage.FieldPosition:
+		return m.Position()
 	case wikipage.FieldContent:
 		return m.Content()
 	case wikipage.FieldCreatedAt:
@@ -23841,6 +24044,10 @@ func (m *WikiPageMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldCreatedBy(ctx)
 	case wikipage.FieldUpdatedBy:
 		return m.OldUpdatedBy(ctx)
+	case wikipage.FieldParentID:
+		return m.OldParentID(ctx)
+	case wikipage.FieldPosition:
+		return m.OldPosition(ctx)
 	case wikipage.FieldContent:
 		return m.OldContent(ctx)
 	case wikipage.FieldCreatedAt:
@@ -23891,6 +24098,20 @@ func (m *WikiPageMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUpdatedBy(v)
 		return nil
+	case wikipage.FieldParentID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetParentID(v)
+		return nil
+	case wikipage.FieldPosition:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPosition(v)
+		return nil
 	case wikipage.FieldContent:
 		v, ok := value.(string)
 		if !ok {
@@ -23920,6 +24141,9 @@ func (m *WikiPageMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *WikiPageMutation) AddedFields() []string {
 	var fields []string
+	if m.addposition != nil {
+		fields = append(fields, wikipage.FieldPosition)
+	}
 	return fields
 }
 
@@ -23928,6 +24152,8 @@ func (m *WikiPageMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *WikiPageMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
+	case wikipage.FieldPosition:
+		return m.AddedPosition()
 	}
 	return nil, false
 }
@@ -23937,6 +24163,13 @@ func (m *WikiPageMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *WikiPageMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case wikipage.FieldPosition:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPosition(v)
+		return nil
 	}
 	return fmt.Errorf("unknown WikiPage numeric field %s", name)
 }
@@ -23947,6 +24180,9 @@ func (m *WikiPageMutation) ClearedFields() []string {
 	var fields []string
 	if m.FieldCleared(wikipage.FieldUpdatedBy) {
 		fields = append(fields, wikipage.FieldUpdatedBy)
+	}
+	if m.FieldCleared(wikipage.FieldParentID) {
+		fields = append(fields, wikipage.FieldParentID)
 	}
 	if m.FieldCleared(wikipage.FieldContent) {
 		fields = append(fields, wikipage.FieldContent)
@@ -23967,6 +24203,9 @@ func (m *WikiPageMutation) ClearField(name string) error {
 	switch name {
 	case wikipage.FieldUpdatedBy:
 		m.ClearUpdatedBy()
+		return nil
+	case wikipage.FieldParentID:
+		m.ClearParentID()
 		return nil
 	case wikipage.FieldContent:
 		m.ClearContent()
@@ -23994,6 +24233,12 @@ func (m *WikiPageMutation) ResetField(name string) error {
 	case wikipage.FieldUpdatedBy:
 		m.ResetUpdatedBy()
 		return nil
+	case wikipage.FieldParentID:
+		m.ResetParentID()
+		return nil
+	case wikipage.FieldPosition:
+		m.ResetPosition()
+		return nil
 	case wikipage.FieldContent:
 		m.ResetContent()
 		return nil
@@ -24009,7 +24254,7 @@ func (m *WikiPageMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *WikiPageMutation) AddedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 9)
 	if m.project != nil {
 		edges = append(edges, wikipage.EdgeProject)
 	}
@@ -24018,6 +24263,12 @@ func (m *WikiPageMutation) AddedEdges() []string {
 	}
 	if m.updater != nil {
 		edges = append(edges, wikipage.EdgeUpdater)
+	}
+	if m.parent != nil {
+		edges = append(edges, wikipage.EdgeParent)
+	}
+	if m.children != nil {
+		edges = append(edges, wikipage.EdgeChildren)
 	}
 	if m.yjs_updates != nil {
 		edges = append(edges, wikipage.EdgeYjsUpdates)
@@ -24050,6 +24301,16 @@ func (m *WikiPageMutation) AddedIDs(name string) []ent.Value {
 		if id := m.updater; id != nil {
 			return []ent.Value{*id}
 		}
+	case wikipage.EdgeParent:
+		if id := m.parent; id != nil {
+			return []ent.Value{*id}
+		}
+	case wikipage.EdgeChildren:
+		ids := make([]ent.Value, 0, len(m.children))
+		for id := range m.children {
+			ids = append(ids, id)
+		}
+		return ids
 	case wikipage.EdgeYjsUpdates:
 		ids := make([]ent.Value, 0, len(m.yjs_updates))
 		for id := range m.yjs_updates {
@@ -24080,7 +24341,10 @@ func (m *WikiPageMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *WikiPageMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 9)
+	if m.removedchildren != nil {
+		edges = append(edges, wikipage.EdgeChildren)
+	}
 	if m.removedyjs_updates != nil {
 		edges = append(edges, wikipage.EdgeYjsUpdates)
 	}
@@ -24100,6 +24364,12 @@ func (m *WikiPageMutation) RemovedEdges() []string {
 // the given name in this mutation.
 func (m *WikiPageMutation) RemovedIDs(name string) []ent.Value {
 	switch name {
+	case wikipage.EdgeChildren:
+		ids := make([]ent.Value, 0, len(m.removedchildren))
+		for id := range m.removedchildren {
+			ids = append(ids, id)
+		}
+		return ids
 	case wikipage.EdgeYjsUpdates:
 		ids := make([]ent.Value, 0, len(m.removedyjs_updates))
 		for id := range m.removedyjs_updates {
@@ -24130,7 +24400,7 @@ func (m *WikiPageMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *WikiPageMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 7)
+	edges := make([]string, 0, 9)
 	if m.clearedproject {
 		edges = append(edges, wikipage.EdgeProject)
 	}
@@ -24139,6 +24409,12 @@ func (m *WikiPageMutation) ClearedEdges() []string {
 	}
 	if m.clearedupdater {
 		edges = append(edges, wikipage.EdgeUpdater)
+	}
+	if m.clearedparent {
+		edges = append(edges, wikipage.EdgeParent)
+	}
+	if m.clearedchildren {
+		edges = append(edges, wikipage.EdgeChildren)
 	}
 	if m.clearedyjs_updates {
 		edges = append(edges, wikipage.EdgeYjsUpdates)
@@ -24165,6 +24441,10 @@ func (m *WikiPageMutation) EdgeCleared(name string) bool {
 		return m.clearedcreator
 	case wikipage.EdgeUpdater:
 		return m.clearedupdater
+	case wikipage.EdgeParent:
+		return m.clearedparent
+	case wikipage.EdgeChildren:
+		return m.clearedchildren
 	case wikipage.EdgeYjsUpdates:
 		return m.clearedyjs_updates
 	case wikipage.EdgeVersions:
@@ -24190,6 +24470,9 @@ func (m *WikiPageMutation) ClearEdge(name string) error {
 	case wikipage.EdgeUpdater:
 		m.ClearUpdater()
 		return nil
+	case wikipage.EdgeParent:
+		m.ClearParent()
+		return nil
 	}
 	return fmt.Errorf("unknown WikiPage unique edge %s", name)
 }
@@ -24206,6 +24489,12 @@ func (m *WikiPageMutation) ResetEdge(name string) error {
 		return nil
 	case wikipage.EdgeUpdater:
 		m.ResetUpdater()
+		return nil
+	case wikipage.EdgeParent:
+		m.ResetParent()
+		return nil
+	case wikipage.EdgeChildren:
+		m.ResetChildren()
 		return nil
 	case wikipage.EdgeYjsUpdates:
 		m.ResetYjsUpdates()

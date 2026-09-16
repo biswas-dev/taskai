@@ -1170,12 +1170,15 @@ func TestWikiCreateThenList(t *testing.T) {
 		t.Fatalf("Expected 2 pages, got %d", len(pages))
 	}
 
-	// Verify sorted by title ascending
-	if pages[0].Title != "API Reference" {
-		t.Errorf("Expected first page 'API Reference', got %q", pages[0].Title)
+	// Verify sorted by sibling position (creation order), then title
+	if pages[0].Title != "Setup Guide" {
+		t.Errorf("Expected first page 'Setup Guide', got %q", pages[0].Title)
 	}
-	if pages[1].Title != "Setup Guide" {
-		t.Errorf("Expected second page 'Setup Guide', got %q", pages[1].Title)
+	if pages[1].Title != "API Reference" {
+		t.Errorf("Expected second page 'API Reference', got %q", pages[1].Title)
+	}
+	if pages[0].Position != 0 || pages[1].Position != 1 {
+		t.Errorf("Expected positions 0 and 1, got %d and %d", pages[0].Position, pages[1].Position)
 	}
 }
 

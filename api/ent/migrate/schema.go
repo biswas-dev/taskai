@@ -1039,12 +1039,14 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "title", Type: field.TypeString, Size: 500},
 		{Name: "slug", Type: field.TypeString, Size: 500},
+		{Name: "position", Type: field.TypeInt, Default: 0},
 		{Name: "content", Type: field.TypeString, Nullable: true, Size: 2147483647, Default: ""},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
 		{Name: "project_id", Type: field.TypeInt64},
 		{Name: "created_by", Type: field.TypeInt64},
 		{Name: "updated_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "parent_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// WikiPagesTable holds the schema information for the "wiki_pages" table.
 	WikiPagesTable = &schema.Table{
@@ -1054,20 +1056,26 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "wiki_pages_projects_wiki_pages",
-				Columns:    []*schema.Column{WikiPagesColumns[6]},
+				Columns:    []*schema.Column{WikiPagesColumns[7]},
 				RefColumns: []*schema.Column{ProjectsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "wiki_pages_users_wiki_pages_created",
-				Columns:    []*schema.Column{WikiPagesColumns[7]},
+				Columns:    []*schema.Column{WikiPagesColumns[8]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "wiki_pages_users_wiki_pages_updated",
-				Columns:    []*schema.Column{WikiPagesColumns[8]},
+				Columns:    []*schema.Column{WikiPagesColumns[9]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "wiki_pages_wiki_pages_children",
+				Columns:    []*schema.Column{WikiPagesColumns[10]},
+				RefColumns: []*schema.Column{WikiPagesColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 		},
@@ -1075,7 +1083,7 @@ var (
 			{
 				Name:    "wikipage_project_id",
 				Unique:  false,
-				Columns: []*schema.Column{WikiPagesColumns[6]},
+				Columns: []*schema.Column{WikiPagesColumns[7]},
 			},
 			{
 				Name:    "wikipage_slug",
@@ -1083,9 +1091,14 @@ var (
 				Columns: []*schema.Column{WikiPagesColumns[2]},
 			},
 			{
+				Name:    "wikipage_project_id_parent_id_position",
+				Unique:  false,
+				Columns: []*schema.Column{WikiPagesColumns[7], WikiPagesColumns[10], WikiPagesColumns[3]},
+			},
+			{
 				Name:    "wikipage_project_id_slug",
 				Unique:  true,
-				Columns: []*schema.Column{WikiPagesColumns[6], WikiPagesColumns[2]},
+				Columns: []*schema.Column{WikiPagesColumns[7], WikiPagesColumns[2]},
 			},
 		},
 	}
@@ -1244,6 +1257,7 @@ func init() {
 	WikiPagesTable.ForeignKeys[0].RefTable = ProjectsTable
 	WikiPagesTable.ForeignKeys[1].RefTable = UsersTable
 	WikiPagesTable.ForeignKeys[2].RefTable = UsersTable
+	WikiPagesTable.ForeignKeys[3].RefTable = WikiPagesTable
 	WikiPageVersionsTable.ForeignKeys[0].RefTable = UsersTable
 	WikiPageVersionsTable.ForeignKeys[1].RefTable = WikiPagesTable
 	YjsUpdatesTable.ForeignKeys[0].RefTable = UsersTable

@@ -23,6 +23,8 @@ func (WikiPage) Fields() []ent.Field {
 		field.String("slug").NotEmpty().MaxLen(500),
 		field.Int64("created_by"),
 		field.Int64("updated_by").Optional().Nillable(),
+		field.Int64("parent_id").Optional().Nillable(),
+		field.Int("position").Default(0),
 		field.Text("content").Optional().Default(""),
 		field.Time("created_at").Default(time.Now).Immutable(),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
@@ -35,6 +37,7 @@ func (WikiPage) Edges() []ent.Edge {
 		edge.From("project", Project.Type).Ref("wiki_pages").Unique().Required().Field("project_id"),
 		edge.From("creator", User.Type).Ref("wiki_pages_created").Unique().Required().Field("created_by"),
 		edge.From("updater", User.Type).Ref("wiki_pages_updated").Unique().Field("updated_by"),
+		edge.To("children", WikiPage.Type).From("parent").Unique().Field("parent_id"),
 		edge.To("yjs_updates", YjsUpdate.Type),
 		edge.To("versions", PageVersion.Type),
 		edge.To("wiki_page_versions", WikiPageVersion.Type),
@@ -47,6 +50,7 @@ func (WikiPage) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("project_id"),
 		index.Fields("slug"),
+		index.Fields("project_id", "parent_id", "position"),
 		index.Fields("project_id", "slug").Unique(),
 	}
 }

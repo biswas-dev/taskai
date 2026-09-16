@@ -4957,6 +4957,38 @@ func (c *WikiPageClient) QueryUpdater(_m *WikiPage) *UserQuery {
 	return query
 }
 
+// QueryParent queries the parent edge of a WikiPage.
+func (c *WikiPageClient) QueryParent(_m *WikiPage) *WikiPageQuery {
+	query := (&WikiPageClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(wikipage.Table, wikipage.FieldID, id),
+			sqlgraph.To(wikipage.Table, wikipage.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, wikipage.ParentTable, wikipage.ParentColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryChildren queries the children edge of a WikiPage.
+func (c *WikiPageClient) QueryChildren(_m *WikiPage) *WikiPageQuery {
+	query := (&WikiPageClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(wikipage.Table, wikipage.FieldID, id),
+			sqlgraph.To(wikipage.Table, wikipage.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, wikipage.ChildrenTable, wikipage.ChildrenColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryYjsUpdates queries the yjs_updates edge of a WikiPage.
 func (c *WikiPageClient) QueryYjsUpdates(_m *WikiPage) *YjsUpdateQuery {
 	query := (&YjsUpdateClient{config: c.config}).Query()

@@ -145,6 +145,10 @@ export interface WikiPage {
   project_id: number
   title: string
   slug: string
+  /** Parent page ID, or null for a top-level page. */
+  parent_id: number | null
+  /** Sort order among sibling pages. */
+  position: number
   created_by: number
   creator_name?: string
   updated_by?: number
@@ -1930,10 +1934,10 @@ class ApiClient {
     return this.request<WikiPage[]>(`/api/projects/${projectId}/wiki/pages`)
   }
 
-  async createWikiPage(projectId: number, title: string): Promise<WikiPage> {
+  async createWikiPage(projectId: number, title: string, parentId?: number | null): Promise<WikiPage> {
     return this.request<WikiPage>(`/api/projects/${projectId}/wiki/pages`, {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(parentId ? { title, parent_id: parentId } : { title }),
     })
   }
 
@@ -1941,7 +1945,14 @@ class ApiClient {
     return this.request<WikiPage>(`/api/wiki/pages/${pageId}`)
   }
 
-  async updateWikiPage(pageId: number, data: { title?: string }): Promise<WikiPage> {
+  /**
+   * Update a wiki page. Pass `parent_id: null` to move the page to the top
+   * level; omit it to leave the hierarchy unchanged.
+   */
+  async updateWikiPage(
+    pageId: number,
+    data: { title?: string; parent_id?: number | null; position?: number },
+  ): Promise<WikiPage> {
     return this.request<WikiPage>(`/api/wiki/pages/${pageId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

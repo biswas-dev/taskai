@@ -80,6 +80,16 @@ func UpdatedBy(v int64) predicate.WikiPage {
 	return predicate.WikiPage(sql.FieldEQ(FieldUpdatedBy, v))
 }
 
+// ParentID applies equality check predicate on the "parent_id" field. It's identical to ParentIDEQ.
+func ParentID(v int64) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEQ(FieldParentID, v))
+}
+
+// Position applies equality check predicate on the "position" field. It's identical to PositionEQ.
+func Position(v int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEQ(FieldPosition, v))
+}
+
 // Content applies equality check predicate on the "content" field. It's identical to ContentEQ.
 func Content(v string) predicate.WikiPage {
 	return predicate.WikiPage(sql.FieldEQ(FieldContent, v))
@@ -293,6 +303,76 @@ func UpdatedByIsNil() predicate.WikiPage {
 // UpdatedByNotNil applies the NotNil predicate on the "updated_by" field.
 func UpdatedByNotNil() predicate.WikiPage {
 	return predicate.WikiPage(sql.FieldNotNull(FieldUpdatedBy))
+}
+
+// ParentIDEQ applies the EQ predicate on the "parent_id" field.
+func ParentIDEQ(v int64) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEQ(FieldParentID, v))
+}
+
+// ParentIDNEQ applies the NEQ predicate on the "parent_id" field.
+func ParentIDNEQ(v int64) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNEQ(FieldParentID, v))
+}
+
+// ParentIDIn applies the In predicate on the "parent_id" field.
+func ParentIDIn(vs ...int64) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldIn(FieldParentID, vs...))
+}
+
+// ParentIDNotIn applies the NotIn predicate on the "parent_id" field.
+func ParentIDNotIn(vs ...int64) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNotIn(FieldParentID, vs...))
+}
+
+// ParentIDIsNil applies the IsNil predicate on the "parent_id" field.
+func ParentIDIsNil() predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldIsNull(FieldParentID))
+}
+
+// ParentIDNotNil applies the NotNil predicate on the "parent_id" field.
+func ParentIDNotNil() predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNotNull(FieldParentID))
+}
+
+// PositionEQ applies the EQ predicate on the "position" field.
+func PositionEQ(v int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEQ(FieldPosition, v))
+}
+
+// PositionNEQ applies the NEQ predicate on the "position" field.
+func PositionNEQ(v int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNEQ(FieldPosition, v))
+}
+
+// PositionIn applies the In predicate on the "position" field.
+func PositionIn(vs ...int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldIn(FieldPosition, vs...))
+}
+
+// PositionNotIn applies the NotIn predicate on the "position" field.
+func PositionNotIn(vs ...int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNotIn(FieldPosition, vs...))
+}
+
+// PositionGT applies the GT predicate on the "position" field.
+func PositionGT(v int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldGT(FieldPosition, v))
+}
+
+// PositionGTE applies the GTE predicate on the "position" field.
+func PositionGTE(v int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldGTE(FieldPosition, v))
+}
+
+// PositionLT applies the LT predicate on the "position" field.
+func PositionLT(v int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldLT(FieldPosition, v))
+}
+
+// PositionLTE applies the LTE predicate on the "position" field.
+func PositionLTE(v int) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldLTE(FieldPosition, v))
 }
 
 // ContentEQ applies the EQ predicate on the "content" field.
@@ -511,6 +591,52 @@ func HasUpdater() predicate.WikiPage {
 func HasUpdaterWith(preds ...predicate.User) predicate.WikiPage {
 	return predicate.WikiPage(func(s *sql.Selector) {
 		step := newUpdaterStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasParent applies the HasEdge predicate on the "parent" edge.
+func HasParent() predicate.WikiPage {
+	return predicate.WikiPage(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, ParentTable, ParentColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasParentWith applies the HasEdge predicate on the "parent" edge with a given conditions (other predicates).
+func HasParentWith(preds ...predicate.WikiPage) predicate.WikiPage {
+	return predicate.WikiPage(func(s *sql.Selector) {
+		step := newParentStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasChildren applies the HasEdge predicate on the "children" edge.
+func HasChildren() predicate.WikiPage {
+	return predicate.WikiPage(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ChildrenTable, ChildrenColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasChildrenWith applies the HasEdge predicate on the "children" edge with a given conditions (other predicates).
+func HasChildrenWith(preds ...predicate.WikiPage) predicate.WikiPage {
+	return predicate.WikiPage(func(s *sql.Selector) {
+		step := newChildrenStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)
