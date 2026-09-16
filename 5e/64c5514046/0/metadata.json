@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "5e64c5514046",
+  "session_id": "f1945ece-265b-4a37-9364-cabd0fe0c0d7",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-16T13:47:46.137955Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "web/src/components/WikiPageTree.tsx",
+    "web/src/components/WikiPageTree.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5[1m]",
+  "turn_id": "af78ec9fc34e",
+  "token_usage": {
+    "input_tokens": 3014,
+    "cache_creation_tokens": 347011,
+    "cache_read_tokens": 15457365,
+    "output_tokens": 77852,
+    "api_call_count": 97
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-16T13:47:45.392522Z",
+    "agent_lines": 881,
+    "agent_removed": 0,
+    "human_added": 2211,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 3092,
+    "total_lines_changed": 3304,
+    "agent_percentage": 26.66464891041162,
+    "metric_version": 2
+  }
+}

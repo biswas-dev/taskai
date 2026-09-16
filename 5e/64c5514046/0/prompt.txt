@@ -1,0 +1,11 @@
+please fix the taskai to have nested pages with heirarchy, and also show a great tree view, max 6 levels, same way confluence does it, this will help in organization
+
+---
+
+<task-notification>
+<task-id>bic9g5oil</task-id>
+<tool-use-id>toolu_01AkLWh2vzuXDzevewFhCr8e</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/f1945ece-265b-4a37-9364-cabd0fe0c0d7/tasks/bic9g5oil.output</output-file>
+<status>completed</status>
+<summary>Background command "Install web dependencies" completed (exit code 0)</summary>
+</task-notification>

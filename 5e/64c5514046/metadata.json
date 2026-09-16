@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "5e64c5514046",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "web/src/components/WikiPageTree.test.tsx",
+    "web/src/components/WikiPageTree.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/5e/64c5514046/0/metadata.json",
+      "transcript": "/5e/64c5514046/0/full.jsonl",
+      "content_hash": "/5e/64c5514046/0/content_hash.txt",
+      "prompt": "/5e/64c5514046/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3014,
+    "cache_creation_tokens": 347011,
+    "cache_read_tokens": 15457365,
+    "output_tokens": 77852,
+    "api_call_count": 97
+  }
+}
