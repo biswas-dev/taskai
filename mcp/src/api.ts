@@ -59,6 +59,10 @@ export interface WikiPage {
   project_id: string;
   title: string;
   slug: string;
+  /** Parent page ID, or null for a top-level page. */
+  parent_id: string | null;
+  /** Sort order among sibling pages. */
+  position: number;
   content?: string;
   created_by: string;
   created_at: string;
@@ -513,10 +517,12 @@ export class TaskAIClient {
     return { content, filename };
   }
 
-  async createWikiPage(projectId: string, title: string): Promise<WikiPage> {
+  async createWikiPage(projectId: string, title: string, parentId?: string): Promise<WikiPage> {
+    const body: { title: string; parent_id?: number } = { title };
+    if (parentId !== undefined && parentId !== "") body.parent_id = Number(parentId);
     return this.request<WikiPage>(`/api/projects/${encodeURIComponent(projectId)}/wiki/pages`, {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(body),
     });
   }
 
@@ -527,7 +533,10 @@ export class TaskAIClient {
     });
   }
 
-  async updateWikiPage(pageId: string, data: { title?: string }): Promise<WikiPage> {
+  async updateWikiPage(
+    pageId: string,
+    data: { title?: string; parent_id?: number | null; position?: number },
+  ): Promise<WikiPage> {
     return this.request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(pageId)}`, {
       method: "PATCH",
       body: JSON.stringify(data),

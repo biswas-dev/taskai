@@ -114,7 +114,7 @@ function minimizeComment(comment: Comment) {
  * Extract minimal fields from a wiki page for list operations.
  */
 function minimizeWikiPage(page: WikiPage) {
-  return { id: page.id, title: page.title, slug: page.slug, updated_at: page.updated_at };
+  return { id: page.id, title: page.title, slug: page.slug, parent_id: page.parent_id ?? null, updated_at: page.updated_at };
 }
 
 /**
@@ -490,7 +490,7 @@ function createServer(client: TaskAIClient, cachedUser?: User, defaultProjectIds
   const defaultPid = defaultProjectIds?.[0];
   server.tool(
     "list_wiki_pages",
-    `List all wiki pages in a project${defaultPid ? ` (default: project ${defaultPid})` : ""}`,
+    `List all wiki pages in a project${defaultPid ? ` (default: project ${defaultPid})` : ""}. Pages are hierarchical: parent_id is null for top-level pages, otherwise the ID of the parent page (max 6 levels deep).`,
     {
       project_id: z.string().optional().describe(`Project ID${defaultPid ? ` (default: ${defaultPid})` : ""}`),
       verbose: z.boolean().optional().describe("Pretty print JSON (default: false)"),
@@ -664,15 +664,16 @@ function createServer(client: TaskAIClient, cachedUser?: User, defaultProjectIds
     {
       project_id: z.string().optional().describe(`Project ID${defaultPid ? ` (default: ${defaultPid})` : ""}`),
       title: z.string().describe("Page title"),
+      parent_id: z.string().optional().describe("Parent wiki page ID to nest this page under (omit for a top-level page; max 6 levels deep)"),
       content: z.string().optional().describe("Initial page content (markdown). Supports references: use [^N] for inline citations and [^N]: text for definitions"),
       verbose: z.boolean().optional().describe("Pretty print JSON (default: false)"),
     },
-    async ({ project_id, title, content, verbose }) => {
+    async ({ project_id, title, parent_id, content, verbose }) => {
       const effectiveProjectId = project_id ?? defaultPid;
       if (!effectiveProjectId) {
         return { content: [{ type: "text", text: "project_id is required" }], isError: true };
       }
-      const page = await client.createWikiPage(effectiveProjectId, title);
+      const page = await client.createWikiPage(effectiveProjectId, title, parent_id);
       if (content) {
         await client.updateWikiPageContent(String(page.id), content);
       }
@@ -706,6 +707,26 @@ function createServer(client: TaskAIClient, cachedUser?: User, defaultProjectIds
     },
     async ({ page_id, title, verbose }) => {
       const page = await client.updateWikiPage(page_id, { title });
+      return { content: [{ type: "text", text: formatResponse(verbose ? page : minimizeWikiPage(page), verbose) }] };
+    }
+  );
+
+  // --- move_wiki_page ---
+  server.tool(
+    "move_wiki_page",
+    "Move a wiki page in the hierarchy: nest it under another page or make it top-level. A page cannot be moved under itself or its descendants, and the tree is limited to 6 levels.",
+    {
+      page_id: z.string().describe("Wiki page ID to move"),
+      parent_id: z.string().nullable().describe("New parent page ID, or null to move to the top level"),
+      position: z.number().int().min(0).optional().describe("Optional sort position among siblings (0-based). Defaults to last."),
+      verbose: z.boolean().optional().describe("Pretty print JSON (default: false)"),
+    },
+    async ({ page_id, parent_id, position, verbose }) => {
+      const data: { parent_id: number | null; position?: number } = {
+        parent_id: parent_id === null || parent_id === "" ? null : Number(parent_id),
+      };
+      if (position !== undefined) data.position = position;
+      const page = await client.updateWikiPage(page_id, data);
       return { content: [{ type: "text", text: formatResponse(verbose ? page : minimizeWikiPage(page), verbose) }] };
     }
   );

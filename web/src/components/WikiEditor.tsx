@@ -1787,7 +1787,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
       {fullscreenContent}
 
       {!isFullscreen && (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col flex-1 min-h-0">
           {/* Header */}
           <div className="border-b border-dark-border-subtle bg-dark-bg-secondary px-6 py-4">
             <div className="flex items-center justify-between">

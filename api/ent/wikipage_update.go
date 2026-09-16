@@ -110,6 +110,47 @@ func (_u *WikiPageUpdate) ClearUpdatedBy() *WikiPageUpdate {
 	return _u
 }
 
+// SetParentID sets the "parent_id" field.
+func (_u *WikiPageUpdate) SetParentID(v int64) *WikiPageUpdate {
+	_u.mutation.SetParentID(v)
+	return _u
+}
+
+// SetNillableParentID sets the "parent_id" field if the given value is not nil.
+func (_u *WikiPageUpdate) SetNillableParentID(v *int64) *WikiPageUpdate {
+	if v != nil {
+		_u.SetParentID(*v)
+	}
+	return _u
+}
+
+// ClearParentID clears the value of the "parent_id" field.
+func (_u *WikiPageUpdate) ClearParentID() *WikiPageUpdate {
+	_u.mutation.ClearParentID()
+	return _u
+}
+
+// SetPosition sets the "position" field.
+func (_u *WikiPageUpdate) SetPosition(v int) *WikiPageUpdate {
+	_u.mutation.ResetPosition()
+	_u.mutation.SetPosition(v)
+	return _u
+}
+
+// SetNillablePosition sets the "position" field if the given value is not nil.
+func (_u *WikiPageUpdate) SetNillablePosition(v *int) *WikiPageUpdate {
+	if v != nil {
+		_u.SetPosition(*v)
+	}
+	return _u
+}
+
+// AddPosition adds value to the "position" field.
+func (_u *WikiPageUpdate) AddPosition(v int) *WikiPageUpdate {
+	_u.mutation.AddPosition(v)
+	return _u
+}
+
 // SetContent sets the "content" field.
 func (_u *WikiPageUpdate) SetContent(v string) *WikiPageUpdate {
 	_u.mutation.SetContent(v)
@@ -169,6 +210,26 @@ func (_u *WikiPageUpdate) SetNillableUpdaterID(id *int64) *WikiPageUpdate {
 // SetUpdater sets the "updater" edge to the User entity.
 func (_u *WikiPageUpdate) SetUpdater(v *User) *WikiPageUpdate {
 	return _u.SetUpdaterID(v.ID)
+}
+
+// SetParent sets the "parent" edge to the WikiPage entity.
+func (_u *WikiPageUpdate) SetParent(v *WikiPage) *WikiPageUpdate {
+	return _u.SetParentID(v.ID)
+}
+
+// AddChildIDs adds the "children" edge to the WikiPage entity by IDs.
+func (_u *WikiPageUpdate) AddChildIDs(ids ...int64) *WikiPageUpdate {
+	_u.mutation.AddChildIDs(ids...)
+	return _u
+}
+
+// AddChildren adds the "children" edges to the WikiPage entity.
+func (_u *WikiPageUpdate) AddChildren(v ...*WikiPage) *WikiPageUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddChildIDs(ids...)
 }
 
 // AddYjsUpdateIDs adds the "yjs_updates" edge to the YjsUpdate entity by IDs.
@@ -252,6 +313,33 @@ func (_u *WikiPageUpdate) ClearCreator() *WikiPageUpdate {
 func (_u *WikiPageUpdate) ClearUpdater() *WikiPageUpdate {
 	_u.mutation.ClearUpdater()
 	return _u
+}
+
+// ClearParent clears the "parent" edge to the WikiPage entity.
+func (_u *WikiPageUpdate) ClearParent() *WikiPageUpdate {
+	_u.mutation.ClearParent()
+	return _u
+}
+
+// ClearChildren clears all "children" edges to the WikiPage entity.
+func (_u *WikiPageUpdate) ClearChildren() *WikiPageUpdate {
+	_u.mutation.ClearChildren()
+	return _u
+}
+
+// RemoveChildIDs removes the "children" edge to WikiPage entities by IDs.
+func (_u *WikiPageUpdate) RemoveChildIDs(ids ...int64) *WikiPageUpdate {
+	_u.mutation.RemoveChildIDs(ids...)
+	return _u
+}
+
+// RemoveChildren removes "children" edges to WikiPage entities.
+func (_u *WikiPageUpdate) RemoveChildren(v ...*WikiPage) *WikiPageUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveChildIDs(ids...)
 }
 
 // ClearYjsUpdates clears all "yjs_updates" edges to the YjsUpdate entity.
@@ -413,6 +501,12 @@ func (_u *WikiPageUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Slug(); ok {
 		_spec.SetField(wikipage.FieldSlug, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Position(); ok {
+		_spec.SetField(wikipage.FieldPosition, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPosition(); ok {
+		_spec.AddField(wikipage.FieldPosition, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.Content(); ok {
 		_spec.SetField(wikipage.FieldContent, field.TypeString, value)
 	}
@@ -502,6 +596,80 @@ func (_u *WikiPageUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ParentCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   wikipage.ParentTable,
+			Columns: []string{wikipage.ParentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ParentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   wikipage.ParentTable,
+			Columns: []string{wikipage.ParentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ChildrenCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   wikipage.ChildrenTable,
+			Columns: []string{wikipage.ChildrenColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedChildrenIDs(); len(nodes) > 0 && !_u.mutation.ChildrenCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   wikipage.ChildrenTable,
+			Columns: []string{wikipage.ChildrenColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ChildrenIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   wikipage.ChildrenTable,
+			Columns: []string{wikipage.ChildrenColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -785,6 +953,47 @@ func (_u *WikiPageUpdateOne) ClearUpdatedBy() *WikiPageUpdateOne {
 	return _u
 }
 
+// SetParentID sets the "parent_id" field.
+func (_u *WikiPageUpdateOne) SetParentID(v int64) *WikiPageUpdateOne {
+	_u.mutation.SetParentID(v)
+	return _u
+}
+
+// SetNillableParentID sets the "parent_id" field if the given value is not nil.
+func (_u *WikiPageUpdateOne) SetNillableParentID(v *int64) *WikiPageUpdateOne {
+	if v != nil {
+		_u.SetParentID(*v)
+	}
+	return _u
+}
+
+// ClearParentID clears the value of the "parent_id" field.
+func (_u *WikiPageUpdateOne) ClearParentID() *WikiPageUpdateOne {
+	_u.mutation.ClearParentID()
+	return _u
+}
+
+// SetPosition sets the "position" field.
+func (_u *WikiPageUpdateOne) SetPosition(v int) *WikiPageUpdateOne {
+	_u.mutation.ResetPosition()
+	_u.mutation.SetPosition(v)
+	return _u
+}
+
+// SetNillablePosition sets the "position" field if the given value is not nil.
+func (_u *WikiPageUpdateOne) SetNillablePosition(v *int) *WikiPageUpdateOne {
+	if v != nil {
+		_u.SetPosition(*v)
+	}
+	return _u
+}
+
+// AddPosition adds value to the "position" field.
+func (_u *WikiPageUpdateOne) AddPosition(v int) *WikiPageUpdateOne {
+	_u.mutation.AddPosition(v)
+	return _u
+}
+
 // SetContent sets the "content" field.
 func (_u *WikiPageUpdateOne) SetContent(v string) *WikiPageUpdateOne {
 	_u.mutation.SetContent(v)
@@ -844,6 +1053,26 @@ func (_u *WikiPageUpdateOne) SetNillableUpdaterID(id *int64) *WikiPageUpdateOne 
 // SetUpdater sets the "updater" edge to the User entity.
 func (_u *WikiPageUpdateOne) SetUpdater(v *User) *WikiPageUpdateOne {
 	return _u.SetUpdaterID(v.ID)
+}
+
+// SetParent sets the "parent" edge to the WikiPage entity.
+func (_u *WikiPageUpdateOne) SetParent(v *WikiPage) *WikiPageUpdateOne {
+	return _u.SetParentID(v.ID)
+}
+
+// AddChildIDs adds the "children" edge to the WikiPage entity by IDs.
+func (_u *WikiPageUpdateOne) AddChildIDs(ids ...int64) *WikiPageUpdateOne {
+	_u.mutation.AddChildIDs(ids...)
+	return _u
+}
+
+// AddChildren adds the "children" edges to the WikiPage entity.
+func (_u *WikiPageUpdateOne) AddChildren(v ...*WikiPage) *WikiPageUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddChildIDs(ids...)
 }
 
 // AddYjsUpdateIDs adds the "yjs_updates" edge to the YjsUpdate entity by IDs.
@@ -927,6 +1156,33 @@ func (_u *WikiPageUpdateOne) ClearCreator() *WikiPageUpdateOne {
 func (_u *WikiPageUpdateOne) ClearUpdater() *WikiPageUpdateOne {
 	_u.mutation.ClearUpdater()
 	return _u
+}
+
+// ClearParent clears the "parent" edge to the WikiPage entity.
+func (_u *WikiPageUpdateOne) ClearParent() *WikiPageUpdateOne {
+	_u.mutation.ClearParent()
+	return _u
+}
+
+// ClearChildren clears all "children" edges to the WikiPage entity.
+func (_u *WikiPageUpdateOne) ClearChildren() *WikiPageUpdateOne {
+	_u.mutation.ClearChildren()
+	return _u
+}
+
+// RemoveChildIDs removes the "children" edge to WikiPage entities by IDs.
+func (_u *WikiPageUpdateOne) RemoveChildIDs(ids ...int64) *WikiPageUpdateOne {
+	_u.mutation.RemoveChildIDs(ids...)
+	return _u
+}
+
+// RemoveChildren removes "children" edges to WikiPage entities.
+func (_u *WikiPageUpdateOne) RemoveChildren(v ...*WikiPage) *WikiPageUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveChildIDs(ids...)
 }
 
 // ClearYjsUpdates clears all "yjs_updates" edges to the YjsUpdate entity.
@@ -1118,6 +1374,12 @@ func (_u *WikiPageUpdateOne) sqlSave(ctx context.Context) (_node *WikiPage, err 
 	if value, ok := _u.mutation.Slug(); ok {
 		_spec.SetField(wikipage.FieldSlug, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Position(); ok {
+		_spec.SetField(wikipage.FieldPosition, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedPosition(); ok {
+		_spec.AddField(wikipage.FieldPosition, field.TypeInt, value)
+	}
 	if value, ok := _u.mutation.Content(); ok {
 		_spec.SetField(wikipage.FieldContent, field.TypeString, value)
 	}
@@ -1207,6 +1469,80 @@ func (_u *WikiPageUpdateOne) sqlSave(ctx context.Context) (_node *WikiPage, err 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ParentCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   wikipage.ParentTable,
+			Columns: []string{wikipage.ParentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ParentIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   wikipage.ParentTable,
+			Columns: []string{wikipage.ParentColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ChildrenCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   wikipage.ChildrenTable,
+			Columns: []string{wikipage.ChildrenColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedChildrenIDs(); len(nodes) > 0 && !_u.mutation.ChildrenCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   wikipage.ChildrenTable,
+			Columns: []string{wikipage.ChildrenColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ChildrenIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   wikipage.ChildrenTable,
+			Columns: []string{wikipage.ChildrenColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(wikipage.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

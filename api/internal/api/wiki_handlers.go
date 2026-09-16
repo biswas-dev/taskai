@@ -32,6 +32,8 @@ type WikiPageResponse struct {
 	ProjectID   int64     `json:"project_id"`
 	Title       string    `json:"title"`
 	Slug        string    `json:"slug"`
+	ParentID    *int64    `json:"parent_id"`
+	Position    int       `json:"position"`
 	CreatedBy   int64     `json:"created_by"`
 	CreatorName *string   `json:"creator_name,omitempty"`
 	UpdatedBy   *int64    `json:"updated_by,omitempty"`
@@ -44,12 +46,40 @@ type WikiPageResponse struct {
 
 // CreateWikiPageRequest represents a request to create a wiki page
 type CreateWikiPageRequest struct {
-	Title string `json:"title"`
+	Title    string `json:"title"`
+	ParentID *int64 `json:"parent_id,omitempty"`
 }
 
 // UpdateWikiPageRequest represents a request to update a wiki page
 type UpdateWikiPageRequest struct {
 	Title *string `json:"title,omitempty"`
+	// ParentID moves the page: omit to leave unchanged, null to move to root.
+	ParentID OptionalInt64 `json:"parent_id,omitzero"`
+	// Position orders the page among its siblings.
+	Position *int `json:"position,omitempty"`
+}
+
+// newWikiPageResponse maps an Ent page to its API representation.
+func newWikiPageResponse(p *ent.WikiPage) WikiPageResponse {
+	wp := WikiPageResponse{
+		ID:        p.ID,
+		ProjectID: p.ProjectID,
+		Title:     p.Title,
+		Slug:      p.Slug,
+		ParentID:  p.ParentID,
+		Position:  p.Position,
+		CreatedBy: p.CreatedBy,
+		UpdatedBy: p.UpdatedBy,
+		CreatedAt: p.CreatedAt,
+		UpdatedAt: p.UpdatedAt,
+	}
+	if p.Edges.Creator != nil && p.Edges.Creator.Name != nil {
+		wp.CreatorName = p.Edges.Creator.Name
+	}
+	if p.Edges.Updater != nil && p.Edges.Updater.Name != nil {
+		wp.UpdaterName = p.Edges.Updater.Name
+	}
+	return wp
 }
 
 // HandleListWikiPages returns all wiki pages for a project
@@ -80,7 +110,7 @@ func (s *Server) HandleListWikiPages(w http.ResponseWriter, r *http.Request) {
 		Where(wikipage.ProjectID(projectID)).
 		WithCreator().
 		WithUpdater().
-		Order(ent.Asc(wikipage.FieldTitle)).
+		Order(ent.Asc(wikipage.FieldPosition), ent.Asc(wikipage.FieldTitle)).
 		All(ctx)
 	if err != nil {
 		s.logger.Error("Failed to fetch wiki pages",
@@ -110,22 +140,7 @@ func (s *Server) HandleListWikiPages(w http.ResponseWriter, r *http.Request) {
 	// Convert to response format
 	response := make([]WikiPageResponse, 0, len(pages))
 	for _, p := range pages {
-		wp := WikiPageResponse{
-			ID:        p.ID,
-			ProjectID: p.ProjectID,
-			Title:     p.Title,
-			Slug:      p.Slug,
-			CreatedBy: p.CreatedBy,
-			UpdatedBy: p.UpdatedBy,
-			CreatedAt: p.CreatedAt,
-			UpdatedAt: p.UpdatedAt,
-		}
-		if p.Edges.Creator != nil && p.Edges.Creator.Name != nil {
-			wp.CreatorName = p.Edges.Creator.Name
-		}
-		if p.Edges.Updater != nil && p.Edges.Updater.Name != nil {
-			wp.UpdaterName = p.Edges.Updater.Name
-		}
+		wp := newWikiPageResponse(p)
 		if an, ok := agentNames[p.ID]; ok {
 			wp.AgentName = an
 		}
@@ -190,6 +205,16 @@ func (s *Server) HandleCreateWikiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.validateWikiParent(ctx, projectID, nil, req.ParentID); err != nil {
+		respondWikiHierarchyError(w, err)
+		return
+	}
+	position, err := s.nextWikiSiblingPosition(ctx, projectID, req.ParentID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to determine page position", "internal_error")
+		return
+	}
+
 	// Generate slug
 	baseSlug := generateSlug(req.Title)
 	slug := baseSlug
@@ -217,6 +242,8 @@ func (s *Server) HandleCreateWikiPage(w http.ResponseWriter, r *http.Request) {
 		SetProjectID(projectID).
 		SetTitle(req.Title).
 		SetSlug(slug).
+		SetNillableParentID(req.ParentID).
+		SetPosition(position).
 		SetCreatedBy(userID).
 		Save(ctx)
 	if err != nil {
@@ -229,17 +256,7 @@ func (s *Server) HandleCreateWikiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := WikiPageResponse{
-		ID:        page.ID,
-		ProjectID: page.ProjectID,
-		Title:     page.Title,
-		Slug:      page.Slug,
-		CreatedBy: page.CreatedBy,
-		CreatedAt: page.CreatedAt,
-		UpdatedAt: page.UpdatedAt,
-	}
-
-	respondJSON(w, http.StatusCreated, response)
+	respondJSON(w, http.StatusCreated, newWikiPageResponse(page))
 }
 
 // HandleGetWikiPage returns a single wiki page
@@ -285,23 +302,8 @@ func (s *Server) HandleGetWikiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := WikiPageResponse{
-		ID:        page.ID,
-		ProjectID: page.ProjectID,
-		Title:     page.Title,
-		Slug:      page.Slug,
-		CreatedBy: page.CreatedBy,
-		UpdatedBy: page.UpdatedBy,
-		Content:   &page.Content,
-		CreatedAt: page.CreatedAt,
-		UpdatedAt: page.UpdatedAt,
-	}
-	if page.Edges.Creator != nil && page.Edges.Creator.Name != nil {
-		response.CreatorName = page.Edges.Creator.Name
-	}
-	if page.Edges.Updater != nil && page.Edges.Updater.Name != nil {
-		response.UpdaterName = page.Edges.Updater.Name
-	}
+	response := newWikiPageResponse(page)
+	response.Content = &page.Content
 
 	// Fetch agent_name (not in Ent schema)
 	var agentName *string
@@ -374,6 +376,34 @@ func (s *Server) HandleUpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.ParentID.Set {
+		if err := s.validateWikiParent(ctx, page.ProjectID, &page.ID, req.ParentID.Value); err != nil {
+			respondWikiHierarchyError(w, err)
+			return
+		}
+		if req.ParentID.Value == nil {
+			update.ClearParentID()
+		} else {
+			update.SetParentID(*req.ParentID.Value)
+		}
+		// Append to the end of the new sibling list unless a position was given.
+		if req.Position == nil {
+			position, err := s.nextWikiSiblingPosition(ctx, page.ProjectID, req.ParentID.Value)
+			if err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to determine page position", "internal_error")
+				return
+			}
+			update.SetPosition(position)
+		}
+	}
+	if req.Position != nil {
+		if *req.Position < 0 {
+			respondError(w, http.StatusBadRequest, "position cannot be negative", "invalid_input")
+			return
+		}
+		update.SetPosition(*req.Position)
+	}
+
 	updatedPage, err := update.Save(ctx)
 	if err != nil {
 		s.logger.Error("Failed to update wiki page",
@@ -384,17 +414,7 @@ func (s *Server) HandleUpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := WikiPageResponse{
-		ID:        updatedPage.ID,
-		ProjectID: updatedPage.ProjectID,
-		Title:     updatedPage.Title,
-		Slug:      updatedPage.Slug,
-		CreatedBy: updatedPage.CreatedBy,
-		CreatedAt: updatedPage.CreatedAt,
-		UpdatedAt: updatedPage.UpdatedAt,
-	}
-
-	respondJSON(w, http.StatusOK, response)
+	respondJSON(w, http.StatusOK, newWikiPageResponse(updatedPage))
 }
 
 // UpdateWikiPageContentRequest represents a request to update wiki page content
@@ -1113,6 +1133,22 @@ func (s *Server) HandleDeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 	if !hasAccess {
 		respondError(w, http.StatusForbidden, "access denied", "forbidden")
+		return
+	}
+
+	// Re-parent children to the deleted page's parent so no content is lost.
+	reparent := s.db.Client.WikiPage.Update().Where(wikipage.ParentID(pageID))
+	if page.ParentID == nil {
+		reparent.ClearParentID()
+	} else {
+		reparent.SetParentID(*page.ParentID)
+	}
+	if _, err := reparent.Save(ctx); err != nil {
+		s.logger.Error("Failed to re-parent child wiki pages",
+			zap.Int64("page_id", pageID),
+			zap.Error(err),
+		)
+		respondError(w, http.StatusInternalServerError, "failed to delete wiki page", "internal_error")
 		return
 	}
 
