@@ -485,17 +485,39 @@ async function uploadSingleFile(file: File, pageId: number): Promise<{ url: stri
 // ── Server-side preview fetcher ──────────────────────────────────
 // fetchPreview moved to WikiEditor.helpers.ts
 
+export type PreviewResult =
+  | { status: 'ok'; html: string }
+  | { status: 'superseded' }
+  | { status: 'error'; message: string }
+
+// Aborting only helps while bytes are still in flight. A reply that has already
+// arrived resolves regardless, so a stale request could overwrite a newer one's
+// HTML — and an empty render (the mount-time request, before content loads) is
+// exactly the reply most likely to win that race, leaving the pane on
+// "Loading preview..." forever. The monotonic sequence is what actually orders
+// them; the abort is only there to save bandwidth.
+let previewSeq = 0
+
 async function abortAndFetchPreview(
   abortRef: React.MutableRefObject<AbortController | null>,
   markdown: string,
-): Promise<string | null> {
+): Promise<PreviewResult> {
   if (abortRef.current) abortRef.current.abort()
   const controller = new AbortController()
   abortRef.current = controller
+  const seq = ++previewSeq
   try {
-    return await fetchPreview(PREVIEW_ENDPOINT, markdown, controller.signal)
-  } catch {
-    return null
+    const html = await fetchPreview(PREVIEW_ENDPOINT, markdown, controller.signal)
+    if (seq !== previewSeq) return { status: 'superseded' }
+    return { status: 'ok', html }
+  } catch (err) {
+    if (seq !== previewSeq || (err instanceof DOMException && err.name === 'AbortError')) {
+      return { status: 'superseded' }
+    }
+    // Never swallow this: a silent failure here is indistinguishable from a
+    // slow render, and the pane waits for HTML that is never coming.
+    console.error('Wiki preview render failed', err)
+    return { status: 'error', message: err instanceof Error ? err.message : String(err) }
   }
 }
 
@@ -885,10 +907,12 @@ function DropOverlay({ isDragOver, isDropUploading }: Readonly<{ isDragOver: boo
   )
 }
 
-function PreviewContent({ previewHTML, content, previewRef }: Readonly<{
+function PreviewContent({ previewHTML, content, previewRef, error, onRetry }: Readonly<{
   previewHTML: string
   content: string
   previewRef: React.Ref<HTMLDivElement>
+  error?: string | null
+  onRetry?: () => void
 }>) {
   const innerRef = useRef<HTMLDivElement>(null)
 
@@ -952,6 +976,24 @@ function PreviewContent({ previewHTML, content, previewRef }: Readonly<{
       />
     )
   }
+  // A failed render must say so. Showing "Loading preview..." for a request
+  // that already failed is how a broken page looks identical to a slow one.
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-2 text-dark-text-tertiary">
+        <p className="text-sm text-red-400">Preview failed to render.</p>
+        <p className="text-xs">{error}</p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="px-2 py-1 rounded text-xs font-medium bg-dark-bg-tertiary text-dark-text-secondary hover:text-dark-text-primary transition-colors"
+          >
+            Retry
+          </button>
+        )}
+      </div>
+    )
+  }
   if (content.trim()) {
     return (
       <div className="flex items-center justify-center h-full text-dark-text-tertiary">
@@ -982,6 +1024,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
   const [content, setContent] = useState('')
   const [isPreview, setIsPreview] = useState(true)
   const [previewHTML, setPreviewHTML] = useState('')
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [syncState, setSyncState] = useState<SyncState>('connecting')
   const [showImagePicker, setShowImagePicker] = useState(false)
   const [showFigmaInput, setShowFigmaInput] = useState(false)
@@ -1119,6 +1162,9 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
   // ── Keep contentRef in sync ──────────────────────────────────
   useEffect(() => { contentRef.current = content }, [content])
 
+  // Validator for the polled content fetch; null until the first reply.
+  const contentETagRef = useRef<string | null>(null)
+
   // ── Load content from REST on mount ────────────────────────
   useEffect(() => {
     let cancelled = false
@@ -1138,7 +1184,12 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
   const refreshPageContent = useCallback(async () => {
     if (isDirtyRef.current || isSavingRef.current) return
 
-    const res = await apiClient.getWikiPageContent(page.id)
+    // Conditional: the server answers 304 when nothing changed, which is the
+    // common case for a page someone is only reading.
+    const fresh = await apiClient.getWikiPageContentIfChanged(page.id, contentETagRef.current)
+    if (fresh === null) return
+    contentETagRef.current = fresh.etag
+    const res = fresh.content
     const nextContent = typeof res.content === 'string' ? res.content : ''
     if (nextContent === lastSavedContentRef.current) return
 
@@ -1185,7 +1236,10 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
     ydocRef.current = ydoc
     const ytext = ydoc.getText('content')
 
-    const token = localStorage.getItem('token')
+    // The app stores the JWT as `auth_token` (see ApiClient.setToken). Reading
+    // `token` here always missed, so every client silently fell through to
+    // "disconnected" and the collab socket never opened once in production.
+    const token = localStorage.getItem('auth_token')
     if (!token) {
       // no auth token — cannot connect WebSocket
       setSyncState('disconnected')
@@ -1269,8 +1323,18 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
   // ── Server-side preview (inline mode) ────────────────────────
 
   const loadPreview = useCallback(async (markdown: string) => {
-    const html = await abortAndFetchPreview(abortRef, markdown)
-    if (html !== null) setPreviewHTML(html)
+    // An empty document renders to empty HTML — there is nothing to ask the
+    // server for, and this request (fired on mount, before the content arrives)
+    // is a wasted round trip on every single page open.
+    if (!markdown.trim()) {
+      setPreviewHTML('')
+      setPreviewError(null)
+      return
+    }
+    setPreviewError(null)
+    const res = await abortAndFetchPreview(abortRef, markdown)
+    if (res.status === 'ok') setPreviewHTML(res.html)
+    else if (res.status === 'error') setPreviewError(res.message)
   }, [])
 
   useEffect(() => {
@@ -1282,8 +1346,10 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
   const scheduleFsPreview = useCallback((markdown: string) => {
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current)
     previewTimerRef.current = setTimeout(async () => {
-      const html = await abortAndFetchPreview(abortRef, markdown)
-      if (html !== null) setFsPreviewHTML(html)
+      if (!markdown.trim()) { setFsPreviewHTML(''); return }
+      const res = await abortAndFetchPreview(abortRef, markdown)
+      if (res.status === 'ok') setFsPreviewHTML(res.html)
+      else if (res.status === 'error') setPreviewError(res.message)
     }, PREVIEW_DEBOUNCE_MS)
   }, [])
 
@@ -1755,7 +1821,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
 
         {/* Right: live preview */}
         <div style={{ width: `${100 - fsSplitPct}%` }} className="overflow-y-auto p-4">
-          <PreviewContent previewHTML={fsPreviewHTML} content={content} previewRef={fsPreviewRef} />
+          <PreviewContent previewHTML={fsPreviewHTML} content={content} previewRef={fsPreviewRef} error={previewError} onRetry={() => scheduleFsPreview(content)} />
         </div>
       </div>
       {/* Fullscreen annotation sidebar */}
@@ -1986,7 +2052,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
           <div className="flex-1 overflow-hidden flex flex-col">
             {isPreview ? (
               <div className="h-full overflow-y-auto px-6 py-4">
-                <PreviewContent previewHTML={previewHTML} content={content} previewRef={previewRef} />
+                <PreviewContent previewHTML={previewHTML} content={content} previewRef={previewRef} error={previewError} onRetry={() => loadPreview(content)} />
               </div>
             ) : (
               <>
