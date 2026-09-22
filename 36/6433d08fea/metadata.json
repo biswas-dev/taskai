@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "366433d08fea",
+  "strategy": "manual-commit",
+  "branch": "fix-wiki-preview-stuck",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "web/index.html",
+    "web/public/mermaid-init.js",
+    "web/src/components/WikiEditor.tsx",
+    "web/src/components/WikiPageTree.test.tsx",
+    "web/src/components/WikiPageTree.tsx",
+    "web/src/lib/wikiTree.test.ts",
+    "web/src/lib/wikiTree.ts",
+    "web/src/state/SyncContext.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/36/6433d08fea/0/metadata.json",
+      "transcript": "/36/6433d08fea/0/full.jsonl",
+      "content_hash": "/36/6433d08fea/0/content_hash.txt",
+      "prompt": "/36/6433d08fea/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 196,
+    "cache_creation_tokens": 241503,
+    "cache_read_tokens": 13554058,
+    "output_tokens": 43854,
+    "api_call_count": 98
+  }
+}

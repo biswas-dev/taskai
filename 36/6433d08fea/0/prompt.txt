@@ -1,0 +1,16 @@
+<pasted_content id="d49c">
+Memory management: Some of the pages, when I load them, just take a long time, or they crash, or they don't load.
+- It may be a browser issue. Let's take a look at that UI code.
+</pasted_content id="d49c">
+
+
+
+<pasted_content id="d49c">
+- The other important issue is the wiki pages. I don't know what order they're being created in. Before, we had the preview and I could see all the wiki pages sorted by the date they were created. I think we need to get that filter back in a small little setting somewhere where it can show the current ordering but also where you can filter by maybe the author or sort by the date created. I think the date created is very important because I want to see the recent articles at the top of the wiki.
+</pasted_content id="d49c">
+
+ 
+
+<pasted_content id="d49c">
+Once you're done please deploy everything to staging. Skip UAT and go right to production so you can see the changes
+</pasted_content id="d49c">

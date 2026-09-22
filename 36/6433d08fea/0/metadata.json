@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "366433d08fea",
+  "session_id": "6dd182ec-c82e-4d46-94cc-41532a594ba3",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-22T21:33:46.8326Z",
+  "branch": "fix-wiki-preview-stuck",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "web/index.html",
+    "web/public/mermaid-init.js",
+    "web/src/components/WikiEditor.tsx",
+    "web/src/components/WikiPageTree.test.tsx",
+    "web/src/components/WikiPageTree.tsx",
+    "web/src/lib/wikiTree.test.ts",
+    "web/src/lib/wikiTree.ts",
+    "web/src/state/SyncContext.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "07632036b5b8",
+  "token_usage": {
+    "input_tokens": 196,
+    "cache_creation_tokens": 241503,
+    "cache_read_tokens": 13554058,
+    "output_tokens": 43854,
+    "api_call_count": 98
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-22T21:33:46.265359Z",
+    "agent_lines": 521,
+    "agent_removed": 31,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 521,
+    "total_lines_changed": 552,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
