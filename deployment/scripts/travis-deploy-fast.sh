@@ -147,10 +147,15 @@ echo "Source synced"
 # --- Step 2: Copy deployment scripts and run nginx setup ---
 echo "=== Setting up nginx routes ==="
 $SSH_CMD "chmod +x $SOURCE_DIR/deployment/scripts/ensure-draw-route.sh 2>/dev/null; sudo $SOURCE_DIR/deployment/scripts/ensure-draw-route.sh $DOMAIN 2>/dev/null || true"
-$SSH_CMD "chmod +x $SOURCE_DIR/deployment/scripts/ensure-zero-downtime.sh 2>/dev/null; sudo $SOURCE_DIR/deployment/scripts/ensure-zero-downtime.sh $DOMAIN 2>/dev/null || true"
+# stderr is kept: this step now also converges the rate-limit policy, and a
+# silent failure there is exactly the kind of thing that shows up later as an
+# outage. It still cannot fail the deploy.
+$SSH_CMD "chmod +x $SOURCE_DIR/deployment/scripts/ensure-zero-downtime.sh 2>/dev/null; sudo $SOURCE_DIR/deployment/scripts/ensure-zero-downtime.sh $DOMAIN || true"
 
 if [ -n "$MCP_DOMAIN" ]; then
   $SSH_CMD "chmod +x $SOURCE_DIR/deployment/scripts/ensure-mcp-agent-header.sh 2>/dev/null; sudo $SOURCE_DIR/deployment/scripts/ensure-mcp-agent-header.sh $MCP_DOMAIN 2>/dev/null || true"
+  # The MCP vhost has its own (much tighter) limiter and the same real-IP gap.
+  $SSH_CMD "sudo $SOURCE_DIR/deployment/scripts/ensure-zero-downtime.sh $MCP_DOMAIN || true"
 fi
 
 # --- Step 3: Build and deploy on server ---

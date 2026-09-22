@@ -6,6 +6,23 @@
     path: /etc/nginx/sites-enabled/default
     state: absent
 
+# Must exist before any site config is tested: the SSL vhosts include it.
+- name: Ensure Nginx snippets directory exists
+  file:
+    path: /etc/nginx/snippets
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install Cloudflare real-IP snippet
+  template:
+    src: ../templates/nginx-cloudflare-realip.conf.j2
+    dest: /etc/nginx/snippets/cloudflare-realip.conf
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Create Nginx configuration for {{ domain }} (pre-SSL)
   template:
     src: ../templates/nginx-pre-ssl.conf.j2

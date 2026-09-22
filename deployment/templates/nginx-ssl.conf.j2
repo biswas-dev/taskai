@@ -1,8 +1,12 @@
 # Nginx configuration for {{ domain }} (with SSL)
 
-# Rate limiting zones
-limit_req_zone $binary_remote_addr zone={{ domain | replace('.', '_') }}_api:10m rate=100r/m;
-limit_req_zone $binary_remote_addr zone={{ domain | replace('.', '_') }}_auth:10m rate=20r/m;
+# ── Rate limiting ───────────────────────────────────────────────────────────
+# The app is request-heavy by design: opening a project fires ~20 API calls,
+# and every open tab adds a background refresh every 15s. The old 100r/m
+# (1.7 req/s) with burst=20 was below what a single idle tab costs, so normal
+# use tripped the limiter.
+limit_req_zone $binary_remote_addr zone={{ domain | replace('.', '_') }}_api:10m rate=600r/m;
+limit_req_zone $binary_remote_addr zone={{ domain | replace('.', '_') }}_auth:10m rate=30r/m;
 
 # HTTP -> HTTPS redirect
 server {
@@ -27,6 +31,16 @@ server {
     listen [::]:443 ssl;
     http2 on;
     server_name {{ domain }};
+
+    # Real client IPs (Cloudflare) — required for the rate limits to key per visitor.
+    include /etc/nginx/snippets/cloudflare-realip.conf;
+
+    # Answer throttled requests with 429, not nginx's default 503. A 503 here is
+    # indistinguishable from a real outage: it trips the 502/503/504 maintenance
+    # page (which auto-refreshes and fires another burst of API calls) and matches
+    # proxy_next_upstream http_503, so each throttled request was also retried
+    # upstream. 429 does neither.
+    limit_req_status 429;
 
     # SSL configuration
     ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
@@ -64,12 +78,12 @@ server {
     location = /50x.html {
         internal;
         default_type text/html;
-        return 503 '<!DOCTYPE html><html><head><title>Updating...</title><meta http-equiv="refresh" content="5"></head><body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f8fafc"><div style="text-align:center"><h1 style="color:#1e293b">Updating TaskAI</h1><p style="color:#64748b">Please wait a moment, this page will refresh automatically.</p></div></body></html>';
+        return 503 '<!DOCTYPE html><html><head><title>Updating...</title><meta http-equiv="refresh" content="15"></head><body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f8fafc"><div style="text-align:center"><h1 style="color:#1e293b">Updating TaskAI</h1><p style="color:#64748b">Please wait a moment, this page will refresh automatically.</p></div></body></html>';
     }
 
     # Auth endpoints (stricter rate limiting)
     location ~ ^/api/auth {
-        limit_req zone={{ domain | replace('.', '_') }}_auth burst=3 nodelay;
+        limit_req zone={{ domain | replace('.', '_') }}_auth burst=10 nodelay;
 
         proxy_pass http://127.0.0.1:{{ api_host_port }};
         proxy_http_version 1.1;
@@ -85,7 +99,7 @@ server {
 
     # API endpoints (backend)
     location /api/ {
-        limit_req zone={{ domain | replace('.', '_') }}_api burst=20 nodelay;
+        limit_req zone={{ domain | replace('.', '_') }}_api burst=100 nodelay;
 
         proxy_pass http://127.0.0.1:{{ api_host_port }};
         proxy_http_version 1.1;
@@ -131,6 +145,9 @@ server {
     # Frontend (React app via web container)
     location / {
         proxy_pass http://127.0.0.1:{{ web_host_port }};
+        # Every SPA route resolves to index.html, so these responses carry the
+        # same no-cache rule; the hashed assets below opt back into caching.
+        add_header Cache-Control "no-cache, must-revalidate" always;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -144,7 +161,16 @@ server {
         proxy_next_upstream_timeout 5s;
         proxy_next_upstream_tries 2;
 
-        # Cache static assets
+        # index.html must always be revalidated. It names hash-versioned asset
+        # files, and a deploy deletes the previous ones — a cached copy sends the
+        # browser after assets that no longer exist, so the tab keeps rendering
+        # the old build (or breaks outright) until a manual hard reload.
+        location = /index.html {
+            proxy_pass http://127.0.0.1:{{ web_host_port }};
+            add_header Cache-Control "no-cache, must-revalidate" always;
+        }
+
+        # Cache static assets. Safe to keep forever: the filenames are content-hashed.
         location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
             proxy_pass http://127.0.0.1:{{ web_host_port }};
             expires 1y;
