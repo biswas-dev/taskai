@@ -621,11 +621,11 @@ export default function WikiPageTree({
   return (
     <div ref={containerRef} className="flex flex-col h-full">
       {/* Tree toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-dark-border-subtle/60">
+      <div className="relative flex items-center justify-between px-3 py-1.5 border-b border-dark-border-subtle/60">
         <span className="text-[11px] uppercase tracking-wide text-dark-text-tertiary">Pages</span>
         <div className="flex items-center gap-1">
           {/* Sort & filter */}
-          <div className="relative" ref={viewMenuRef}>
+          <div ref={viewMenuRef}>
             <button
               type="button"
               onClick={() => setShowViewMenu(v => !v)}
@@ -648,7 +648,7 @@ export default function WikiPageTree({
               <div
                 role="dialog"
                 aria-label="Sort and filter pages"
-                className="absolute right-0 top-full z-30 mt-1 w-60 rounded-md border border-dark-border-medium bg-dark-bg-elevated shadow-lg py-1.5 text-sm"
+                className="absolute left-2 right-2 top-full z-30 mt-1 rounded-md border border-dark-border-medium bg-dark-bg-elevated shadow-lg py-1.5 text-sm"
               >
                 <p className="px-3 pb-1 text-[10px] uppercase tracking-wide text-dark-text-quaternary">Sort by</p>
                 {WIKI_SORT_MODES.map(mode => (
