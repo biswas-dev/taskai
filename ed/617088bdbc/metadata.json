@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "ed617088bdbc",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "deployment/scripts/ensure-zero-downtime.sh",
+    "deployment/scripts/nginx-rate-limit-patch.py",
+    "deployment/scripts/travis-deploy-fast.sh",
+    "deployment/tasks/mcp-ssl-setup.yml",
+    "deployment/tasks/nginx-config.yml",
+    "deployment/templates/nginx-cloudflare-realip.conf.j2",
+    "deployment/templates/nginx-mcp-ssl.conf.j2",
+    "deployment/templates/nginx-ssl.conf.j2"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ed/617088bdbc/0/metadata.json",
+      "transcript": "/ed/617088bdbc/0/full.jsonl",
+      "content_hash": "/ed/617088bdbc/0/content_hash.txt",
+      "prompt": "/ed/617088bdbc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 130,
+    "cache_creation_tokens": 300941,
+    "cache_read_tokens": 16771834,
+    "output_tokens": 48344,
+    "api_call_count": 65
+  }
+}

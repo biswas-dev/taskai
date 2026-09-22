@@ -1,0 +1,46 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "ed617088bdbc",
+  "session_id": "6dd182ec-c82e-4d46-94cc-41532a594ba3",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-22T23:56:11.964708Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "deployment/templates/nginx-cloudflare-realip.conf.j2",
+    "deployment/templates/nginx-mcp-ssl.conf.j2",
+    "deployment/templates/nginx-ssl.conf.j2",
+    "deployment/scripts/ensure-zero-downtime.sh",
+    "deployment/scripts/nginx-rate-limit-patch.py",
+    "deployment/scripts/travis-deploy-fast.sh",
+    "deployment/tasks/mcp-ssl-setup.yml",
+    "deployment/tasks/nginx-config.yml"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-fable-5-1",
+  "turn_id": "87f9a9520301",
+  "checkpoint_transcript_start": 678,
+  "transcript_lines_at_start": 678,
+  "token_usage": {
+    "input_tokens": 130,
+    "cache_creation_tokens": 300941,
+    "cache_read_tokens": 16771834,
+    "output_tokens": 48344,
+    "api_call_count": 65
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-22T23:56:11.097293Z",
+    "agent_lines": 347,
+    "agent_removed": 16,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 347,
+    "total_lines_changed": 363,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
