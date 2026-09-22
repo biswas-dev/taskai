@@ -1969,6 +1969,25 @@ class ApiClient {
     return this.request<{ page_id: number; content: string; updated_at: string }>(`/api/wiki/pages/${pageId}/content`)
   }
 
+  /**
+   * Conditional fetch for the 15-second background poll. Returns `null` when the
+   * server answers 304, so an open page stops re-downloading a document that has
+   * not changed. `etag` comes from the previous reply.
+   */
+  async getWikiPageContentIfChanged(
+    pageId: number,
+    etag: string | null,
+  ): Promise<{ content: { page_id: number; content: string; updated_at: string }; etag: string | null } | null> {
+    const headers: Record<string, string> = {}
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`
+    if (etag) headers['If-None-Match'] = etag
+
+    const resp = await fetch(`${this.baseURL}/api/wiki/pages/${pageId}/content`, { headers })
+    if (resp.status === 304) return null
+    if (!resp.ok) throw new Error(`Failed to fetch wiki content: ${resp.status}`)
+    return { content: await resp.json(), etag: resp.headers.get('ETag') }
+  }
+
   async updateWikiPageContent(pageId: number, content: string, manualSave = false): Promise<{ page_id: number; content: string; updated_at: string }> {
     return this.request<{ page_id: number; content: string; updated_at: string }>(`/api/wiki/pages/${pageId}/content`, {
       method: 'PUT',

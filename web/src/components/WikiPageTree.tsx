@@ -5,10 +5,16 @@ import {
   buildWikiTree,
   canAddWikiChild,
   canMoveWikiPage,
+  DEFAULT_WIKI_SORT,
   getWikiAncestors,
   getWikiDepth,
   getWikiDescendantIds,
   WIKI_MAX_DEPTH,
+  WIKI_SORT_MODES,
+  wikiPageAuthor,
+  wikiSortComparator,
+  wikiPageAuthors,
+  type WikiSortMode,
   type WikiTreeNode,
 } from '../lib/wikiTree'
 
@@ -39,6 +45,51 @@ function depthGuide(depth: number): string {
 
 function storageKey(projectId: number): string {
   return `taskai.wiki.tree.expanded.${projectId}`
+}
+
+function viewStorageKey(projectId: number): string {
+  return `taskai.wiki.tree.view.${projectId}`
+}
+
+interface WikiTreeView {
+  sort: WikiSortMode
+  author: string | null
+}
+
+const DEFAULT_VIEW: WikiTreeView = { sort: DEFAULT_WIKI_SORT, author: null }
+
+function loadView(projectId: number): WikiTreeView {
+  try {
+    const raw = localStorage.getItem(viewStorageKey(projectId))
+    if (!raw) return DEFAULT_VIEW
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return DEFAULT_VIEW
+    const { sort, author } = parsed as Partial<WikiTreeView>
+    return {
+      sort: WIKI_SORT_MODES.some(m => m.value === sort) ? (sort as WikiSortMode) : DEFAULT_WIKI_SORT,
+      author: typeof author === 'string' ? author : null,
+    }
+  } catch {
+    return DEFAULT_VIEW
+  }
+}
+
+function saveView(projectId: number, view: WikiTreeView): void {
+  try {
+    localStorage.setItem(viewStorageKey(projectId), JSON.stringify(view))
+  } catch {
+    // Storage may be unavailable; the view preference is a convenience only.
+  }
+}
+
+/** Compact date label for the tree rows, e.g. "4 Mar" or "4 Mar 24" across years. */
+function shortDate(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString(undefined, sameYear
+    ? { day: 'numeric', month: 'short' }
+    : { day: 'numeric', month: 'short', year: '2-digit' })
 }
 
 function loadExpanded(projectId: number): Set<number> {
@@ -83,7 +134,20 @@ export default function WikiPageTree({
   onMove,
   onDelete,
 }: Readonly<WikiPageTreeProps>) {
-  const tree = useMemo(() => buildWikiTree(pages), [pages])
+  const [view, setView] = useState<WikiTreeView>(() => loadView(projectId))
+  const [showViewMenu, setShowViewMenu] = useState(false)
+  const viewMenuRef = useRef<HTMLDivElement>(null)
+
+  const authors = useMemo(() => wikiPageAuthors(pages), [pages])
+
+  // The author filter narrows what the tree shows. Move validation and ancestor
+  // lookups keep using the full list, so filtering never changes what is legal.
+  const visiblePages = useMemo(
+    () => (view.author === null ? pages : pages.filter(p => wikiPageAuthor(p) === view.author)),
+    [pages, view.author],
+  )
+  const tree = useMemo(() => buildWikiTree(visiblePages, view.sort), [visiblePages, view.sort])
+
   const [expanded, setExpanded] = useState<Set<number>>(() => loadExpanded(projectId))
   const [menuFor, setMenuFor] = useState<number | null>(null)
   const [moveFor, setMoveFor] = useState<number | null>(null)
@@ -101,6 +165,36 @@ export default function WikiPageTree({
   useEffect(() => {
     saveExpanded(projectId, expanded)
   }, [projectId, expanded])
+
+  // Persist the sort / author view per project.
+  useEffect(() => {
+    saveView(projectId, view)
+  }, [projectId, view])
+
+  // Drop an author filter that no longer matches anyone, so the tree can never
+  // get stuck looking empty after the filtered author's pages are gone.
+  useEffect(() => {
+    if (view.author !== null && pages.length > 0 && !authors.includes(view.author)) {
+      setView(prev => ({ ...prev, author: null }))
+    }
+  }, [authors, pages.length, view.author])
+
+  // Close the view menu when clicking outside it.
+  useEffect(() => {
+    if (!showViewMenu) return
+    const close = (e: MouseEvent) => {
+      if (!viewMenuRef.current?.contains(e.target as Node)) setShowViewMenu(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowViewMenu(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [showViewMenu])
 
   // Reveal the selected page by expanding all of its ancestors.
   useEffect(() => {
@@ -135,8 +229,8 @@ export default function WikiPageTree({
   }, [])
 
   const expandAll = useCallback(() => {
-    setExpanded(new Set(pages.filter(p => pages.some(c => c.parent_id === p.id)).map(p => p.id)))
-  }, [pages])
+    setExpanded(new Set(visiblePages.filter(p => visiblePages.some(c => c.parent_id === p.id)).map(p => p.id)))
+  }, [visiblePages])
 
   const collapseAll = useCallback(() => setExpanded(new Set()), [])
 
@@ -263,7 +357,7 @@ export default function WikiPageTree({
   // ── Search mode: flat list of matches with their path ────────
   const query = searchQuery.trim().toLowerCase()
   if (query) {
-    const matches = pages.filter(p => p.title.toLowerCase().includes(query))
+    const matches = visiblePages.filter(p => p.title.toLowerCase().includes(query)).sort(wikiSortComparator(view.sort))
     if (!matches.length) {
       return <div className="p-4 text-center text-dark-text-tertiary text-sm">No matching pages</div>
     }
@@ -285,6 +379,9 @@ export default function WikiPageTree({
                 {path.length > 0 && (
                   <span className="block text-[11px] text-dark-text-tertiary truncate">{path.join(' / ')}</span>
                 )}
+                <span className="block text-[10px] text-dark-text-quaternary truncate">
+                  {wikiPageAuthor(page)} · {shortDate(page.created_at)}
+                </span>
               </button>
             </li>
           )
@@ -293,7 +390,17 @@ export default function WikiPageTree({
     )
   }
 
-  const hasAnyChildren = pages.some(p => p.parent_id !== null)
+  const hasAnyChildren = visiblePages.some(p => p.parent_id !== null)
+
+  // Which timestamp the rows label themselves with — the one being sorted on,
+  // so the ordering on screen is always self-explanatory.
+  const showsUpdated = view.sort === 'updated_desc'
+  const rowDate = (page: WikiPage) => (showsUpdated ? page.updated_at : page.created_at)
+  const rowDateTitle = (page: WikiPage) =>
+    `${showsUpdated ? 'Updated' : 'Created'} ${new Date(rowDate(page)).toLocaleString()} · ${wikiPageAuthor(page)}`
+
+  const activeSortLabel = WIKI_SORT_MODES.find(m => m.value === view.sort)?.label ?? view.sort
+  const isFiltered = view.author !== null || view.sort !== DEFAULT_WIKI_SORT
 
   const renderCreateRow = (parentId: number | null, depth: number) => (
     <li key={`new-${parentId ?? 'root'}`} className={`${depthPadding(depth)} pr-3 py-1`}>
@@ -406,6 +513,13 @@ export default function WikiPageTree({
             <span className="shrink-0 text-[10px] text-dark-text-quaternary tabular-nums group-hover:hidden">{children.length}</span>
           )}
 
+          <span
+            className="shrink-0 text-[10px] text-dark-text-quaternary tabular-nums group-hover:hidden group-focus-within:hidden"
+            title={rowDateTitle(page)}
+          >
+            {shortDate(rowDate(page))}
+          </span>
+
           {/* Hover actions */}
           <span className="shrink-0 hidden group-hover:flex group-focus-within:flex items-center gap-0.5">
             <button
@@ -510,6 +624,107 @@ export default function WikiPageTree({
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-dark-border-subtle/60">
         <span className="text-[11px] uppercase tracking-wide text-dark-text-tertiary">Pages</span>
         <div className="flex items-center gap-1">
+          {/* Sort & filter */}
+          <div className="relative" ref={viewMenuRef}>
+            <button
+              type="button"
+              onClick={() => setShowViewMenu(v => !v)}
+              aria-haspopup="dialog"
+              aria-expanded={showViewMenu}
+              title={`Sort & filter — ${activeSortLabel}${view.author ? ` · ${view.author}` : ''}`}
+              aria-label={`Sort and filter pages. Currently ${activeSortLabel}${view.author ? `, by ${view.author}` : ''}`}
+              className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
+                isFiltered
+                  ? 'text-primary-400 bg-primary-500/15 hover:bg-primary-500/25'
+                  : 'text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary'
+              }`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M6 12h12M10 18h4" />
+              </svg>
+            </button>
+
+            {showViewMenu && (
+              <div
+                role="dialog"
+                aria-label="Sort and filter pages"
+                className="absolute right-0 top-full z-30 mt-1 w-60 rounded-md border border-dark-border-medium bg-dark-bg-elevated shadow-lg py-1.5 text-sm"
+              >
+                <p className="px-3 pb-1 text-[10px] uppercase tracking-wide text-dark-text-quaternary">Sort by</p>
+                {WIKI_SORT_MODES.map(mode => (
+                  <button
+                    key={mode.value}
+                    type="button"
+                    title={mode.hint}
+                    aria-pressed={view.sort === mode.value}
+                    onClick={() => setView(prev => ({ ...prev, sort: mode.value }))}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+                      view.sort === mode.value
+                        ? 'text-primary-400 bg-primary-500/10'
+                        : 'text-dark-text-secondary hover:bg-dark-bg-tertiary hover:text-dark-text-primary'
+                    }`}
+                  >
+                    <span className="w-3 shrink-0" aria-hidden="true">{view.sort === mode.value ? '✓' : ''}</span>
+                    <span className="truncate">{mode.label}</span>
+                  </button>
+                ))}
+
+                <div className="my-1 border-t border-dark-border-subtle" />
+
+                <p className="px-3 pb-1 text-[10px] uppercase tracking-wide text-dark-text-quaternary">Author</p>
+                <div className="max-h-48 overflow-y-auto">
+                  <button
+                    type="button"
+                    aria-pressed={view.author === null}
+                    onClick={() => setView(prev => ({ ...prev, author: null }))}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+                      view.author === null
+                        ? 'text-primary-400 bg-primary-500/10'
+                        : 'text-dark-text-secondary hover:bg-dark-bg-tertiary hover:text-dark-text-primary'
+                    }`}
+                  >
+                    <span className="w-3 shrink-0" aria-hidden="true">{view.author === null ? '✓' : ''}</span>
+                    <span className="truncate">Everyone</span>
+                    <span className="ml-auto text-[10px] text-dark-text-quaternary tabular-nums">{pages.length}</span>
+                  </button>
+                  {authors.map(author => {
+                    const count = pages.filter(pg => wikiPageAuthor(pg) === author).length
+                    return (
+                      <button
+                        key={author}
+                        type="button"
+                        aria-pressed={view.author === author}
+                        onClick={() => setView(prev => ({ ...prev, author: prev.author === author ? null : author }))}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+                          view.author === author
+                            ? 'text-primary-400 bg-primary-500/10'
+                            : 'text-dark-text-secondary hover:bg-dark-bg-tertiary hover:text-dark-text-primary'
+                        }`}
+                      >
+                        <span className="w-3 shrink-0" aria-hidden="true">{view.author === author ? '✓' : ''}</span>
+                        <span className="truncate">{author}</span>
+                        <span className="ml-auto text-[10px] text-dark-text-quaternary tabular-nums">{count}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {isFiltered && (
+                  <>
+                    <div className="my-1 border-t border-dark-border-subtle" />
+                    <button
+                      type="button"
+                      onClick={() => setView(DEFAULT_VIEW)}
+                      className="w-full px-3 py-1.5 text-left text-xs text-dark-text-tertiary hover:text-dark-text-primary hover:bg-dark-bg-tertiary"
+                    >
+                      Reset to default
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           {hasAnyChildren && (
             <>
               <button
@@ -553,14 +768,29 @@ export default function WikiPageTree({
       <div className="flex-1 overflow-y-auto">
         {tree.length === 0 && creatingUnder === undefined ? (
           <div className="p-4 text-center text-dark-text-tertiary text-sm">
-            <p>No pages yet</p>
-            <button
-              type="button"
-              onClick={() => startCreate(null)}
-              className="mt-2 text-primary-400 hover:text-primary-300 text-xs font-medium"
-            >
-              Create your first page
-            </button>
+            {view.author !== null ? (
+              <>
+                <p>No pages by {view.author}</p>
+                <button
+                  type="button"
+                  onClick={() => setView(prev => ({ ...prev, author: null }))}
+                  className="mt-2 text-primary-400 hover:text-primary-300 text-xs font-medium"
+                >
+                  Show everyone
+                </button>
+              </>
+            ) : (
+              <>
+                <p>No pages yet</p>
+                <button
+                  type="button"
+                  onClick={() => startCreate(null)}
+                  className="mt-2 text-primary-400 hover:text-primary-300 text-xs font-medium"
+                >
+                  Create your first page
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <ul role="tree" aria-label="Wiki pages" className="py-1">

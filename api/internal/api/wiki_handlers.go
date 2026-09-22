@@ -487,11 +487,28 @@ func (s *Server) HandleGetWikiPageContent(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Clients poll this endpoint every 15 s per open page. Without a validator
+	// that means re-sending the whole document forever — a 24 KB page costs
+	// ~100 KB/min per reader for content that almost never changes. UpdatedAt
+	// moves on every write, so it is a sufficient validator.
+	etag := wikiContentETag(page.ID, page.UpdatedAt)
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	if match := r.Header.Get("If-None-Match"); match == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
 	respondJSON(w, http.StatusOK, WikiPageContentResponse{
 		PageID:    page.ID,
 		Content:   page.Content,
 		UpdatedAt: page.UpdatedAt,
 	})
+}
+
+// wikiContentETag builds the validator for a page's content response.
+func wikiContentETag(pageID int64, updatedAt time.Time) string {
+	return fmt.Sprintf(`"w%d-%d"`, pageID, updatedAt.UnixNano())
 }
 
 // HandleUpdateWikiPageContent updates the content of a wiki page

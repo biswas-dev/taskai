@@ -871,3 +871,47 @@ describe('WikiEditor helpers', () => {
     })
   })
 })
+
+// ── Preview response contract (page-175 "stuck on Loading preview") ──────────
+//
+// A wiki page sat on "Loading preview..." indefinitely while the API happily
+// rendered it in 10 ms. Two things made a transient failure permanent and
+// invisible: the fetch layer accepted a reply with no `html` field as if it
+// were an empty document, and the caller swallowed every error. This locks the
+// fetch-layer half.
+describe('fetchPreview response contract', () => {
+  const originalFetch = globalThis.fetch
+  const originalLocalStorage = globalThis.localStorage
+
+  beforeEach(() => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: { getItem: vi.fn().mockReturnValue('t'), setItem: vi.fn(), removeItem: vi.fn() },
+      writable: true,
+      configurable: true,
+    })
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: originalLocalStorage, writable: true, configurable: true,
+    })
+  })
+
+  it('throws when the response carries no html field', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    })
+    await expect(fetchPreview('/api/wiki/preview', '# Test'))
+      .rejects.toThrow('Preview response had no html field')
+  })
+
+  it('still returns a legitimately empty render', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ html: '' }),
+    })
+    await expect(fetchPreview('/api/wiki/preview', '   ')).resolves.toBe('')
+  })
+})

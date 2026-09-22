@@ -371,5 +371,8 @@ export async function fetchPreview(
   })
   if (!resp.ok) throw new Error(`Preview failed: ${resp.status}`)
   const data = await resp.json()
+  // The renderer always returns a string; a missing field means the response
+  // shape changed and is a bug worth surfacing, not an empty document.
+  if (typeof data.html !== 'string') throw new Error('Preview response had no html field')
   return data.html
 }

@@ -153,3 +153,74 @@ describe('WikiPageTree', () => {
     expect(first).toHaveFocus()
   })
 })
+
+describe('WikiPageTree sort and filter', () => {
+  // Newest → oldest by creation: Newer, Middle, Older.
+  const authored: WikiPage[] = [
+    { ...page(10, 'Middle', null, 0), created_at: '2026-02-01T00:00:00Z', creator_name: 'Ada' },
+    { ...page(11, 'Newer', null, 1), created_at: '2026-03-01T00:00:00Z', creator_name: 'Zoe' },
+    { ...page(12, 'Older', null, 2), created_at: '2026-01-01T00:00:00Z', creator_name: 'Ada' },
+  ]
+
+  // The menu stays open while options are picked, so only toggle it when closed.
+  const openMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+    if (!screen.queryByRole('dialog', { name: 'Sort and filter pages' })) {
+      await user.click(screen.getByRole('button', { name: /Sort and filter pages/ }))
+    }
+    return screen.getByRole('dialog', { name: 'Sort and filter pages' })
+  }
+
+  const treeTitles = () =>
+    within(screen.getByRole('tree', { name: 'Wiki pages' }))
+      .getAllByRole('treeitem')
+      .map(el => el.getAttribute('data-page-id'))
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('shows newest-created pages first by default', () => {
+    renderTree({ pages: authored })
+    expect(treeTitles()).toEqual(['11', '10', '12'])
+  })
+
+  it('re-sorts when a different order is picked', async () => {
+    const user = userEvent.setup()
+    renderTree({ pages: authored })
+    const menu = await openMenu(user)
+    await user.click(within(menu).getByRole('button', { name: /Oldest first/ }))
+    expect(treeTitles()).toEqual(['12', '10', '11'])
+  })
+
+  it('filters the tree down to one author, with a way back', async () => {
+    const user = userEvent.setup()
+    renderTree({ pages: authored })
+    const menu = await openMenu(user)
+    await user.click(within(menu).getByRole('button', { name: /^Zoe/ }))
+    expect(treeTitles()).toEqual(['11'])
+
+    await user.click(within(await openMenu(user)).getByRole('button', { name: /Everyone/ }))
+    expect(treeTitles()).toEqual(['11', '10', '12'])
+  })
+
+  it('offers a way out when the author filter matches nothing', async () => {
+    const user = userEvent.setup()
+    const { rerender, props } = renderTree({ pages: authored })
+    await user.click(within(await openMenu(user)).getByRole('button', { name: /^Zoe/ }))
+
+    // Zoe's only page is gone; the filter must not leave a dead-end empty tree.
+    const withoutZoe = authored.filter(pg => pg.creator_name !== 'Zoe')
+    rerender(<WikiPageTree {...props} pages={withoutZoe} />)
+    expect(treeTitles()).toEqual(['10', '12'])
+  })
+
+  it('remembers the chosen order across remounts', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderTree({ pages: authored })
+    await user.click(within(await openMenu(user)).getByRole('button', { name: /Title A–Z/ }))
+    unmount()
+
+    renderTree({ pages: authored })
+    expect(treeTitles()).toEqual(['10', '11', '12'])
+  })
+})
