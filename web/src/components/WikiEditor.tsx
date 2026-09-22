@@ -907,6 +907,11 @@ function DropOverlay({ isDragOver, isDropUploading }: Readonly<{ isDragOver: boo
   )
 }
 
+/** Cheap pre-check so the KaTeX bundle is only fetched for pages that use math. */
+function hasMathDelimiters(html: string): boolean {
+  return html.includes('$$') || /\$[^$\n]+\$/.test(html)
+}
+
 function PreviewContent({ previewHTML, content, previewRef, error, onRetry }: Readonly<{
   previewHTML: string
   content: string
@@ -916,9 +921,12 @@ function PreviewContent({ previewHTML, content, previewRef, error, onRetry }: Re
 }>) {
   const innerRef = useRef<HTMLDivElement>(null)
 
-  // Render KaTeX math after preview HTML is inserted into DOM
+  // Render KaTeX math after preview HTML is inserted into DOM.
+  // KaTeX is ~300 KB and most pages carry no math at all, so nothing is
+  // fetched unless the rendered HTML actually contains a math delimiter.
   useEffect(() => {
     if (!previewHTML || !innerRef.current) return
+    if (!hasMathDelimiters(previewHTML)) return
     // Load KaTeX CSS if not already present
     if (!document.querySelector('link[href*="katex"]')) {
       const link = document.createElement('link')
@@ -1322,6 +1330,10 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
 
   // ── Server-side preview (inline mode) ────────────────────────
 
+  // Markdown last sent to the server; `null` until the first render lands, so we
+  // can tell "nothing rendered yet" from "rendered an empty document".
+  const lastPreviewedRef = useRef<string | null>(null)
+
   const loadPreview = useCallback(async (markdown: string) => {
     // An empty document renders to empty HTML — there is nothing to ask the
     // server for, and this request (fired on mount, before the content arrives)
@@ -1333,12 +1345,23 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
     }
     setPreviewError(null)
     const res = await abortAndFetchPreview(abortRef, markdown)
-    if (res.status === 'ok') setPreviewHTML(res.html)
-    else if (res.status === 'error') setPreviewError(res.message)
+    if (res.status === 'ok') {
+      lastPreviewedRef.current = markdown
+      setPreviewHTML(res.html)
+    } else if (res.status === 'error') {
+      setPreviewError(res.message)
+    }
   }, [])
 
+  // Rendering markdown is a server round trip. Skip it when the markdown has not
+  // changed since the last render, and debounce it while the document is being
+  // edited so a burst of keystrokes costs one request instead of one per key.
   useEffect(() => {
-    if (isPreview) loadPreview(content)
+    if (!isPreview) return
+    if (lastPreviewedRef.current === content) return
+    const delay = lastPreviewedRef.current === null ? 0 : PREVIEW_DEBOUNCE_MS
+    const timer = setTimeout(() => void loadPreview(content), delay)
+    return () => clearTimeout(timer)
   }, [isPreview, content, loadPreview])
 
   // ── Fullscreen live preview (debounced) ──────────────────────

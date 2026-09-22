@@ -9,15 +9,60 @@ export interface WikiTreeNode {
   children: WikiTreeNode[]
 }
 
-function bySiblingOrder(a: WikiPage, b: WikiPage): number {
+/** How sibling pages are ordered in the sidebar tree. */
+export type WikiSortMode = 'created_desc' | 'created_asc' | 'updated_desc' | 'title_asc' | 'manual'
+
+export const WIKI_SORT_MODES: { value: WikiSortMode; label: string; hint: string }[] = [
+  { value: 'created_desc', label: 'Newest first', hint: 'Date created, newest at the top' },
+  { value: 'created_asc', label: 'Oldest first', hint: 'Date created, oldest at the top' },
+  { value: 'updated_desc', label: 'Recently updated', hint: 'Date last edited, most recent at the top' },
+  { value: 'title_asc', label: 'Title A–Z', hint: 'Alphabetical by page title' },
+  { value: 'manual', label: 'Manual order', hint: 'The order pages were arranged in' },
+]
+
+export const DEFAULT_WIKI_SORT: WikiSortMode = 'created_desc'
+
+/** Author of a page: the person who created it, or the agent that wrote it. */
+export function wikiPageAuthor(page: WikiPage): string {
+  return page.agent_name || page.creator_name || 'Unknown'
+}
+
+/** The distinct authors across a page list, alphabetically. */
+export function wikiPageAuthors(pages: WikiPage[]): string[] {
+  return [...new Set(pages.map(wikiPageAuthor))].sort((a, b) => a.localeCompare(b))
+}
+
+function manualOrder(a: WikiPage, b: WikiPage): number {
   return a.position - b.position || a.title.localeCompare(b.title)
+}
+
+/**
+ * Comparator for the given sort mode. Every mode falls back to the manual order
+ * so pages with identical timestamps keep a stable, predictable position.
+ */
+export function wikiSortComparator(mode: WikiSortMode): (a: WikiPage, b: WikiPage) => number {
+  switch (mode) {
+    case 'created_desc':
+      return (a, b) => b.created_at.localeCompare(a.created_at) || manualOrder(a, b)
+    case 'created_asc':
+      return (a, b) => a.created_at.localeCompare(b.created_at) || manualOrder(a, b)
+    case 'updated_desc':
+      return (a, b) => b.updated_at.localeCompare(a.updated_at) || manualOrder(a, b)
+    case 'title_asc':
+      return (a, b) => a.title.localeCompare(b.title) || manualOrder(a, b)
+    case 'manual':
+    default:
+      return manualOrder
+  }
 }
 
 /**
  * Build a forest from a flat page list. Pages whose parent is missing from the
  * list (e.g. filtered out) are promoted to the top level so nothing is hidden.
+ * Siblings are ordered by `sort`, which defaults to the manual arrangement.
  */
-export function buildWikiTree(pages: WikiPage[]): WikiTreeNode[] {
+export function buildWikiTree(pages: WikiPage[], sort: WikiSortMode = 'manual'): WikiTreeNode[] {
+  const bySiblingOrder = wikiSortComparator(sort)
   const ids = new Set(pages.map(p => p.id))
   const childrenOf = new Map<number | null, WikiPage[]>()
   for (const page of pages) {

@@ -5,7 +5,7 @@
  * lightweight server refresh bus for views that need Google Docs-style freshness.
  */
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 
 interface SyncState {
@@ -152,7 +152,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     }
   }, [isInitialized, triggerSync, user?.id])
 
-  const value: SyncContextValue = {
+  // Memoized: the 15s heartbeat flips syncState twice per tick, and a fresh
+  // context object would re-render every consumer of useSync() each time.
+  const value: SyncContextValue = useMemo(() => ({
     db: null,
     syncService: null,
     syncState,
@@ -161,7 +163,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     destroySync,
     triggerSync,
     registerSyncTask,
-  }
+  }), [destroySync, initializeSync, isInitialized, registerSyncTask, syncState, triggerSync])
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>
 }
