@@ -10,17 +10,93 @@
 set -e
 
 DOMAIN="${1:?Usage: ensure-zero-downtime.sh <domain>}"
-CONF="/etc/nginx/sites-available/$DOMAIN"
+
+# Find the vhost that actually serves this domain rather than assuming it is
+# named after it. A file at sites-available/<domain> may be stale or never have
+# been enabled, in which case editing it changes nothing that nginx serves —
+# `nginx -t` still passes and the reload still succeeds, so the edit looks
+# applied while the site keeps running the old configuration.
+find_vhost() {
+    local domain_re
+    domain_re=$(printf '%s' "$DOMAIN" | sed 's/\./\\./g')
+    local f target
+    for f in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
+        [ -e "$f" ] || continue
+        # A server_name directive listing this domain as a whole token. Anchored
+        # on start-of-line, `;` or `{` because a directive need not begin a line,
+        # and the domain must be space-delimited so `staging.taskai.cc` does not
+        # match a lookup for `taskai.cc`.
+        if grep -qE "(^|[;{])[[:space:]]*server_name([[:space:]]+[^;]*)?[[:space:]]${domain_re}[[:space:];]" "$f"; then
+            target=$(readlink -f "$f")
+            echo "$target"
+        fi
+    done
+}
+
+MATCHES=$(find_vhost | awk '!seen[$0]++')
+MATCH_COUNT=$(printf '%s' "$MATCHES" | grep -c . || true)
+
+if [ "$MATCH_COUNT" -gt 1 ]; then
+    echo "Note: $DOMAIN is declared by more than one enabled vhost:"
+    printf '  %s\n' $MATCHES
+    echo "Patching the first; nginx serves the first match for a given server_name."
+fi
+
+if [ "$MATCH_COUNT" -ge 1 ]; then
+    CONF=$(printf '%s' "$MATCHES" | head -1)
+else
+    CONF="/etc/nginx/sites-available/$DOMAIN"
+    if [ -f "$CONF" ]; then
+        echo "WARNING: no ENABLED vhost declares server_name $DOMAIN." >&2
+        echo "WARNING: falling back to $CONF, which nginx may not be serving." >&2
+    fi
+fi
 
 if [ ! -f "$CONF" ]; then
-    echo "No nginx config found at $CONF, skipping"
+    echo "No nginx config found for $DOMAIN, skipping"
     exit 0
 fi
 
+echo "Configuring vhost for $DOMAIN: $CONF"
+
 CHANGED=0
 
+# nginx includes every file in sites-enabled and conf.d, so a backup written
+# beside the config is parsed as a second copy of it — which fails the whole
+# config with "limit_req_zone ... is already bound". Keep backups outside the
+# include paths, and sweep up any that an earlier version of this script left
+# behind (its own naming only: <name>.bak.<14 digits>).
+BACKUP_DIR="/var/backups/taskai-nginx"
+mkdir -p "$BACKUP_DIR"
+
+# Matched with a glob plus an explicit digit check rather than `find -regex`:
+# GNU find defaults to Emacs regex and silently matches nothing for the
+# interval syntax, which is exactly how the first attempt at this sweep failed.
+STRAY=""
+for f in /etc/nginx/sites-enabled/*.bak.* /etc/nginx/conf.d/*.bak.*; do
+    [ -f "$f" ] || continue
+    suffix=${f##*.bak.}
+    # This script's own naming only: exactly 14 digits.
+    case "$suffix" in
+        ''|*[!0-9]*) continue ;;
+    esac
+    [ ${#suffix} -eq 14 ] || continue
+    STRAY="$STRAY $f"
+done
+STRAY=${STRAY# }
+
+if [ -n "$STRAY" ]; then
+    echo "Removing stray config backups from nginx include paths:"
+    printf '  %s\n' $STRAY
+    # Preserve them outside the include path rather than discarding.
+    for f in $STRAY; do
+        mv "$f" "$BACKUP_DIR/$(basename "$f")" 2>/dev/null || rm -f "$f"
+    done
+    CHANGED=1
+fi
+
 # Snapshot the config so a failed `nginx -t` below can be rolled back.
-BACKUP="${CONF}.bak.$(date +%Y%m%d%H%M%S)"
+BACKUP="$BACKUP_DIR/$(basename "$CONF").bak.$(date +%Y%m%d%H%M%S)"
 cp "$CONF" "$BACKUP"
 
 # 1. Add error_page and /50x.html location if not present
@@ -203,8 +279,8 @@ if [ "$CHANGED" -eq 1 ]; then
     if nginx -t; then
         systemctl reload nginx
         echo "nginx configuration updated and reloaded for $DOMAIN"
-        # Keep only the most recent few backups.
-        ls -1t "${CONF}".bak.* 2>/dev/null | tail -n +6 | xargs -r rm -f
+        # Keep only the most recent few backups of this vhost.
+        ls -1t "$BACKUP_DIR/$(basename "$CONF")".bak.* 2>/dev/null | tail -n +6 | xargs -r rm -f
     else
         echo "nginx -t failed for $DOMAIN, restoring previous config" >&2
         cp "$BACKUP" "$CONF"
