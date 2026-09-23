@@ -69,8 +69,22 @@ CHANGED=0
 BACKUP_DIR="/var/backups/taskai-nginx"
 mkdir -p "$BACKUP_DIR"
 
-STRAY=$(find /etc/nginx/sites-enabled /etc/nginx/conf.d -maxdepth 1 -type f \
-            -regex '.*\.bak\.[0-9]\{14\}$' 2>/dev/null || true)
+# Matched with a glob plus an explicit digit check rather than `find -regex`:
+# GNU find defaults to Emacs regex and silently matches nothing for the
+# interval syntax, which is exactly how the first attempt at this sweep failed.
+STRAY=""
+for f in /etc/nginx/sites-enabled/*.bak.* /etc/nginx/conf.d/*.bak.*; do
+    [ -f "$f" ] || continue
+    suffix=${f##*.bak.}
+    # This script's own naming only: exactly 14 digits.
+    case "$suffix" in
+        ''|*[!0-9]*) continue ;;
+    esac
+    [ ${#suffix} -eq 14 ] || continue
+    STRAY="$STRAY $f"
+done
+STRAY=${STRAY# }
+
 if [ -n "$STRAY" ]; then
     echo "Removing stray config backups from nginx include paths:"
     printf '  %s\n' $STRAY
