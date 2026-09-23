@@ -61,8 +61,28 @@ echo "Configuring vhost for $DOMAIN: $CONF"
 
 CHANGED=0
 
+# nginx includes every file in sites-enabled and conf.d, so a backup written
+# beside the config is parsed as a second copy of it — which fails the whole
+# config with "limit_req_zone ... is already bound". Keep backups outside the
+# include paths, and sweep up any that an earlier version of this script left
+# behind (its own naming only: <name>.bak.<14 digits>).
+BACKUP_DIR="/var/backups/taskai-nginx"
+mkdir -p "$BACKUP_DIR"
+
+STRAY=$(find /etc/nginx/sites-enabled /etc/nginx/conf.d -maxdepth 1 -type f \
+            -regex '.*\.bak\.[0-9]\{14\}$' 2>/dev/null || true)
+if [ -n "$STRAY" ]; then
+    echo "Removing stray config backups from nginx include paths:"
+    printf '  %s\n' $STRAY
+    # Preserve them outside the include path rather than discarding.
+    for f in $STRAY; do
+        mv "$f" "$BACKUP_DIR/$(basename "$f")" 2>/dev/null || rm -f "$f"
+    done
+    CHANGED=1
+fi
+
 # Snapshot the config so a failed `nginx -t` below can be rolled back.
-BACKUP="${CONF}.bak.$(date +%Y%m%d%H%M%S)"
+BACKUP="$BACKUP_DIR/$(basename "$CONF").bak.$(date +%Y%m%d%H%M%S)"
 cp "$CONF" "$BACKUP"
 
 # 1. Add error_page and /50x.html location if not present
@@ -245,8 +265,8 @@ if [ "$CHANGED" -eq 1 ]; then
     if nginx -t; then
         systemctl reload nginx
         echo "nginx configuration updated and reloaded for $DOMAIN"
-        # Keep only the most recent few backups.
-        ls -1t "${CONF}".bak.* 2>/dev/null | tail -n +6 | xargs -r rm -f
+        # Keep only the most recent few backups of this vhost.
+        ls -1t "$BACKUP_DIR/$(basename "$CONF")".bak.* 2>/dev/null | tail -n +6 | xargs -r rm -f
     else
         echo "nginx -t failed for $DOMAIN, restoring previous config" >&2
         cp "$BACKUP" "$CONF"
