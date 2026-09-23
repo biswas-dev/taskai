@@ -1,10 +1,12 @@
-import { useState, useMemo } from 'react'
+import { Fragment, useState, useMemo } from 'react'
 import { Combobox } from '@headlessui/react'
 
 export interface SearchSelectOption {
   value: string
   label: string
   description?: string
+  /** Options sharing a group are listed under a heading; keep them adjacent. */
+  group?: string
 }
 
 interface SearchSelectProps {
@@ -30,7 +32,10 @@ export default function SearchSelect({
     if (!query) return options
     const q = query.toLowerCase()
     return options.filter(
-      (o) => o.label.toLowerCase().includes(q) || o.description?.toLowerCase().includes(q)
+      (o) =>
+        o.label.toLowerCase().includes(q) ||
+        o.description?.toLowerCase().includes(q) ||
+        o.group?.toLowerCase().includes(q)
     )
   }, [query, options])
 
@@ -75,36 +80,45 @@ export default function SearchSelect({
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-dark-text-tertiary">No results</div>
           ) : (
-            filtered.map((opt) => (
-              <Combobox.Option
-                key={opt.value}
-                value={opt.value}
-                className={({ active }: { active: boolean }) =>
-                  `cursor-pointer select-none px-3 py-1.5 ${
-                    active ? 'bg-dark-bg-tertiary text-dark-text-primary' : 'text-dark-text-secondary'
-                  }`
-                }
-              >
-                {({ selected: isSelected }) => (
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <span className={`block truncate ${isSelected ? 'font-medium text-dark-text-primary' : ''}`}>
-                        {opt.label}
-                      </span>
-                      {opt.description && (
-                        <span className="block truncate text-xs text-dark-text-quaternary">
-                          {opt.description}
-                        </span>
-                      )}
-                    </div>
-                    {isSelected && (
-                      <svg className="w-4 h-4 text-primary-400 flex-shrink-0 ml-2" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
+            filtered.map((opt, i) => (
+              <Fragment key={opt.value}>
+                {opt.group && opt.group !== filtered[i - 1]?.group && (
+                  <div
+                    role="presentation"
+                    className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide text-dark-text-tertiary"
+                  >
+                    {opt.group}
                   </div>
                 )}
-              </Combobox.Option>
+                <Combobox.Option
+                  value={opt.value}
+                  className={({ active }: { active: boolean }) =>
+                    `cursor-pointer select-none px-3 py-1.5 ${
+                      active ? 'bg-dark-bg-tertiary text-dark-text-primary' : 'text-dark-text-secondary'
+                    }`
+                  }
+                >
+                  {({ selected: isSelected }) => (
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <span className={`block truncate ${isSelected ? 'font-medium text-dark-text-primary' : ''}`}>
+                          {opt.label}
+                        </span>
+                        {opt.description && (
+                          <span className="block truncate text-xs text-dark-text-quaternary">
+                            {opt.description}
+                          </span>
+                        )}
+                      </div>
+                      {isSelected && (
+                        <svg className="w-4 h-4 text-primary-400 flex-shrink-0 ml-2" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </div>
+                  )}
+                </Combobox.Option>
+              </Fragment>
             ))
           )}
         </Combobox.Options>

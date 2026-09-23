@@ -6,7 +6,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
-import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubRepo, type GitHubProgressEvent, type Collaborator } from '../lib/api'
+import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubRepo, type GitHubProgressEvent, type Collaborator, type TeamSummary } from '../lib/api'
 
 interface ProjectMember {
   id: number
@@ -58,6 +58,12 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   )
   const [invitations, setInvitations] = useState<ProjectInvitation[]>([])
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
+  const [myTeams, setMyTeams] = useState<TeamSummary[]>([])
+  const [isChangingTeam, setIsChangingTeam] = useState(false)
+  const isProjectOwner = useMemo(
+    () => members.some(m => m.user_id === user?.id && m.role === 'owner'),
+    [members, user]
+  )
   const [selectedUserId, setSelectedUserId] = useState('')
   const [newMemberRole, setNewMemberRole] = useState('member')
   const [memberError, setMemberError] = useState('')
@@ -125,6 +131,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     loadMembers()
     loadInvitations()
     loadCollaborators()
+    loadMyTeams()
     loadGitHubSettings()
     loadSyncLogs()
     loadSwimLanes()
@@ -188,6 +195,31 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
       setCollaborators(data)
     } catch (error: unknown) {
       console.error('Failed to load data:', error)
+    }
+  }
+
+  const loadMyTeams = async () => {
+    try {
+      setMyTeams(await apiClient.listTeams())
+    } catch (error: unknown) {
+      console.error('Failed to load teams:', error)
+    }
+  }
+
+  const handleChangeProjectTeam = async (teamId: number) => {
+    const target = myTeams.find(t => t.id === teamId)
+    if (!target || teamId === project?.team_id) return
+    setMemberError('')
+    setMemberSuccess('')
+    setIsChangingTeam(true)
+    try {
+      const updated = await apiClient.updateProject(projectId, { team_id: teamId })
+      setProject(updated)
+      setMemberSuccess(`Project moved to ${target.name}. Existing members keep their access.`)
+    } catch (error: unknown) {
+      setMemberError(error instanceof Error ? error.message : 'Failed to change the project team')
+    } finally {
+      setIsChangingTeam(false)
     }
   }
 
@@ -557,6 +589,31 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
          !invitations.some(inv => inv.invitee_user_id === c.user_id && inv.status === 'pending')
   )
 
+  const projectTeamName = myTeams.find(t => t.id === project?.team_id)?.name ?? project?.team_name ?? undefined
+
+  // Group candidates by team, the project's own team first. Someone in several
+  // of your teams is listed once, under the first group they appear in.
+  const projectTeamId = project?.team_id
+  const seenCollaborators = new Set<number>()
+  const collaboratorOptions = [...availableCollaborators]
+    .sort((a, b) => {
+      const aFirst = a.team_id === projectTeamId ? 0 : 1
+      const bFirst = b.team_id === projectTeamId ? 0 : 1
+      if (aFirst !== bFirst) return aFirst - bFirst
+      return a.team_name.localeCompare(b.team_name) || a.team_id - b.team_id
+    })
+    .filter(c => {
+      if (seenCollaborators.has(c.user_id)) return false
+      seenCollaborators.add(c.user_id)
+      return true
+    })
+    .map(c => ({
+      value: String(c.user_id),
+      label: c.user_name || c.email,
+      description: c.user_name ? c.email : undefined,
+      group: c.team_id === projectTeamId ? `${c.team_name} (this project's team)` : c.team_name,
+    }))
+
   const handleUpdateMemberRole = async (memberId: number, role: string) => {
     try {
       await apiClient.updateProjectMember(projectId, memberId, { role })
@@ -694,6 +751,31 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
 
               {memberError && <FormError message={memberError} className="mb-4" />}
 
+              {/* Project team */}
+              <div className="mb-4 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm text-dark-text-secondary">Team</p>
+                  <p className="font-medium text-dark-text-primary">{projectTeamName ?? 'Not assigned'}</p>
+                </div>
+                {isProjectOwner && myTeams.length > 1 && (
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="project-team-select" className="text-sm text-dark-text-secondary">Move to</label>
+                    <select
+                      id="project-team-select"
+                      value={project?.team_id ?? ''}
+                      disabled={isChangingTeam}
+                      onChange={(e) => handleChangeProjectTeam(Number(e.target.value))}
+                      className="px-2 py-1.5 text-sm bg-dark-bg-primary border border-dark-border-subtle rounded-lg text-dark-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                      {project?.team_id == null && <option value="">Select a team</option>}
+                      {myTeams.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
               {/* Add Member Form */}
               <form onSubmit={handleInviteMember} className="mb-6 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
                 <h3 className="font-semibold text-dark-text-primary mb-4">Invite to Project</h3>
@@ -706,11 +788,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                       value={selectedUserId}
                       onChange={setSelectedUserId}
                       placeholder="Select a collaborator..."
-                      options={availableCollaborators.map(c => ({
-                        value: String(c.user_id),
-                        label: c.user_name || c.email,
-                        description: c.user_name ? c.email : undefined,
-                      }))}
+                      options={collaboratorOptions}
                     />
                   </div>
                   <div>
@@ -734,7 +812,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                     {isAddingMember ? 'Sending...' : 'Send Invite'}
                   </Button>
                   {availableCollaborators.length === 0 && (
-                    <p className="text-sm text-dark-text-tertiary mt-2">No eligible collaborators — invite someone to one of your teams first, or all current collaborators already have access.</p>
+                    <p className="text-sm text-dark-text-tertiary mt-2">No eligible collaborators. Add people to a team in Settings → Teams first, or everyone in your teams already has access.</p>
                   )}
                 </div>
               </form>

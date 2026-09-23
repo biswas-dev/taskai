@@ -7,6 +7,7 @@ import ProjectModal from './ProjectModal'
 vi.mock('../lib/api', () => ({
   api: {
     createProject: vi.fn(),
+    listTeams: vi.fn().mockResolvedValue([]),
   },
 }))
 
@@ -184,5 +185,32 @@ describe('ProjectModal', () => {
         description: undefined,
       })
     })
+  })
+
+  it('lets people in several teams pick the project team', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.listTeams).mockResolvedValueOnce([
+      { id: 1, name: 'Elastio', owner_id: 1, role: 'owner', is_owner: true, is_home: true, member_count: 5, project_count: 3 },
+      { id: 2, name: 'Intelliviz', owner_id: 1, role: 'owner', is_owner: true, is_home: false, member_count: 3, project_count: 0 },
+    ])
+    mockedCreateProject.mockResolvedValue({ id: 9, name: 'Dashboard', owner_id: 1, created_at: '2024-01-01T00:00:00Z' })
+
+    render(<ProjectModal {...defaultProps} />)
+
+    const teamSelect = await screen.findByLabelText('Team')
+    expect(teamSelect).toHaveValue('1')
+    await user.selectOptions(teamSelect, '2')
+    await user.type(screen.getByLabelText(/project name/i), 'Dashboard')
+    await user.click(screen.getByRole('button', { name: /create project/i }))
+
+    await waitFor(() => {
+      expect(mockedCreateProject).toHaveBeenCalledWith({ name: 'Dashboard', description: undefined, team_id: 2 })
+    })
+  })
+
+  it('hides the team picker for single-team users', async () => {
+    render(<ProjectModal {...defaultProps} />)
+    await waitFor(() => expect(api.listTeams).toHaveBeenCalled())
+    expect(screen.queryByLabelText('Team')).not.toBeInTheDocument()
   })
 })

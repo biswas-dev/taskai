@@ -1,5 +1,5 @@
-import { useState, FormEvent } from 'react'
-import { api, Project } from '../lib/api'
+import { useState, useEffect, FormEvent } from 'react'
+import { api, Project, type TeamSummary } from '../lib/api'
 import TextInput from './ui/TextInput'
 import Button from './ui/Button'
 
@@ -18,6 +18,29 @@ export default function ProjectModal({
   const [description, setDescription] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [teams, setTeams] = useState<TeamSummary[]>([])
+  const [teamId, setTeamId] = useState<number | null>(null)
+
+  // People in several teams choose where the project lives; everyone else
+  // gets their primary team without seeing a picker.
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const list = await api.listTeams()
+        if (cancelled) return
+        setTeams(list)
+        setTeamId((current) => current ?? list.find((t) => t.is_home)?.id ?? list[0]?.id ?? null)
+      } catch {
+        // Without the list the server falls back to the primary team.
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -33,6 +56,7 @@ export default function ProjectModal({
       const project = await api.createProject({
         name: name.trim(),
         description: description.trim() || undefined,
+        ...(teams.length > 1 && teamId ? { team_id: teamId } : {}),
       })
       onProjectCreated(project)
       // Reset form
@@ -139,6 +163,28 @@ export default function ProjectModal({
                   className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary placeholder-dark-text-tertiary rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed resize-none"
                 />
               </div>
+
+              {teams.length > 1 && (
+                <div className="w-full">
+                  <label htmlFor="project-team" className="block text-sm font-medium text-dark-text-primary mb-1">
+                    Team
+                  </label>
+                  <select
+                    id="project-team"
+                    value={teamId ?? ''}
+                    onChange={(e) => setTeamId(Number(e.target.value))}
+                    disabled={loading}
+                    className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+                  >
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-dark-text-tertiary">
+                    Members of this team are suggested first when you share the project.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
