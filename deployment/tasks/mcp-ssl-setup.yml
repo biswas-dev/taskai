@@ -16,6 +16,22 @@
     path: "/etc/letsencrypt/live/{{ mcp_domain }}/fullchain.pem"
   register: mcp_ssl_cert
 
+- name: Ensure Nginx snippets directory exists
+  file:
+    path: /etc/nginx/snippets
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install Cloudflare real-IP snippet
+  template:
+    src: ../templates/nginx-cloudflare-realip.conf.j2
+    dest: /etc/nginx/snippets/cloudflare-realip.conf
+    owner: root
+    group: root
+    mode: '0644'
+
 - name: Create Nginx SSL configuration for {{ mcp_domain }}
   template:
     src: ../templates/nginx-mcp-ssl.conf.j2

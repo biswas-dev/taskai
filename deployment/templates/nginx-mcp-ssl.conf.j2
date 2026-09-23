@@ -1,7 +1,9 @@
 # Nginx configuration for {{ mcp_domain }} (MCP server with SSL)
 
-# Rate limiting zone for MCP
-limit_req_zone $binary_remote_addr zone={{ mcp_domain | replace('.', '_') }}_mcp:10m rate=30r/m;
+# ── Rate limiting ───────────────────────────────────────────────────────────
+# An agent session walks many tools in quick succession, so 30r/m (one request
+# every two seconds) throttled ordinary use.
+limit_req_zone $binary_remote_addr zone={{ mcp_domain | replace('.', '_') }}_mcp:10m rate=300r/m;
 
 # HTTP -> HTTPS redirect
 server {
@@ -26,6 +28,13 @@ server {
     listen [::]:443 ssl;
     http2 on;
     server_name {{ mcp_domain }};
+
+    # Real client IPs (Cloudflare) — required for the rate limits to key per visitor.
+    include /etc/nginx/snippets/cloudflare-realip.conf;
+
+    # 429, not nginx's default 503, so a throttled call is not mistaken for the
+    # server being down.
+    limit_req_status 429;
 
     # SSL configuration
     ssl_certificate /etc/letsencrypt/live/{{ mcp_domain }}/fullchain.pem;
@@ -58,7 +67,7 @@ server {
 
     # MCP endpoint
     location /mcp {
-        limit_req zone={{ mcp_domain | replace('.', '_') }}_mcp burst=10 nodelay;
+        limit_req zone={{ mcp_domain | replace('.', '_') }}_mcp burst=60 nodelay;
 
         proxy_pass http://127.0.0.1:{{ mcp_host_port }};
         proxy_http_version 1.1;
