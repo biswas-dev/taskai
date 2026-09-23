@@ -1,0 +1,206 @@
+please fix two issues with taskai, and test locally then deploy to staging skip uat then prod
+
+we are able to see ALL your team members -> one of my teammate Nakul says this. Let us rethink this from first prinicples. I have multiple projects with multiple different people, many belong to different companies, i am anchoo2kewl@gmail.com Admin, I work for Elastio. and have all company employees onboarded. I always work for many other companies, one is intelliviz, with Nakul Mehra who I added to the same team. Then he added Faiz. These three people should be one team and have access to projects if shared within that team. Please fix this issue, Make it easy to onboard. Also once someone is added to a team, they still need to be added to a project bia settings and accept. That is fine, just figure out the flow so everyone in my team is not able to see everyone else, maybe allow better way to create andd manage and segrate people on a team?
+
+---
+
+<task-notification>
+<task-id>af973257746f6e3b9</task-id>
+<tool-use-id>toolu_01NbgzChg7DGbF1RMNDSZstc</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/af973257746f6e3b9.output</output-file>
+<status>completed</status>
+<summary>Agent "Explore team membership model" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>Teams are defined in migration 010 (latest migration is 068). There are two main reasons users see people outside their own team:
+- **`GET /api/team/members`** lists whichever team the user happens to be matched to. That match is not deterministic, so it can be a big shared team rather than the user's own.
+- **The project-settings "add member" picker** lists every user in any team you share, not just the project's team.
+
+On top of that, user search covers every registered user, and any user can add anyone to their team without that person agreeing.
+
+## 1. DB schema
+
+Migrations live in two parallel folders: SQLite in `/Users/anshumanbiswas/play/taskai/api/internal/db/migrations/*.sql` and Postgres in `.../migrations/postgres/*.sql`. Tests run on SQLite, loaded from `./../../internal/db/migrations` (`api/internal/api/testing.go:44`).
+
+**Latest migration: `068_wiki_page_hierarchy.sql` in both folders, so the next one is 069.** The numbering drifts between the two:
+- SQLite has no 066; its 064 is milestones and 065 is tasks_updated_by.
+- Postgres 064 is wiki_vector_embeddings, 065 is milestones, 066 is tasks_updated_by.
+
+The migrations that matter here:
+
+| Migration | What it does |
+|---|---|
+| `005_add_project_sharing_and_github.sql` | Original `project_members` (id, project_id, user_id, role viewer/editor/admin, added_by, created_at, UNIQUE(project_id,user_id)). Original `project_invitations` (email-based). |
+| `010_add_teams.sql` | Creates `teams`, `team_members`, `team_invitations`. Adds `team_id` to `projects`, `sprints` and `tags`. Backfills one team per user named "`&lt;email&gt;'s Team`", adds the user as owner, and assigns their projects, sprints and tags to it. |
+| `011_add_project_members.sql` | `project_members` (id, project_id, user_id, role default 'member' [owner/editor/member/viewer], granted_by, granted_at, UNIQUE(project_id,user_id)). |
+| `012_backfill_team_project_access.sql` | Rebuilds `project_members` (SQLite) and auto-grants every active team member access to all of their team's projects. |
+| `020_add_team_invite_token.sql` | Adds `team_invitations.acceptance_token` (unique index), `token_expires_at`, `invite_code`. |
+| `031_explicit_project_access.sql` | `DELETE FROM project_members WHERE role != 'owner'`. This undoes the 012 backfill: from here on, project access is explicit only. |
+| `032_project_invitations.sql` | Drops and recreates `project_invitations`: id, project_id, inviter_id, invitee_user_id, role default 'member', status default 'pending', invited_at, responded_at, last_sent_at, UNIQUE(project_id, invitee_user_id). Invitations now target a user id, not an email. |
+
+The team tables (from 010):
+- **`teams`**: id, name, owner_id → users, created_at, updated_at. Only `owner_id` is indexed; it is not unique.
+- **`team_members`**: id, team_id, user_id, role ('owner'/'admin'/'member'), status ('active'/'inactive'), joined_at, UNIQUE(team_id,user_id). **Nothing stops a user belonging to several teams.**
+- **`team_invitations`**: id, team_id, inviter_id, invitee_email, invitee_id (nullable until the user signs up), status (pending/accepted/rejected/cancelled), created_at, responded_at, plus the three columns from 020.
+- **`projects.team_id`** is nullable and references teams with ON DELETE CASCADE.
+
+The ent schemas are in `/Users/anshumanbiswas/play/taskai/api/ent/schema/{team,teammember,teaminvitation}.go`.
+
+## 2. Team endpoints
+
+Routes are in `/Users/anshumanbiswas/play/taskai/api/cmd/api/main.go:608-625`, all behind JWTAuth. The public token lookup is at `:429`. Handlers are in `/Users/anshumanbiswas/play/taskai/api/internal/api/team_handlers.go`, and most use ent rather than raw SQL.
+
+**How the "current team" is chosen**
+- `getUserTeamID` (`team_handlers.go:985-996`) runs `TeamMember.Query().Where(user_id=X, status='active').First(ctx)`. **There is no ORDER BY**, so a user in more than one team gets whichever row the database returns first. There is no stored "current team" and no team switcher.
+- `getUserTeamRole` (`:998-1010`) returns the user's role in that team.
+- Every user gets their own team as owner at signup: `auth_handlers.go:143-170` for password signup, `internal/db/oauth_store.go:157-178` for OAuth. So everyone owns one team and can join more.
+- Accepting a team invite adds a second `team_members` row. From then on, "my team" can resolve to either team.
+
+The handlers:
+
+| Endpoint | Handler | Query | Authorization |
+|---|---|---|---|
+| GET `/api/team` | `HandleGetMyTeam` :87 | `Team.Query().Where(HasMembersWith(user_id, active)).First()`, also unordered | Any member |
+| GET `/api/team/members` | `HandleGetTeamMembers` :122 | All `team_members` of `getUserTeamID`'s team, with user, ordered role DESC, joined_at ASC. No status filter, so inactive members show too. | **None beyond "has an active membership"** |
+| POST `/api/team/invite` | `HandleInviteTeamMember` :170 | Checks for an existing member or pending invite. If the email is already registered, it **auto-accepts**: writes an invitation with status 'accepted' and a `team_members` row in one transaction (:258-335). Otherwise it creates a pending invitation, token and invite code, and sends an email. | Team role owner or admin |
+| POST `/api/team/members` | `HandleAddTeamMember` :885 | Adds any `user_id` straight into `team_members`. **The added user is never asked.** | Owner or admin |
+| DELETE `/api/team/members/{memberId}` | `HandleRemoveTeamMember` :606 | Deletes the row, scoped to the caller's team. The owner can't be removed. | Owner or admin |
+| GET `/api/team/users/search?q=` | `HandleSearchUsers` :825 | Searches **all users** by email, name, first_name or last_name (case-insensitive contains), excluding current team members, LIMIT 10 | Owner or admin, which **every user is, of their own team** |
+| GET `/api/team/memberships` | `HandleGetMyTeamMemberships` :746 | The user's active memberships in teams they don't own | Self |
+| GET `/api/team/invitations` | `HandleGetMyInvitations` :406 | Pending invitations where invitee_id or invitee_email matches the caller | Self |
+| GET `/api/team/invitations/sent` | `HandleGetTeamSentInvitations` :784 | Pending invitations for the caller's current team | **Any member**, no role check |
+| POST `/api/team/invitations/{id}/accept` and `/reject` | :459, :547 | Updates the invitation and inserts a `team_members` row (role member) | Invitee's email or id must match |
+| GET `/api/team/invitations/by-token` (public), POST `/accept-by-token` | :1060, :1122 | Token lookup; accept requires the email to match | Public / authenticated |
+| PATCH `/api/team` | `HandleUpdateTeam` :675 | Renames the team | Owner or admin |
+| GET `/api/me/collaborators` | `HandleGetCollaborators` :1254-1313 | Raw SQL: every user other than the caller who shares **any** active team with them (a self-join on `team_members`), ordered by email | Self |
+
+**Why a user sees everyone:**
+- In Settings, `GET /team/members` shows the roster of the team `getUserTeamID` picks. If the user has joined a big shared team (say an org owner invited everybody), the unordered `First()` can return that team, and they see its whole roster.
+- In the project picker, `/me/collaborators` returns the union of every team the user belongs to. One all-hands team makes every user a collaborator of every other user.
+- Team search is global, and add-member doesn't ask the other person. So any user can pull anyone into their team, and after that the shared-team check that guards project invites passes.
+
+Other team code paths:
+- `auth_handlers.go:500-551` (`acceptPendingTeamInvitation` at signup) and `oauth_store.go:225-280`.
+- Admin force-accept: `admin_handlers.go:807`, route `/admin/team-invitations/{id}/resolve`.
+
+## 3. Projects and teams, and the "add member" flow
+
+**Creating a project** (`project_handlers.go:111-170`): sets `team_id = getUserTeamID(...)`, which inherits the nondeterminism, and inserts the creator into `project_members` as 'owner'.
+
+**How much `team_id` is used:** very little. Project access goes entirely through `project_members`:
+- `userHasProjectAccess` at `project_settings_handlers.go:543`
+- `checkProjectAccess` at `task_handlers.go:1505`
+
+The only place that reads `projects.team_id` is GitHub user auto-matching, `github_handlers.go:945-951`.
+
+The project-member handlers are in `/Users/anshumanbiswas/play/taskai/api/internal/api/project_settings_handlers.go`, with routes at `main.go:566-590`:
+- **GET `/projects/{id}/members`** (:71): project members joined to users. Requires project access.
+- **POST `/projects/{id}/members`** (:126): the legacy direct add by email. Requires project owner or admin, and that the two users share an active team (:189-208). Then inserts into `project_members`.
+- **POST `/projects/{id}/invitations`** (:617): the flow the UI uses. It:
+  - requires project owner or admin (:630),
+  - rejects the project owner as invitee,
+  - applies the same shared-team EXISTS check (:676-694),
+  - rejects existing members,
+  - upserts `project_invitations` with ON CONFLICT → pending (:711),
+  - sends an email and a websocket `project_invitation` event.
+- **Accepting** (`/project-invitations/{id}/accept`, :822): the invitee id must match. In one transaction it sets status accepted and inserts into `project_members` (ON CONFLICT DO NOTHING), then broadcasts `project_membership`.
+- Also: reject :908, withdraw :953, resend (48h cooldown) :999, `/my/project-invitations` :1080, count :1132.
+
+One quirk: `userIsProjectOwnerOrAdmin` (:568-590) checks `role == "admin"`. The valid project roles are viewer, member, editor and owner, so a project member with role 'owner' who isn't `projects.owner_id` is not treated as an admin.
+
+**Which users the "add member" picker shows:** `ProjectSettings.tsx:185-190` calls `getCollaborators()`, i.e. `/api/me/collaborators`, which covers every team you share. It filters out existing members and pending invitees at :554-557 and renders a `SearchSelect` at :700-738. So yes, it lists members of all your teams, not just the project's team. This comes from commit a2a0325 ("fix: allow cross-team project member invites").
+
+## 4. Other places that expose users
+
+- **Team search** (`HandleSearchUsers`): the widest exposure. Any user can look up every registered user by email or name substring.
+- **Admin**: `GET /admin/users` (`admin_handlers.go:49`, guarded by `isAdmin` at :345). `/admin/invitations` (:641-686) joins team and project invitations with users. Admin analytics users: `admin_analytics_handlers.go:202, 298`. All admin-only.
+- **User profile**: `/users/{id}/profile` and `/users/{id}/activity` (`user_profile_handlers.go:50-110`) require a shared project via a self-join on `project_members`. Properly scoped.
+- **@mentions**: the frontend `MentionTextarea.tsx:29` uses `getProjectMembers`. The backend mention resolution (`notification_handlers.go:224`) is also limited to `project_members`.
+- **Assignee picker**: `TaskDetail.tsx:381-383, 1318-1330` uses `getProjectMembers`. **But the backend doesn't check that `assignee_ids` are project members** (`task_handlers.go:654-659` on create, `replaceTaskAssignees` at :1492 on update), so any user id is accepted.
+- **GitHub discover-mappings** (`github_handlers.go:945`): matches against all members of the project's team.
+- **Legacy add-by-email** (`project_settings_handlers.go:164`): looks up any user by email, though the shared-team check follows.
+
+## 5. Frontend
+
+API client, `/Users/anshumanbiswas/play/taskai/web/src/lib/api.ts`:
+- Team functions (:1567-1645): `getMyTeam`, `getTeamMembers`, `getCollaborators`, `inviteTeamMember`, `removeTeamMember`, `getMyInvitations`, `getMyTeamMemberships`, `acceptInvitation`/`rejectInvitation`, `getInvitationByToken`/`acceptInvitationByToken`, `updateTeam`, `getTeamSentInvitations`, `searchTeamUsers`, `addTeamMember`.
+- Project functions (:1099-1156): members, invitations, and `/my/project-invitations`.
+- Admin functions: around :1306-1360.
+- Types (:506-560): `Team`, `TeamMember`, `Collaborator`, `TeamInvitation`, `TeamMembership`.
+
+Pages and components:
+- **`web/src/routes/Settings.tsx`** (team tab): `loadTeamData` (:598-618) calls getMyTeam, getTeamMembers, getMyInvitations, getTeamSentInvitations and getMyTeamMemberships together. It includes:
+  - rename (:680),
+  - search-then-add-or-invite (:703, :730, :749),
+  - the member list (:2212-2260),
+  - "Teams you've joined" (:2305).
+- **`web/src/routes/ProjectSettings.tsx`**: members and collaborators picker as described in section 3 (:160-190, :505-557, :700-745).
+- **`web/src/routes/AcceptTeamInvite.tsx`**: token acceptance.
+- **`web/src/components/ProjectInvitationBanner.tsx`** and **`web/src/state/NotificationContext.tsx:128`**: project invitation accept/reject.
+- **`web/src/routes/Admin.tsx`**: admin users and invitations.
+- **`web/src/routes/TaskDetail.tsx`** and **`web/src/components/MentionTextarea.tsx`**: pickers built from project members.
+
+## 6. Tests
+
+**Go, `/Users/anshumanbiswas/play/taskai/api/internal/api/team_handlers_test.go`** (about 50 tests):
+- Helpers: `createTestTeam` :13, `addTeamMember` :45, `createTestTeamInvitation` :68, `createTestTeamInvitationWithToken` :93.
+- There are "does not add to projects" tests at :690, :1207 and :1273.
+- **Not covered:** `HandleSearchUsers`, `HandleGetCollaborators`, `HandleGetMyTeamMemberships`, and the multi-team behaviour of `getUserTeamID`.
+
+**Go, `/Users/anshumanbiswas/play/taskai/api/internal/api/project_settings_handlers_test.go`**:
+- Helpers: `createTestTeamAndProject` :12, `addUserToTeam` :69.
+- Tests for get/add/update/remove member (:103, :228, :559, :788) and for `userHasProjectAccess` / `userIsProjectOwnerOrAdmin` (:1341, :1433).
+
+How the Go tests are written:
+- `ts := NewTestServer(t); defer ts.Close()` gives an in-memory SQLite database with migrations applied (`testing.go:31`).
+- `ts.CreateTestUser` (:74) inserts only the user row and does **not** create a team, so tests build teams with raw SQL using `?` placeholders.
+- Requests: `rec, req := ts.MakeAuthRequest(t, method, path, body, userID, urlParams)`, then the handler is called directly, e.g. `ts.HandleX(rec, req)`.
+- Assertions: `AssertStatusCode`, `DecodeJSON`, `AssertError`. Some tests are table-driven (e.g. `TestHandleInviteTeamMember` :228), the rest are one scenario per function named `TestHandleX_Case`.
+- Other helpers: `ts.CreateTestProject` (:185) and `ts.AddProjectMember` (:247).
+
+**Frontend** (Vitest, mocking `../lib/api` through a `mocks` object and `vi.fn()`):
+- `web/src/routes/Settings.test.tsx`
+- `web/src/routes/ProjectSettings.test.tsx`, which mocks `getProjectMembers` and `getCollaborators` at :19 and :76-77
+- `web/src/routes/AcceptTeamInvite.test.tsx`
+- `web/src/lib/api.test.ts`</result>
+<usage><subagent_tokens>115256</subagent_tokens><tool_uses>25</tool_uses><duration_ms>141168</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bgeem0w0e</task-id>
+<tool-use-id>toolu_01JRZ1vKRCcGx5kVZZtTTFeh</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bgeem0w0e.output</output-file>
+<status>failed</status>
+<summary>Background command "Run local API against Postgres" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bs7o3paf8</task-id>
+<tool-use-id>toolu_01BwyrB7MoQBJbbfwRyS2gZH</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bs7o3paf8.output</output-file>
+<status>failed</status>
+<summary>Background command "Run local API against pgvector Postgres" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bqlfras91</task-id>
+<tool-use-id>toolu_01LGsUPQhTuhfJ1Y8guQq9uB</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bqlfras91.output</output-file>
+<status>completed</status>
+<summary>Background command "Start Vite dev server proxied to local API" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>brinutnoo</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/brinutnoo.output</output-file>
+<status>completed</status>
+<summary>Background command "Run local API with scratch draw dirs" completed (exit code 0)</summary>
+</task-notification>

@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "005c8b6bcab1",
+  "session_id": "82ac5d09-8205-47a5-a238-caa15043da7e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-23T15:01:59.587582Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "web/src/components/TeamsPanel.tsx",
+    "web/src/components/TeamsPanel.test.tsx"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-5-5[1m]",
+  "turn_id": "b0a4da1f9706",
+  "token_usage": {
+    "input_tokens": 208,
+    "cache_creation_tokens": 453896,
+    "cache_read_tokens": 17665971,
+    "output_tokens": 89003,
+    "api_call_count": 103
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-23T15:01:58.75802Z",
+    "agent_lines": 780,
+    "agent_removed": 0,
+    "human_added": 1190,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1970,
+    "total_lines_changed": 2508,
+    "agent_percentage": 31.100478468899524,
+    "metric_version": 2
+  }
+}

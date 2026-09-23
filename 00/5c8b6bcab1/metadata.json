@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "005c8b6bcab1",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "web/src/components/TeamsPanel.test.tsx",
+    "web/src/components/TeamsPanel.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/00/5c8b6bcab1/0/metadata.json",
+      "transcript": "/00/5c8b6bcab1/0/full.jsonl",
+      "content_hash": "/00/5c8b6bcab1/0/content_hash.txt",
+      "prompt": "/00/5c8b6bcab1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 208,
+    "cache_creation_tokens": 453896,
+    "cache_read_tokens": 17665971,
+    "output_tokens": 89003,
+    "api_call_count": 103
+  }
+}
