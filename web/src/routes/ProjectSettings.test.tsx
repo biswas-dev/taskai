@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ProjectSettings from './ProjectSettings'
 
@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
   getProjectInvitations: vi.fn(),
   githubGetMappings: vi.fn(),
   githubSaveMappings: vi.fn(),
+  listTeams: vi.fn(),
+  updateProject: vi.fn(),
 }))
 
 vi.mock('../lib/api', () => ({
@@ -52,7 +54,12 @@ const members = [
 ]
 
 const collaborators = [
-  { user_id: 20, email: 'bob@test.com' },
+  { user_id: 20, email: 'bob@test.com', team_id: 1, team_name: 'Intelliviz' },
+]
+
+const teams = [
+  { id: 1, name: 'Intelliviz', owner_id: 10, role: 'owner', is_owner: true, is_home: false, member_count: 3, project_count: 1 },
+  { id: 2, name: 'Elastio', owner_id: 10, role: 'owner', is_owner: true, is_home: true, member_count: 40, project_count: 5 },
 ]
 
 const swimLanes = [
@@ -90,6 +97,43 @@ describe('ProjectSettings', () => {
     mocks.getStorageUsage.mockResolvedValue([])
     mocks.getProjectInvitations.mockResolvedValue([])
     mocks.githubGetMappings.mockResolvedValue({ status_mappings: {}, user_mappings: {} })
+    mocks.listTeams.mockResolvedValue(teams)
+  })
+
+  describe('Teams', () => {
+    it('groups invite candidates by team with the project team first, listing each person once', async () => {
+      const user = userEvent.setup()
+      mocks.getCollaborators.mockResolvedValue([
+        { user_id: 30, email: 'carol@elastio.test', team_id: 2, team_name: 'Elastio' },
+        { user_id: 20, email: 'nakul@intelliviz.test', team_id: 2, team_name: 'Elastio' },
+        { user_id: 20, email: 'nakul@intelliviz.test', team_id: 1, team_name: 'Intelliviz' },
+      ])
+      render(<ProjectSettings />)
+
+      const input = await screen.findByPlaceholderText('Select a collaborator...')
+      await user.type(input, '@')
+
+      const listbox = await screen.findByRole('listbox')
+      const headings = within(listbox).getAllByText(/^(Intelliviz \(this project's team\)|Elastio)$/)
+      expect(headings.map(h => h.textContent)).toEqual(["Intelliviz (this project's team)", 'Elastio'])
+      expect(within(listbox).getAllByRole('option')).toHaveLength(2)
+      expect(within(listbox).getAllByText('nakul@intelliviz.test')).toHaveLength(1)
+    })
+
+    it('lets the project owner move the project to another team', async () => {
+      const user = userEvent.setup()
+      mocks.updateProject.mockResolvedValue({ id: 42, name: 'Test Project', owner_id: 10, team_id: 2, created_at: '', updated_at: '' })
+      render(<ProjectSettings />)
+
+      const select = await screen.findByLabelText('Move to')
+      await waitFor(() => expect(select).toHaveValue('1'))
+      await user.selectOptions(select, '2')
+
+      await waitFor(() => {
+        expect(mocks.updateProject).toHaveBeenCalledWith(42, { team_id: 2 })
+      })
+      expect(await screen.findByText(/Project moved to Elastio/)).toBeInTheDocument()
+    })
   })
 
   it('renders page heading', async () => {

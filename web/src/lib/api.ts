@@ -520,7 +520,11 @@ export interface Collaborator {
   user_id: number
   email: string
   user_name?: string
+  team_id: number
+  team_name: string
 }
+
+export type TeamSummary = components['schemas']['TeamSummary']
 
 export interface TeamInvitation {
   id: number
@@ -570,11 +574,13 @@ export interface StorageUsageItem {
 export interface CreateProjectRequest {
   name: string
   description?: string
+  team_id?: number
 }
 
 export interface UpdateProjectRequest {
   name?: string
   description?: string
+  team_id?: number
 }
 
 export interface CreateTaskRequest {
@@ -849,6 +855,12 @@ export interface GraphData {
 //   - Production nginx proxy (serves /api from backend)
 // Set VITE_API_URL only if you need to bypass the proxy entirely
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
+// Team-scoped endpoints live under /api/teams/{id}; without an id the legacy
+// /api/team routes act on the caller's primary team.
+function teamPath(teamId?: number): string {
+  return teamId ? `/api/teams/${teamId}` : '/api/team'
+}
 
 class ApiClient {
   private baseURL: string
@@ -1569,23 +1581,23 @@ class ApiClient {
     return this.request<Team>('/api/team')
   }
 
-  async getTeamMembers(): Promise<TeamMember[]> {
-    return this.request<TeamMember[]>('/api/team/members')
+  async getTeamMembers(teamId?: number): Promise<TeamMember[]> {
+    return this.request<TeamMember[]>(`${teamPath(teamId)}/members`)
   }
 
   async getCollaborators(): Promise<Collaborator[]> {
     return this.request<Collaborator[]>('/api/me/collaborators')
   }
 
-  async inviteTeamMember(email: string): Promise<void> {
-    return this.request<void>('/api/team/invite', {
+  async inviteTeamMember(email: string, teamId?: number): Promise<void> {
+    return this.request<void>(`${teamPath(teamId)}/invite`, {
       method: 'POST',
       body: JSON.stringify({ email }),
     })
   }
 
-  async removeTeamMember(memberId: number): Promise<void> {
-    return this.request<void>(`/api/team/members/${memberId}`, {
+  async removeTeamMember(memberId: number, teamId?: number): Promise<void> {
+    return this.request<void>(`${teamPath(teamId)}/members/${memberId}`, {
       method: 'DELETE',
     })
   }
@@ -1621,25 +1633,55 @@ class ApiClient {
     })
   }
 
-  async updateTeam(name: string): Promise<Team> {
-    return this.request<Team>('/api/team', {
+  async updateTeam(name: string, teamId?: number): Promise<Team> {
+    return this.request<Team>(teamPath(teamId), {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     })
   }
 
-  async getTeamSentInvitations(): Promise<SentInvitation[]> {
-    return this.request<SentInvitation[]>('/api/team/invitations/sent')
+  async getTeamSentInvitations(teamId?: number): Promise<SentInvitation[]> {
+    return this.request<SentInvitation[]>(`${teamPath(teamId)}/invitations/sent`)
   }
 
-  async searchTeamUsers(query: string): Promise<UserSearchResult[]> {
-    return this.request<UserSearchResult[]>(`/api/team/users/search?q=${encodeURIComponent(query)}`)
+  async searchTeamUsers(query: string, teamId?: number): Promise<UserSearchResult[]> {
+    return this.request<UserSearchResult[]>(`${teamPath(teamId)}/users/search?q=${encodeURIComponent(query)}`)
   }
 
-  async addTeamMember(userId: number): Promise<{ message: string }> {
-    return this.request<{ message: string }>('/api/team/members', {
+  async addTeamMember(userId: number, teamId?: number): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`${teamPath(teamId)}/members`, {
       method: 'POST',
       body: JSON.stringify({ user_id: userId }),
+    })
+  }
+
+  async listTeams(): Promise<TeamSummary[]> {
+    return this.request<TeamSummary[]>('/api/teams')
+  }
+
+  async createTeam(name: string): Promise<Team> {
+    return this.request<Team>('/api/teams', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  async deleteTeam(teamId: number): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/api/teams/${teamId}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async moveTeamMember(teamId: number, memberId: number, targetTeamId: number): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/api/teams/${teamId}/members/${memberId}/move`, {
+      method: 'POST',
+      body: JSON.stringify({ target_team_id: targetTeamId }),
+    })
+  }
+
+  async leaveTeam(teamId: number): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/api/teams/${teamId}/leave`, {
+      method: 'POST',
     })
   }
 
