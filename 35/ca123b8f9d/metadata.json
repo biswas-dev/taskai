@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "35ca123b8f9d",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "deployment/scripts/ensure-zero-downtime.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/35/ca123b8f9d/0/metadata.json",
+      "transcript": "/35/ca123b8f9d/0/full.jsonl",
+      "content_hash": "/35/ca123b8f9d/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 10,
+    "cache_creation_tokens": 7152,
+    "cache_read_tokens": 1745602,
+    "output_tokens": 3998,
+    "api_call_count": 5
+  }
+}
