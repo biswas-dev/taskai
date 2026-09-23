@@ -614,6 +614,20 @@ func main() {
 			r.Delete("/team/members/{memberId}", server.HandleRemoveTeamMember)
 			r.Get("/team/users/search", server.HandleSearchUsers)
 
+			// Multi-team management: every route requires active membership of {teamId}
+			r.Get("/teams", server.HandleListMyTeams)
+			r.Post("/teams", server.HandleCreateTeam)
+			r.Patch("/teams/{teamId}", server.HandleUpdateTeam)
+			r.Delete("/teams/{teamId}", server.HandleDeleteTeam)
+			r.Get("/teams/{teamId}/members", server.HandleGetTeamMembers)
+			r.Post("/teams/{teamId}/members", server.HandleAddTeamMember)
+			r.Post("/teams/{teamId}/invite", server.HandleInviteTeamMember)
+			r.Delete("/teams/{teamId}/members/{memberId}", server.HandleRemoveTeamMember)
+			r.Post("/teams/{teamId}/members/{memberId}/move", server.HandleMoveTeamMember)
+			r.Get("/teams/{teamId}/users/search", server.HandleSearchUsers)
+			r.Get("/teams/{teamId}/invitations/sent", server.HandleGetTeamSentInvitations)
+			r.Post("/teams/{teamId}/leave", server.HandleLeaveTeam)
+
 			// Cross-team collaborators (users sharing any active team with the current user)
 			r.Get("/me/collaborators", server.HandleGetCollaborators)
 

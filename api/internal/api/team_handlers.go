@@ -13,8 +13,8 @@ import (
 
 	"taskai/ent"
 	"taskai/ent/team"
-	"taskai/ent/teammember"
 	"taskai/ent/teaminvitation"
+	"taskai/ent/teammember"
 	"taskai/ent/user"
 )
 
@@ -38,16 +38,16 @@ type TeamMember struct {
 }
 
 type TeamInvitation struct {
-	ID            int64      `json:"id"`
-	TeamID        int64      `json:"team_id"`
-	TeamName      string     `json:"team_name"`
-	InviterID     int64      `json:"inviter_id"`
-	InviterName   *string    `json:"inviter_name,omitempty"`
-	InviteeEmail  string     `json:"invitee_email"`
-	InviteeID     *int64     `json:"invitee_id,omitempty"`
-	Status        string     `json:"status"`
-	CreatedAt     time.Time  `json:"created_at"`
-	RespondedAt   *time.Time `json:"responded_at,omitempty"`
+	ID           int64      `json:"id"`
+	TeamID       int64      `json:"team_id"`
+	TeamName     string     `json:"team_name"`
+	InviterID    int64      `json:"inviter_id"`
+	InviterName  *string    `json:"inviter_name,omitempty"`
+	InviteeEmail string     `json:"invitee_email"`
+	InviteeID    *int64     `json:"invitee_id,omitempty"`
+	Status       string     `json:"status"`
+	CreatedAt    time.Time  `json:"created_at"`
+	RespondedAt  *time.Time `json:"responded_at,omitempty"`
 }
 
 type CreateTeamRequest struct {
@@ -90,13 +90,11 @@ func (s *Server) HandleGetMyTeam(w http.ResponseWriter, r *http.Request) {
 
 	userID := r.Context().Value(UserIDKey).(int64)
 
-	// Get user's active team membership
-	entTeam, err := s.db.Client.Team.Query().
-		Where(team.HasMembersWith(
-			teammember.UserID(userID),
-			teammember.Status("active"),
-		)).
-		First(ctx)
+	teamID, err := s.getUserTeamID(ctx, userID)
+	var entTeam *ent.Team
+	if err == nil {
+		entTeam, err = s.db.Client.Team.Get(ctx, teamID)
+	}
 	if err != nil {
 		if ent.IsNotFound(err) {
 			respondError(w, http.StatusNotFound, "no active team found", "not_found")
@@ -107,15 +105,7 @@ func (s *Server) HandleGetMyTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiTeam := Team{
-		ID:        entTeam.ID,
-		Name:      entTeam.Name,
-		OwnerID:   entTeam.OwnerID,
-		CreatedAt: entTeam.CreatedAt,
-		UpdatedAt: entTeam.UpdatedAt,
-	}
-
-	respondJSON(w, http.StatusOK, apiTeam)
+	respondJSON(w, http.StatusOK, toAPITeam(entTeam))
 }
 
 // HandleGetTeamMembers returns all members of the user's team
@@ -125,16 +115,14 @@ func (s *Server) HandleGetTeamMembers(w http.ResponseWriter, r *http.Request) {
 
 	userID := r.Context().Value(UserIDKey).(int64)
 
-	// Get user's team ID
-	teamID, err := s.getUserTeamID(ctx, userID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "no active team found", "not_found")
+	teamID, ok := s.resolveTeamID(ctx, w, r, userID)
+	if !ok {
 		return
 	}
 
 	// Get all team members with user info
 	entMembers, err := s.db.Client.TeamMember.Query().
-		Where(teammember.TeamID(teamID)).
+		Where(teammember.TeamID(teamID), teammember.Status("active")).
 		WithUser().
 		Order(ent.Desc(teammember.FieldRole), ent.Asc(teammember.FieldJoinedAt)).
 		All(ctx)
@@ -185,10 +173,8 @@ func (s *Server) HandleInviteTeamMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get user's team ID
-	teamID, err := s.getUserTeamID(ctx, userID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "no active team found", "not_found")
+	teamID, ok := s.resolveTeamID(ctx, w, r, userID)
+	if !ok {
 		return
 	}
 
@@ -615,10 +601,8 @@ func (s *Server) HandleRemoveTeamMember(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get user's team ID
-	teamID, err := s.getUserTeamID(ctx, userID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "no active team found", "not_found")
+	teamID, ok := s.resolveTeamID(ctx, w, r, userID)
+	if !ok {
 		return
 	}
 
@@ -694,10 +678,8 @@ func (s *Server) HandleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user's team ID
-	teamID, err := s.getUserTeamID(ctx, userID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "no active team found", "not_found")
+	teamID, ok := s.resolveTeamID(ctx, w, r, userID)
+	if !ok {
 		return
 	}
 
@@ -724,13 +706,7 @@ func (s *Server) HandleUpdateTeam(w http.ResponseWriter, r *http.Request) {
 		zap.Int64("updated_by", userID),
 	)
 
-	respondJSON(w, http.StatusOK, Team{
-		ID:        entTeam.ID,
-		Name:      entTeam.Name,
-		OwnerID:   entTeam.OwnerID,
-		CreatedAt: entTeam.CreatedAt,
-		UpdatedAt: entTeam.UpdatedAt,
-	})
+	respondJSON(w, http.StatusOK, toAPITeam(entTeam))
 }
 
 // TeamMembership represents a team the user is a member of but doesn't own
@@ -787,10 +763,14 @@ func (s *Server) HandleGetTeamSentInvitations(w http.ResponseWriter, r *http.Req
 
 	userID := r.Context().Value(UserIDKey).(int64)
 
-	// Get user's team ID
-	teamID, err := s.getUserTeamID(ctx, userID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "no active team found", "not_found")
+	teamID, ok := s.resolveTeamID(ctx, w, r, userID)
+	if !ok {
+		return
+	}
+
+	// Invitee emails are only visible to people who manage the team.
+	if role, err := s.getUserTeamRole(ctx, userID, teamID); err != nil || !isTeamManager(role) {
+		respondJSON(w, http.StatusOK, []SentInvitation{})
 		return
 	}
 
@@ -821,7 +801,8 @@ func (s *Server) HandleGetTeamSentInvitations(w http.ResponseWriter, r *http.Req
 	respondJSON(w, http.StatusOK, invitations)
 }
 
-// HandleSearchUsers searches for users not already in the team
+// HandleSearchUsers searches for users not already in the team: partial
+// matches among the caller's existing collaborators, exact email otherwise.
 func (s *Server) HandleSearchUsers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -834,10 +815,8 @@ func (s *Server) HandleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user's team ID
-	teamID, err := s.getUserTeamID(ctx, userID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "no active team found", "not_found")
+	teamID, ok := s.resolveTeamID(ctx, w, r, userID)
+	if !ok {
 		return
 	}
 
@@ -848,14 +827,30 @@ func (s *Server) HandleSearchUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Search users by email or name, excluding current team members
+	// Only people the caller already works with (active members of any of
+	// the caller's teams) are matched by partial name or email. Anyone else
+	// is found only by their exact email address, so the directory of all
+	// registered users is never exposed.
+	sharesTeamWithCaller := user.HasTeamMembershipsWith(
+		teammember.Status("active"),
+		teammember.HasTeamWith(team.HasMembersWith(
+			teammember.UserID(userID),
+			teammember.Status("active"),
+		)),
+	)
 	users, err := s.db.Client.User.Query().
 		Where(
 			user.Or(
-				user.EmailContainsFold(q),
-				user.NameContainsFold(q),
-				user.FirstNameContainsFold(q),
-				user.LastNameContainsFold(q),
+				user.And(
+					sharesTeamWithCaller,
+					user.Or(
+						user.EmailContainsFold(q),
+						user.NameContainsFold(q),
+						user.FirstNameContainsFold(q),
+						user.LastNameContainsFold(q),
+					),
+				),
+				user.EmailEqualFold(q),
 			),
 			user.Not(user.HasTeamMembershipsWith(
 				teammember.TeamID(teamID),
@@ -899,10 +894,8 @@ func (s *Server) HandleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user's team ID
-	teamID, err := s.getUserTeamID(ctx, userID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "no active team found", "not_found")
+	teamID, ok := s.resolveTeamID(ctx, w, r, userID)
+	if !ok {
 		return
 	}
 
@@ -982,12 +975,30 @@ func (s *Server) HandleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions
 
+// getUserTeamID returns the user's home team: the oldest team they own, or
+// failing that the first team they joined. Users can belong to several teams,
+// so the ordering must be deterministic.
 func (s *Server) getUserTeamID(ctx context.Context, userID int64) (int64, error) {
 	tm, err := s.db.Client.TeamMember.Query().
 		Where(
 			teammember.UserID(userID),
 			teammember.Status("active"),
+			teammember.HasTeamWith(team.OwnerID(userID)),
 		).
+		Order(ent.Asc(teammember.FieldTeamID)).
+		First(ctx)
+	if err == nil {
+		return tm.TeamID, nil
+	}
+	if !ent.IsNotFound(err) {
+		return 0, err
+	}
+	tm, err = s.db.Client.TeamMember.Query().
+		Where(
+			teammember.UserID(userID),
+			teammember.Status("active"),
+		).
+		Order(ent.Asc(teammember.FieldJoinedAt), ent.Asc(teammember.FieldID)).
 		First(ctx)
 	if err != nil {
 		return 0, err
@@ -1047,13 +1058,13 @@ func generateTeamInviteCode() (string, error) {
 
 // TokenInvitationResponse is returned by the token lookup endpoint
 type TokenInvitationResponse struct {
-	InvitationID int64  `json:"invitation_id"`
-	TeamName     string `json:"team_name"`
-	InviterName  string `json:"inviter_name"`
-	InviteeEmail string `json:"invitee_email"`
-	Status       string `json:"status"`
-	RequiresSignup bool `json:"requires_signup"`
-	InviteCode   string `json:"invite_code,omitempty"`
+	InvitationID   int64  `json:"invitation_id"`
+	TeamName       string `json:"team_name"`
+	InviterName    string `json:"inviter_name"`
+	InviteeEmail   string `json:"invitee_email"`
+	Status         string `json:"status"`
+	RequiresSignup bool   `json:"requires_signup"`
+	InviteCode     string `json:"invite_code,omitempty"`
 }
 
 // HandleGetInvitationByToken returns invitation info for a given acceptance token (public, no auth required)
@@ -1097,9 +1108,9 @@ func (s *Server) HandleGetInvitationByToken(w http.ResponseWriter, r *http.Reque
 
 	// Build response
 	resp := TokenInvitationResponse{
-		InvitationID: entInv.ID,
-		InviteeEmail: entInv.InviteeEmail,
-		Status:       entInv.Status,
+		InvitationID:   entInv.ID,
+		InviteeEmail:   entInv.InviteeEmail,
+		Status:         entInv.Status,
 		RequiresSignup: entInv.InviteeID == nil,
 	}
 
@@ -1245,12 +1256,14 @@ type Collaborator struct {
 	UserID   int64   `json:"user_id"`
 	Email    string  `json:"email"`
 	UserName *string `json:"user_name,omitempty"`
+	TeamID   int64   `json:"team_id"`
+	TeamName string  `json:"team_name"`
 }
 
-// HandleGetCollaborators returns the deduplicated set of users who share at
-// least one active team with the current user. This is the candidate list for
-// adding members to a project: collaboration is allowed across any shared team,
-// not just the team that owns the project.
+// HandleGetCollaborators returns the users who share an active team with the
+// current user, one row per (team, user) so the UI can group them by team. A
+// person in two of the caller's teams appears under both. Members of teams the
+// caller does not belong to are never included.
 func (s *Server) HandleGetCollaborators(w http.ResponseWriter, r *http.Request) {
 	userID, ok := GetUserID(r)
 	if !ok {
@@ -1262,18 +1275,16 @@ func (s *Server) HandleGetCollaborators(w http.ResponseWriter, r *http.Request) 
 	defer cancel()
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.email, u.name, u.first_name, u.last_name
-		FROM users u
-		WHERE u.id != $1
-		  AND u.id IN (
-		    SELECT tm_other.user_id
-		    FROM team_members tm_other
-		    JOIN team_members tm_self ON tm_other.team_id = tm_self.team_id
-		    WHERE tm_self.user_id = $1
-		      AND tm_self.status  = 'active'
-		      AND tm_other.status = 'active'
-		  )
-		ORDER BY LOWER(u.email)
+		SELECT t.id, t.name, u.id, u.email, u.name, u.first_name, u.last_name
+		FROM team_members tm_self
+		JOIN teams t ON t.id = tm_self.team_id
+		JOIN team_members tm_other ON tm_other.team_id = tm_self.team_id
+		JOIN users u ON u.id = tm_other.user_id
+		WHERE tm_self.user_id = $1
+		  AND tm_self.status  = 'active'
+		  AND tm_other.status = 'active'
+		  AND u.id != $1
+		ORDER BY LOWER(t.name), t.id, LOWER(u.email)
 	`, userID)
 	if err != nil {
 		s.logger.Error("Failed to query collaborators", zap.Error(err), zap.Int64("user_id", userID))
@@ -1285,22 +1296,25 @@ func (s *Server) HandleGetCollaborators(w http.ResponseWriter, r *http.Request) 
 	collaborators := make([]Collaborator, 0)
 	for rows.Next() {
 		var (
+			teamID    int64
+			teamName  string
 			id        int64
 			email     string
 			name      *string
 			firstName *string
 			lastName  *string
 		)
-		if err := rows.Scan(&id, &email, &name, &firstName, &lastName); err != nil {
+		if err := rows.Scan(&teamID, &teamName, &id, &email, &name, &firstName, &lastName); err != nil {
 			s.logger.Error("Failed to scan collaborator row", zap.Error(err))
 			http.Error(w, "Failed to fetch collaborators", http.StatusInternalServerError)
 			return
 		}
-		display := composeDisplayName(name, firstName, lastName)
 		collaborators = append(collaborators, Collaborator{
 			UserID:   id,
 			Email:    email,
-			UserName: display,
+			UserName: composeDisplayName(name, firstName, lastName),
+			TeamID:   teamID,
+			TeamName: teamName,
 		})
 	}
 	if err := rows.Err(); err != nil {

@@ -19,18 +19,41 @@ type Project struct {
 	OwnerID     int64     `json:"owner_id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description,omitempty"`
+	TeamID      *int64    `json:"team_id,omitempty"`
+	TeamName    *string   `json:"team_name,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// toAPIProject converts an ent project to its API representation. The team
+// name is only populated when the team edge was eagerly loaded.
+func toAPIProject(ep *ent.Project) Project {
+	p := Project{
+		ID:          ep.ID,
+		OwnerID:     ep.OwnerID,
+		Name:        ep.Name,
+		Description: ep.Description,
+		TeamID:      ep.TeamID,
+		CreatedAt:   ep.CreatedAt,
+		UpdatedAt:   ep.UpdatedAt,
+	}
+	if ep.Edges.Team != nil {
+		name := ep.Edges.Team.Name
+		p.TeamName = &name
+	}
+	return p
 }
 
 type CreateProjectRequest struct {
 	Name        string  `json:"name"`
 	Description *string `json:"description,omitempty"`
+	TeamID      *int64  `json:"team_id,omitempty"`
 }
 
 type UpdateProjectRequest struct {
 	Name        *string `json:"name,omitempty"`
 	Description *string `json:"description,omitempty"`
+	TeamID      *int64  `json:"team_id,omitempty"`
 }
 
 // HandleListProjects returns all projects the authenticated user has access to
@@ -43,6 +66,7 @@ func (s *Server) HandleListProjects(w http.ResponseWriter, r *http.Request) {
 	// Query projects where user is a member using Ent
 	entProjects, err := s.db.Client.Project.Query().
 		Where(project.HasMembersWith(projectmember.UserID(userID))).
+		WithTeam().
 		Order(ent.Desc(project.FieldUpdatedAt)).
 		All(ctx)
 	if err != nil {
@@ -53,14 +77,7 @@ func (s *Server) HandleListProjects(w http.ResponseWriter, r *http.Request) {
 	// Convert Ent projects to API projects
 	projects := make([]Project, 0, len(entProjects))
 	for _, ep := range entProjects {
-		projects = append(projects, Project{
-			ID:          ep.ID,
-			OwnerID:     ep.OwnerID,
-			Name:        ep.Name,
-			Description: ep.Description,
-			CreatedAt:   ep.CreatedAt,
-			UpdatedAt:   ep.UpdatedAt,
-		})
+		projects = append(projects, toAPIProject(ep))
 	}
 
 	respondJSON(w, http.StatusOK, projects)
@@ -84,6 +101,7 @@ func (s *Server) HandleGetProject(w http.ResponseWriter, r *http.Request) {
 			project.ID(projectID),
 			project.HasMembersWith(projectmember.UserID(userID)),
 		).
+		WithTeam().
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -95,14 +113,7 @@ func (s *Server) HandleGetProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to API project
-	p := Project{
-		ID:          ep.ID,
-		OwnerID:     ep.OwnerID,
-		Name:        ep.Name,
-		Description: ep.Description,
-		CreatedAt:   ep.CreatedAt,
-		UpdatedAt:   ep.UpdatedAt,
-	}
+	p := toAPIProject(ep)
 
 	respondJSON(w, http.StatusOK, p)
 }
@@ -114,17 +125,28 @@ func (s *Server) HandleCreateProject(w http.ResponseWriter, r *http.Request) {
 
 	userID := r.Context().Value(UserIDKey).(int64)
 
-	// Get user's team ID
-	teamID, err := s.getUserTeamID(ctx, userID)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "failed to get user team", "internal_error")
-		return
-	}
-
 	var req CreateProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_input")
 		return
+	}
+
+	// Place the project in the requested team (caller must belong to it),
+	// otherwise in the caller's home team.
+	var teamID int64
+	if req.TeamID != nil {
+		if _, err := s.getUserTeamRole(ctx, userID, *req.TeamID); err != nil {
+			respondError(w, http.StatusForbidden, "you are not a member of that team", "forbidden")
+			return
+		}
+		teamID = *req.TeamID
+	} else {
+		homeTeamID, err := s.getUserTeamID(ctx, userID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to get user team", "internal_error")
+			return
+		}
+		teamID = homeTeamID
 	}
 
 	// Validation
@@ -202,14 +224,7 @@ func (s *Server) HandleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to API project
-	p := Project{
-		ID:          newProject.ID,
-		OwnerID:     newProject.OwnerID,
-		Name:        newProject.Name,
-		Description: newProject.Description,
-		CreatedAt:   newProject.CreatedAt,
-		UpdatedAt:   newProject.UpdatedAt,
-	}
+	p := toAPIProject(newProject)
 
 	respondJSON(w, http.StatusCreated, p)
 }
@@ -266,8 +281,25 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Moving a project to another team is reserved for the project owner, who
+	// must belong to the target team.
+	if req.TeamID != nil {
+		if projectMember.Role != "owner" {
+			respondError(w, http.StatusForbidden, "only the project owner can change the project's team", "forbidden")
+			return
+		}
+		if _, err := s.getUserTeamRole(ctx, userID, *req.TeamID); err != nil {
+			respondError(w, http.StatusForbidden, "you are not a member of that team", "forbidden")
+			return
+		}
+	}
+
 	// Build update using Ent
 	updateBuilder := s.db.Client.Project.UpdateOneID(projectID)
+
+	if req.TeamID != nil {
+		updateBuilder.SetTeamID(*req.TeamID)
+	}
 
 	if req.Name != nil {
 		updateBuilder.SetName(*req.Name)
@@ -288,14 +320,7 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to API project
-	p := Project{
-		ID:          updatedProject.ID,
-		OwnerID:     updatedProject.OwnerID,
-		Name:        updatedProject.Name,
-		Description: updatedProject.Description,
-		CreatedAt:   updatedProject.CreatedAt,
-		UpdatedAt:   updatedProject.UpdatedAt,
-	}
+	p := toAPIProject(updatedProject)
 
 	respondJSON(w, http.StatusOK, p)
 }
