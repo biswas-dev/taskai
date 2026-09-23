@@ -10,12 +10,54 @@
 set -e
 
 DOMAIN="${1:?Usage: ensure-zero-downtime.sh <domain>}"
-CONF="/etc/nginx/sites-available/$DOMAIN"
+
+# Find the vhost that actually serves this domain rather than assuming it is
+# named after it. A file at sites-available/<domain> may be stale or never have
+# been enabled, in which case editing it changes nothing that nginx serves —
+# `nginx -t` still passes and the reload still succeeds, so the edit looks
+# applied while the site keeps running the old configuration.
+find_vhost() {
+    local domain_re
+    domain_re=$(printf '%s' "$DOMAIN" | sed 's/\./\\./g')
+    local f target
+    for f in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
+        [ -e "$f" ] || continue
+        # A server_name directive listing this domain as a whole token. Anchored
+        # on start-of-line, `;` or `{` because a directive need not begin a line,
+        # and the domain must be space-delimited so `staging.taskai.cc` does not
+        # match a lookup for `taskai.cc`.
+        if grep -qE "(^|[;{])[[:space:]]*server_name([[:space:]]+[^;]*)?[[:space:]]${domain_re}[[:space:];]" "$f"; then
+            target=$(readlink -f "$f")
+            echo "$target"
+        fi
+    done
+}
+
+MATCHES=$(find_vhost | awk '!seen[$0]++')
+MATCH_COUNT=$(printf '%s' "$MATCHES" | grep -c . || true)
+
+if [ "$MATCH_COUNT" -gt 1 ]; then
+    echo "Note: $DOMAIN is declared by more than one enabled vhost:"
+    printf '  %s\n' $MATCHES
+    echo "Patching the first; nginx serves the first match for a given server_name."
+fi
+
+if [ "$MATCH_COUNT" -ge 1 ]; then
+    CONF=$(printf '%s' "$MATCHES" | head -1)
+else
+    CONF="/etc/nginx/sites-available/$DOMAIN"
+    if [ -f "$CONF" ]; then
+        echo "WARNING: no ENABLED vhost declares server_name $DOMAIN." >&2
+        echo "WARNING: falling back to $CONF, which nginx may not be serving." >&2
+    fi
+fi
 
 if [ ! -f "$CONF" ]; then
-    echo "No nginx config found at $CONF, skipping"
+    echo "No nginx config found for $DOMAIN, skipping"
     exit 0
 fi
+
+echo "Configuring vhost for $DOMAIN: $CONF"
 
 CHANGED=0
 
