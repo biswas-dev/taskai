@@ -1,0 +1,327 @@
+<task-notification>
+<task-id>btdc2zoad</task-id>
+<tool-use-id>toolu_0172YXCoVBZF3qx3DT1SrruF</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/btdc2zoad.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch staging CI run to completion" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcnf5jph7</task-id>
+<tool-use-id>toolu_01PZobY9g37xfj6cZT1fKFgm</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bcnf5jph7.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch production deploy and verify version" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Ok, this seems to work. However, big issue. Say I created TickrAPI and put THiva in it. However, I still see THiva as being to add in Elastio - BlueStack. THis is wrong. Each project belongs to one team. So if it belongs to Elastio, then other teams and their members cannot be shows. We can have one person belong to more than one team if we want them to access two separate projects in separate teams[Image #1]
+
+---
+
+ALso, fix a few other things while you're there. One seems like a bug and one is a feature. While you’re at it - one more bug is that images/screenshots are not being uploaded. I checked the cloudinary api key and account is fine but just Taskai isn’t allowing to upload screenshots or any media - this is what Nakul says. CHeck if me ancoo2kewl@gmail.com works , I have a key as well. Finally, I need wiki pages to have public or protected, and if it is protected, you can add individual users from the team only to share with
+
+---
+
+please also add paste to upload etc. make sure we work. Also one other thing, I see a lot of alerts like adding team member, moving all of them are JS popus, make them native please so it looks better UI
+
+---
+
+<task-notification>
+<task-id>ae3fc63a249eb4483</task-id>
+<tool-use-id>toolu_01SWFHHoQhpys3oGYC62YS3g</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/ae3fc63a249eb4483.output</output-file>
+<status>completed</status>
+<summary>Agent "Replace native confirm/alert popups" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All the native `confirm`/`alert` popups in the 11 files you listed now use `useDialog()`. Type-check passes, all 564 Vitest tests pass across 37 files, and lint reports 0 errors (just the 3 old warnings). Grepping those files finds no native `confirm(`/`alert(` left. Nothing is committed.
+
+**One thing you should know:** to check whether some test stderr noise was already there before my changes, I briefly ran `git stash` / `git stash pop` on the whole working tree. That tree includes the other people's uncommitted work (WikiEditor.tsx, TaskDetail.tsx, ImagePickerModal.tsx, and the new `useMediaPasteUpload.ts` and `upload.ts`). The pop went through cleanly, every file is back in `git status`, and the stash list is empty. But if anyone saved a file during those few seconds, it's worth them checking their changes. (The stderr noise was already there before my changes.)
+
+**Components changed** (all under `/Users/anshumanbiswas/play/taskai/web/src/`):
+- `routes/Settings.tsx`: 3 confirms (Remove Figma token, Remove Cloudinary credentials, Delete API key).
+- `routes/Wiki.tsx`: delete-page confirm, and 2 alerts → `notify(..., 'error')`.
+- `routes/ProjectSettings.tsx`: Delete swim lane, Remove member.
+- `routes/Sprints.tsx`, `routes/Tags.tsx`, `routes/SprintsAndTags.tsx`: delete confirms.
+- `routes/ProjectDetail.tsx`: 2 alerts → error toasts.
+- `routes/Admin.tsx`: Remove email provider, Overwrite all data, Disconnect Google Drive, Delete backup.
+- `components/WikiContent.tsx`: delete confirm and 3 alerts. `dialog` is now in the dependency lists of the three `useCallback` handlers that use it.
+- `components/WikiAnnotationSidebar.tsx`: `useDialog()` is called inside both `AnnotationCard` and `CommentThread`.
+- `components/TeamsPanel.tsx`: Delete, Leave and Remove are marked destructive (`danger`); Move is not.
+
+Where a message started with "Are you sure", I rewrote it as a plain statement (e.g. "This sprint will be permanently deleted."). I also added one clause to the API key message: "Anything using it will lose access."
+
+**Tests:**
+- New `state/DialogContext.test.tsx` covers four cases: confirm returns true on the confirm click, false on Cancel, false on Escape, and an error `notify` shows a toast with role `alert`.
+- `components/TeamsPanel.test.tsx`, `routes/Sprints.test.tsx`, `routes/SprintsAndTags.test.tsx` and `routes/Tags.test.tsx` now render inside `&lt;DialogProvider&gt;` and click the buttons in the real in-app dialog. The `window.confirm` spies are gone. TeamsPanel checks the move-member message and that nothing happens until you confirm. Sprints checks both Delete and Cancel.
+
+I didn't touch WikiEditor.tsx, TaskDetail.tsx, `lib/api.ts` or anything under `api/`. WikiEditor.tsx still has 5 native `alert` calls.</result>
+<usage><subagent_tokens>83886</subagent_tokens><tool_uses>16</tool_uses><duration_ms>116549</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>ad7897904604a1822</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/ad7897904604a1822.output</output-file>
+<status>completed</status>
+<summary>Agent "Map all wiki page access paths" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I've mapped every wiki read and write path. Wiki access is always checked per handler, and the only test is "is the user a project member". There's no central page-level helper, and one of the three existing checks is shared by only the annotation handlers. I also found several existing authorization gaps (section 8) that you'll want to close in the same change.
+
+All paths below are relative to `/Users/anshumanbiswas/play/taskai`.
+
+---
+
+## 1. Database schema
+
+**Migration folders.** The two folders are `api/internal/db/migrations/` (SQLite) and `api/internal/db/migrations/postgres/`. There is no top-level `migrations/` folder.
+- **Latest file is `068_wiki_page_hierarchy.sql` in both.**
+- The numbering between them is different:
+  - SQLite has no `052` or `056` files.
+  - SQLite `064` is milestones and `065` is tasks_updated_by.
+  - Postgres `064` is `wiki_vector_embeddings`, then `065` milestones and `066` tasks_updated_by.
+- The runner (`api/internal/db/db.go:211-290`) records each migration by its full filename, not its number. So `069_wiki_page_visibility.sql` would be the next free name in both folders.
+
+**Tables**
+
+| Table | Created in | Key columns / notes |
+|---|---|---|
+| `wiki_pages` | 026 | `id, project_id, title, slug, created_by, created_at, updated_at`, `UNIQUE(project_id, slug)`. Later additions: `content` (029), `updated_by` (047), `agent_name` (061, raw SQL only, not in Ent), `parent_id` and `position` (068) |
+| `yjs_updates` | 026 | `page_id, update_data, created_by` (Yjs change log, append-only) |
+| `page_versions` | 026 | `page_id, version_number, yjs_state` (Yjs snapshots) |
+| `wiki_blocks` | 026 | `page_id, block_type, level, headings_path, canonical_json, plain_text, position`. Search columns: `search_text` (SQLite), `search_vector` tsvector (Postgres). SQLite also has an FTS5 table `wiki_blocks_fts` plus triggers |
+| wiki_blocks vectors (Postgres only) | pg 064 | adds `embedding vector(384)`, `embedding_model`, `embedded_at`, plus an HNSW index |
+| `wiki_page_attachments` | 028 | `wiki_page_id, project_id, user_id, filename, alt_name, file_type, cloudinary_url, ...` |
+| `wiki_page_versions` | 047 | `wiki_page_id, version_number, content, content_hash, created_by`. Later: `agent_name` (061), `content_encoding` and `content_compressed` (067) |
+| `graph_nodes` / `graph_edges` | 048 | `graph_nodes(project_id, entity_type IN ('wiki','task'), entity_id, title)` stores a copy of the page title. It has **no foreign key to `wiki_pages`**, so rows are left behind when a page is deleted |
+| `wiki_annotations` / `wiki_annotation_comments` | 051 | annotations: `wiki_page_id, author_id, offsets, selected_text, color, resolved`; comments: `annotation_id, author_id, parent_comment_id, content, resolved` |
+| `wiki_page_watchers` | 062 | `page_id, user_id` |
+| `project_activity` | 062 | `entity_type` can be `'wiki_page'`, with a copy of the title in `entity_title`. No code writes wiki rows to it today |
+| `notifications` | pg 053 | `entity_type` can be `annotation_comment` or `wiki_annotation` |
+
+**Ent schema files** (`api/ent/schema/`)
+- `wikipage.go`: fields at lines 18-30, edges at 35-44. A new `visibility` field goes here, then `go generate`.
+- Also: `wikipageversion.go`, `wikiblock.go`, `yjsupdate.go`, `pageversion.go`.
+- Annotations, attachments, watchers and graph tables have no Ent schema; they are raw SQL only.
+- The table list in `api/cmd/migrate-to-postgres/main.go:87-91` also needs any new tables.
+
+---
+
+## 2. HTTP routes
+
+- All wiki routes live in the `JWTAuth` group of `api/cmd/api/main.go` (lines 436-730). That middleware accepts `Bearer &lt;jwt&gt;` or `ApiKey &lt;key&gt;` (`middleware.go:34`).
+- **There are no public or unauthenticated wiki routes.**
+- **`openapi_test.go` `buildTestRouter` (line 34) has no wiki routes at all**, and `api/openapi.yaml` has 0 wiki paths.
+
+"member" below means `checkProjectAccess(userID, page.ProjectID)`, a `project_members` lookup at `task_handlers.go:1505`.
+
+| Route (main.go line) | Handler (file:line) | Current authorization |
+|---|---|---|
+| GET `/projects/{projectId}/wiki/pages` (467) | `HandleListWikiPages` wiki_handlers.go:86 | member(projectId) at :98, then returns **every** page (:109), plus a raw `agent_name` query (:127) |
+| POST `/projects/{projectId}/wiki/pages` (468) | `HandleCreateWikiPage` :170 | member at :182; parent checked by `validateWikiParent` (wiki_hierarchy.go:130) |
+| GET `/wiki/pages/{pageId}` (469) | `HandleGetWikiPage` :263 | member at :295; response includes content |
+| PATCH `/wiki/pages/{pageId}` (470), used for rename, move (`parent_id`) and reorder (`position`) | `HandleUpdateWikiPage` :317 | member at :342 |
+| DELETE `/wiki/pages/{pageId}` (471) | `HandleDeleteWikiPage` :1121 | member at :1146; child pages move up to the parent (:1157) |
+| GET `/wiki/pages/{pageId}/content` (472) | `HandleGetWikiPageContent` :451 | member at :480; ETag caching; the client polls it every 15s |
+| PUT `/wiki/pages/{pageId}/content` (473) | `HandleUpdateWikiPageContent` :515 | member at :540; then `maybeCreateVersion` (:600) and `syncGraphLinks` (:590) |
+| GET `.../versions` (474) | `HandleListWikiPageVersions` :784 | member at :807 |
+| GET `.../versions/{n}` (475) | `HandleGetWikiPageVersion` :851 | member at :879 |
+| POST `.../versions/{n}/restore` (476) | `HandleRestoreWikiPageVersion` :934 | member at :962 |
+| POST `.../pdf` (477) | `HandleStartWikiPagePDF` wiki_download_handler.go:220 | `fetchWikiPageWithAccess` (:479, member) |
+| GET `.../pdf/{jobId}` (478) | `HandleGetWikiPagePDFJob` :250 | **No user check.** The job ID is the only secret, and `pageId` in the URL is ignored |
+| GET `.../markdown` (479) | `HandleWikiPageMarkdown` :284 | `fetchWikiPageWithAccess` |
+| POST `/wiki/preview` (480) | `HandleWikiPreview` wiki_preview_handler.go:106 | none needed: it renders whatever content is posted and reads no page |
+| GET `/wiki/collab` (483) | `HandleWikiWebSocket` wiki_ws_handlers.go:53 | see section 3 |
+| GET `.../attachments` (486) | `HandleListWikiPageAttachments` cloudinary_handlers.go:1143 | **No access check** |
+| POST `.../attachments` (487) | `HandleCreateWikiPageAttachment` :1188 | **No access check** (only looks up `project_id`) |
+| DELETE `/wiki/attachments/{id}` (488) | `HandleDeleteWikiPageAttachment` :1279 | uploader only (`user_id` must match, :1294) |
+| GET `/settings/cloudinary/signature?page_id=` (646) | `HandleGetUploadSignature` :556, via `resolveWikiPageUploadTarget` :434 | **No membership check** |
+| POST `/wiki/search` (491), modes keyword / fts / semantic / hybrid | `HandleSearchWiki` wiki_search_handlers.go:50; `searchWikiBlocks` :134, `searchWikiFTS` :220, `searchWikiSemantic` :264, `searchWikiHybrid` :323 | `getUserAccessibleProjects` (:597) intersected with the request by `resolveProjectIDs` (:419); SQL filter `wp.project_id IN (...)` from `buildProjectFilterFromIDs` :444 |
+| GET `/wiki/autocomplete` (492) | `HandleAutocompletePages` :507 | **Flaw:** when `project_id` is given, it filters by it directly (:558) without intersecting with the user's projects |
+| POST `/wiki/reindex` (493) | `HandleReindexWiki` wiki_indexing.go:305 | Any logged-in user can trigger a full re-index of all pages. Nothing is returned, so no data leaks |
+| GET / POST `.../annotations` (496-497) | wiki_annotation_handlers.go:86 / :170 | `checkWikiPageAccess` (:58, member) |
+| PATCH / DELETE `/wiki/annotations/{id}` (498-499) | :287 / :247 | `checkWikiPageAccess` (:315 / :268); delete also requires the author |
+| POST `/wiki/annotations/{id}/comments` (500) | :355 | `checkWikiPageAccess` at :392, then `notifyAnnotationComment` (:426) |
+| PATCH / DELETE `/wiki/annotation-comments/{id}` (501-502) | :433 / :502 | author only; **no page access check** |
+| GET / POST `/wiki/pages/{pageId}/watchers` (521-522) | watcher_handlers.go:148 / :199 | member via `SELECT project_id FROM wiki_pages` (:161 / :211) |
+| GET `/projects/{id}/graph` (505) | `HandleGetProjectGraph` graph_handlers.go:183 | member; returns all `graph_nodes` titles for the project (:207) |
+| POST `/search` (508) | `HandleGlobalSearch` search_handlers.go:137 | `getUserAccessibleProjects` (:169). Wiki part: `searchWikiSQLite` :349 and `searchWikiPostgres` :390 (queries at :418 and :433). **Flaw:** `req.ProjectID` is used without checking membership (:367, :398) |
+| GET `/images?project_id=` (663) | `HandleListImages` cloudinary_handlers.go:790 | member; the query combines task and **wiki_page_attachments** images (:836, :857) |
+| GET `/assets` (670) | `HandleListAssets` :1002 | member; task attachments only, no wiki |
+
+**Background workers** (started at main.go:735-737)
+- `StartSnapshotWorker` (wiki_snapshot.go:17): turns `yjs_updates` into `page_versions`.
+- `OptimizeWikiPageVersionStorage` (wiki_handlers.go:1029).
+- `StartIndexingWorker` (wiki_indexing.go:21): indexes pages updated in the last 3 minutes via `indexPage` :91, writing `wiki_blocks` and embeddings (`embedBlocks` :249).
+
+---
+
+## 3. Yjs / WebSocket collaboration
+
+- `HandleWikiWebSocket` (wiki_ws_handlers.go:53):
+  - It takes the user from the request context, falling back to a `?token=` JWT (:57-76).
+  - It takes the page from `?page_id=` (:79).
+  - Authorization is a **single project-membership check at connect time** (:106). Nothing is re-checked per message or when access is revoked.
+  - `CheckOrigin` always returns true (:25).
+- Message handling:
+  - `sync_request` (:211) reads all `yjs_updates` for `client.PageID`.
+  - `update` (:262) writes to `yjs_updates` and broadcasts to the room `page:&lt;id&gt;`.
+  - `awareness` messages are broadcast without being stored.
+  - The room manager is `api/internal/collab/manager.go`.
+- **In practice this path is dead:**
+  - The route sits inside `JWTAuth`, which requires an `Authorization` header, so the `?token=` fallback is never reached.
+  - The frontend (`web/src/components/WikiEditor.tsx:1255`) uses y-websocket at `/api/wiki/collab/wiki-page-{id}?token=`. That path doesn't match the route, and it sends no `page_id`.
+  - y-websocket's binary protocol doesn't match the server's JSON messages either.
+  - Real saves go through PUT `/content`. Still, add the visibility check here too.
+- The Yjs processor (`api/internal/yjs-processor/index.js`, Express `/apply-updates` and `/extract-blocks`) is stateless and has no database access. It is called only from `api/internal/yjs/client.go`, which the indexing and snapshot workers use.
+
+---
+
+## 4. MCP server
+
+- **It calls the HTTP API with the user's own API key and has no database access.**
+- The server (`mcp/src/index.ts:922-1010`) reads the `x-api-key` header, builds `new TaskAIClient(TASKAI_API_URL, apiKey)`, and sends `Authorization: ApiKey &lt;key&gt;` plus `X-Agent-Name` (`mcp/src/api.ts:185-193`). An optional `x-project-id` header only sets the default project scope.
+- Wiki tools are registered at `index.ts:447-771`: search_wiki, reindex_wiki, list_wiki_pages, get_wiki_page, get_wiki_page_content, the annotation and comment CRUD tools, create_wiki_page, update_wiki_page_content, update_wiki_page_title, move_wiki_page, download_wiki_pdf, download_wiki_markdown, autocomplete_wiki_pages.
+- They call client methods at `api.ts:306-545`.
+- **So server-side visibility checks automatically cover MCP.**
+
+---
+
+## 5. Other places that return wiki titles or content
+
+- **Global search**: search_handlers.go:341-500 (above). Frontend: `web/src/components/CommandPalette.tsx:102,230-237`.
+- **User profile activity** (GET `/users/{userId}/activity`, main.go:729): `fetchUserActivity` at user_profile_handlers.go:150. It returns wiki page titles for created pages (~:194), annotation comments (~:217), annotations (~:267) and Yjs edits (~:292). The only filter is projects shared by viewer and target (`sharedProjectsSubquery` :141). **Page titles leak here.**
+- **Knowledge graph**:
+  - `syncGraphLinks` (graph_handlers.go:96) reads any `[[wiki:ID]]` target page (:118) and copies its title into `graph_nodes` under the target's project.
+  - It is called from wiki content save (wiki_handlers.go:590) and task create/update (task_handlers.go:797, :1205).
+  - Titles are never refreshed on rename.
+  - Frontend: `web/src/routes/KnowledgeGraphPage.tsx:69,167`; task-side wiki links in `web/src/routes/TaskDetail.tsx:884`.
+- **Notifications**:
+  - `notifyAnnotationComment` (notification_handlers.go:320) uses the link `/app/projects/X/wiki?page=Y&amp;annotation=Z`.
+  - `notifyMentions` / `extractMentionedUserIDs` (:180) only require project membership. **A protected page could notify users who can't open it.**
+- **Admin analytics**: admin_analytics_handlers.go:138, 225, 304 count `wiki_page_created` / `wiki_page_updated` in `project_activity`. These counts only, no content, and nothing writes these rows today.
+- **Images picker**: `/images` includes wiki attachments. Frontend: `web/src/components/ImagePickerModal.tsx`.
+- **Drawings**: go-draw `/draw/*` needs no auth (`mcp/src/api.ts:349`), and wiki pages embed drawings by ID. This matters for public links.
+- Not wiki-related: the project activity feed, the dashboard and the watch-status handler (`HandleGetWatchStatus`, watcher_handlers.go:255, which isn't routed).
+
+---
+
+## 6. Frontend
+
+- **Active entry point:** `web/src/routes/ProjectDetail.tsx:11,525` lazy-loads `components/WikiContent.tsx` (the `?tab=wiki` tab).
+  - `web/src/routes/Wiki.tsx` is **not imported anywhere**, so it looks dead. `App.tsx:43,116` redirects `/projects/:id/wiki` to the tab.
+- **`WikiContent.tsx`**:
+  - Loads pages (:97) and annotations (:114).
+  - Create / move / delete handlers at :156, :173, :186.
+  - Breadcrumb header at :320-352.
+  - Renders `&lt;WikiPageTree&gt;` at :287 and `&lt;WikiEditor&gt;` at :360.
+- **`WikiPageTree.tsx`**:
+  - Per-page "⋯" menu (`menuFor` state :152, button :543-547, menu :559-600) with "Move to…", "Move to top level" and "Delete".
+  - **This is a natural place for a "Share / Visibility…" menu item.** A lock or globe icon next to the page title in the tree row would also fit here.
+  - Tree building lives in `lib/wikiTree.ts`.
+- **`WikiEditor.tsx`**:
+  - Page header at :1878-2040: inline title rename (:1074-1113, :1882, calls `updateWikiPage`), Edit/Preview toggle, Version history (:1993), Download menu PDF/MD (:2003-2021).
+  - **The main place for a "Share" button is this header, next to History and Download.**
+  - Preview endpoint :45; the dead Yjs socket :1237-1275.
+- **`WikiAnnotationSidebar.tsx`**: annotations UI.
+- **`web/src/lib/api.ts` wiki functions**:
+  - Types: `WikiPage` :143, `WikiPageAttachment` :80, annotations :266, versions :280, search result types :294 and :317.
+  - Attachment calls: :1830-1845. Images: :1859.
+  - `getWikiPages` :1975, `createWikiPage` :1979, `getWikiPage` :1986, `updateWikiPage` :1994, `deleteWikiPage` :2004.
+  - `getWikiPageContent` / `...IfChanged` :2010 / :2019, `updateWikiPageContent` :2033.
+  - Versions and restore: :2040-2048. PDF: :2055. Markdown: :2097.
+  - `searchWiki` :2110, `globalSearch` :2117, `getProjectGraph` :2131.
+  - Annotations and comments: :2136-2185.
+  - Upload flow: `lib/upload.ts:111`.
+
+---
+
+## 7. Is there a central access helper?
+
+**No.** There are three near-identical helpers, and they're only partly used:
+- `checkWikiPageAccess` (wiki_annotation_handlers.go:58): used by annotations only.
+- `fetchWikiPageWithAccess` (wiki_download_handler.go:479): used by PDF and Markdown only.
+- The wiki_handlers.go handlers each inline "load page, then `checkProjectAccess`".
+- There is also `userHasProjectAccess` (project_settings_handlers.go:531, owner or member), which wiki doesn't use.
+
+**Suggested chokepoints**
+1. **Single-page reads and writes.** Create one `s.authorizeWikiPage(ctx, userID, pageID, needWrite) (*ent.WikiPage, error)` that does membership plus the visibility / allow-list check. Replace these calls with it:
+   - wiki_handlers.go :295, :342, :480, :540, :807, :879, :962, :1146
+   - `checkWikiPageAccess` and `fetchWikiPageWithAccess`
+   - wiki_ws_handlers.go:106
+   - watcher_handlers.go:161, :211
+   - cloudinary_handlers.go :434, :1143, :1188
+   - the two annotation-comment handlers, which should resolve their page
+2. **List and search reads.** Create one SQL / Ent predicate, e.g. `visibleWikiPagesPredicate(userID)` / `wikiVisibilitySQL("wp", userID)`, to AND into:
+   - `HandleListWikiPages` :109 and :127
+   - `searchWikiBlocks`, `searchWikiFTS`, `searchWikiSemantic`, `searchWikiHybrid` (all join `wiki_pages wp`)
+   - `HandleAutocompletePages` :556
+   - `searchWikiSQLite` / `searchWikiPostgres` (search_handlers.go:349, :390)
+   - `fetchUserActivity`'s four wiki queries
+   - `HandleListImages` wiki union :836, :857
+   - `HandleGetProjectGraph` :207 (filter `entity_type='wiki'` nodes, and their edges)
+
+   Fixing `getUserAccessibleProjects` alone is not enough, because visibility is per page.
+3. **Side channels:**
+   - Make `extractMentionedUserIDs` / notifications respect the allow-list.
+   - Make `syncGraphLinks` skip or redact targets the editor can't see.
+   - Tie the PDF job to its user/page.
+   - Decide whether child pages inherit a protected parent's visibility (`loadWikiTree` in wiki_hierarchy.go:65 is where to handle that).
+4. **Public links** need a new unauthenticated route (e.g. `/public/wiki/{token}`) registered in the public section of main.go (~:233-435). It should reuse the render path in `wiki_preview_handler.go`, and account for go-draw embeds and Cloudinary URLs.
+5. **Tests.** Add the new routes to `buildTestRouter` and `openapi.yaml`, since today neither has any wiki routes.
+
+---
+
+## 8. Existing gaps to fix in the same change
+- Wiki attachment list and create, and the upload signature for `page_id`, have no membership check (cloudinary_handlers.go:1143, :1188, :434).
+- Autocomplete (:558) and global search (search_handlers.go:367, :398) trust `project_id` without checking membership.
+- The PDF job GET has no user or page check (wiki_download_handler.go:250).
+- Annotation comment update and delete only check the author (:433, :502).
+- `graph_nodes` keeps wiki titles after rename or delete (no foreign key).</result>
+<usage><subagent_tokens>141898</subagent_tokens><tool_uses>58</tool_uses><duration_ms>238307</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bexet1ur3</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bexet1ur3.output</output-file>
+<status>completed</status>
+<summary>Background command "Watch production deploy" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bcpsbxqnt</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bcpsbxqnt.output</output-file>
+<status>failed</status>
+<summary>Background command "Probe go-wiki raw HTML handling" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b2dj3qnk6</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/b2dj3qnk6.output</output-file>
+<status>failed</status>
+<summary>Background command "Run local API on Postgres" failed with exit code 1</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bpxifam89</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bpxifam89.output</output-file>
+<status>completed</status>
+<summary>Background command "Run local API on isolated Postgres" completed (exit code 0)</summary>
+</task-notification>

@@ -1,0 +1,55 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "a50d2cd56a28",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "api/cmd/api/main.go",
+    "api/ent/migrate/schema.go",
+    "api/ent/mutation.go",
+    "api/ent/runtime.go",
+    "api/ent/schema/wikipage.go",
+    "api/ent/wikipage.go",
+    "api/ent/wikipage/where.go",
+    "api/ent/wikipage/wikipage.go",
+    "api/ent/wikipage_create.go",
+    "api/ent/wikipage_update.go",
+    "api/go.mod",
+    "api/go.sum",
+    "api/internal/api/cloudinary_handlers.go",
+    "api/internal/api/cloudinary_handlers_test.go",
+    "api/internal/api/graph_handlers.go",
+    "api/internal/api/notification_handlers.go",
+    "api/internal/api/openapi_test.go",
+    "api/internal/api/search_handlers.go",
+    "api/internal/api/user_profile_handlers.go",
+    "api/internal/api/watcher_handlers.go",
+    "api/internal/api/wiki_annotation_handlers.go",
+    "api/internal/api/wiki_download_handler.go",
+    "api/internal/api/wiki_handlers.go",
+    "api/internal/api/wiki_preview_handler.go",
+    "api/internal/api/wiki_preview_handler_test.go",
+    "api/internal/api/wiki_search_handlers.go",
+    "api/internal/api/wiki_sharing_handlers.go",
+    "api/internal/api/wiki_visibility.go",
+    "api/internal/api/wiki_visibility_test.go",
+    "api/internal/api/wiki_ws_handlers.go",
+    "api/openapi.yaml"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a5/0d2cd56a28/0/metadata.json",
+      "transcript": "/a5/0d2cd56a28/0/full.jsonl",
+      "content_hash": "/a5/0d2cd56a28/0/content_hash.txt",
+      "prompt": "/a5/0d2cd56a28/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 660,
+    "cache_creation_tokens": 1007804,
+    "cache_read_tokens": 108360727,
+    "output_tokens": 243411,
+    "api_call_count": 326
+  }
+}
