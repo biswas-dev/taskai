@@ -325,3 +325,59 @@ All paths below are relative to `/Users/anshumanbiswas/play/taskai`.
 <status>completed</status>
 <summary>Background command "Run local API on isolated Postgres" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+<task-notification>
+<task-id>a2aa423ad8b81f2dd</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/a2aa423ad8b81f2dd.output</output-file>
+<status>completed</status>
+<summary>Agent "Build wiki sharing frontend UI" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>The wiki sharing frontend is built and all checks pass. `tsc --noEmit` is clean, all 41 test files and 581 tests pass (9 of them new), lint has 0 errors and only the 3 existing warnings, and `npm run build` succeeds. Nothing is committed, and nothing under `api/` or in `src/lib/api.types.ts` was touched.
+
+**What's in place**
+- **API client:** `WikiPage` now has `visibility` and `is_public`, and there are new `WikiSharing` and `PublicWikiPage` types plus the five sharing methods. I made the two new page fields optional so existing test data didn't need changing, which is why no existing tests had to be updated.
+- **Share dialog:** a radio choice between "Everyone in this project" and "Protected — only people you choose", with a note that the author and project owner always have access. Protected pages get a member picker (the page author is left out, as are people already added) and a list of people you can remove.
+  - Save sends the whole list, shows errors in the dialog, shows a success message, then closes and updates the page state.
+  - The public link section is set apart at the bottom. Creating a link shows the full URL with a Copy button, and revoking asks for confirmation first. Creating or revoking a link takes effect immediately, without pressing Save.
+  - People who can't manage sharing get a read-only view. Loading, error-with-retry, empty and Escape-to-close are all handled.
+- **Where it opens:** the dialog state lives in `WikiContent.tsx`, which owns the pages list, so the tree and the editor header update without a reload. `WikiEditor.tsx` got one new optional `onShare` prop and a Share button next to Version history; `onPageUpdate` is unchanged. The button shows "Protected" with a lock icon, or "Share" with a globe icon when a public link exists, or with a people icon otherwise.
+- **Page tree:** restricted pages show a lock and public ones a globe, with "Protected" / "Public link" labels for screen readers. The ⋯ menu has a new "Share…" item.
+- **Public page:** `/share/wiki/:token` is registered outside the auth guard. It shows the project name, title, "Updated &lt;date&gt;", the server-cleaned HTML using the same `prose prose-invert max-w-none` styling as the editor preview, and a "Shared from TaskAI" footer. It has a loading state and a "This link is no longer active" state.
+
+**Things to know**
+- **Drawings on the public page stay as blank placeholders.** `initDrawEmbeds` depends on editor-only helpers and adds an "Edit" button that opens the draw editor, which is wrong for anonymous readers, so I didn't reuse it and left the editor alone.
+- **Any failed fetch on the public page shows "no longer active", not just a 404.** The API client's errors don't include the HTTP status, so the page can't tell a revoked link from a network or server error.
+- **The server needs to serve the app for `/share/wiki/*` URLs.** I didn't check that the production nginx/SPA fallback covers that path, so shared links should be tested once deployed.
+- **The share tests replace the member picker with a plain dropdown.** The real picker is hard to drive in the test environment, so the tests check the dialog's logic but not the picker itself.
+
+**Files** (all under `/Users/anshumanbiswas/play/taskai/web/src/`)
+- Changed: `lib/api.ts`, `App.tsx`, `components/WikiContent.tsx`, `components/WikiEditor.tsx`, `components/WikiPageTree.tsx`
+- Added:
+  - `components/WikiShareModal.tsx` and `components/WikiShareModal.test.tsx` (7 tests)
+  - `components/WikiVisibilityIcon.tsx` (shared lock/globe/people icons)
+  - `routes/PublicWikiPage.tsx` and `routes/PublicWikiPage.test.tsx` (2 tests)</result>
+<usage><subagent_tokens>117663</subagent_tokens><tool_uses>26</tool_uses><duration_ms>200590</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bebtusq1a</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bebtusq1a.output</output-file>
+<status>completed</status>
+<summary>Background command "Start Vite dev server against local API" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bzursaer9</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/82ac5d09-8205-47a5-a238-caa15043da7e/tasks/bzursaer9.output</output-file>
+<status>completed</status>
+<summary>Background command "Restart local API on Postgres" completed (exit code 0)</summary>
+</task-notification>
