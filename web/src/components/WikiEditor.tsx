@@ -8,6 +8,8 @@ import { useAuth } from '../state/AuthContext'
 import { useSync } from '../state/SyncContext'
 import SearchSelect from './ui/SearchSelect'
 import ImagePickerModal from './ImagePickerModal'
+import { mediaFilesFrom, mediaMarkdown, uploadMedia } from '../lib/upload'
+import { useDialog } from '../state/DialogContext'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import {
@@ -451,37 +453,6 @@ function addImageEditOverlays(
 // Moved to WikiEditor.helpers.ts: fetchDrawings, createDrawing,
 // renameDrawing, deleteDrawing, deleteDrawings
 
-async function uploadSingleFile(file: File, pageId: number): Promise<{ url: string; publicId: string; altName: string }> {
-  const sig = await apiClient.getUploadSignature({ pageId })
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('api_key', sig.api_key)
-  formData.append('timestamp', String(sig.timestamp))
-  formData.append('signature', sig.signature)
-  formData.append('folder', sig.folder)
-  formData.append('public_id', sig.public_id)
-
-  const uploadRes = await fetch(
-    `https://api.cloudinary.com/v1_1/${sig.cloud_name}/auto/upload`,
-    { method: 'POST', body: formData }
-  )
-  if (!uploadRes.ok) throw new Error('Upload failed')
-  const uploadData = await uploadRes.json()
-  const altName = file.name.replace(/\.[^.]+$/, '').replaceAll(/[-_]/g, ' ')
-
-  await apiClient.createWikiPageAttachment(pageId, {
-    filename: file.name,
-    alt_name: altName,
-    file_type: 'image',
-    content_type: file.type,
-    file_size: file.size,
-    cloudinary_url: uploadData.secure_url,
-    cloudinary_public_id: uploadData.public_id,
-  })
-
-  return { url: uploadData.secure_url, publicId: uploadData.public_id, altName }
-}
-
 // ── Server-side preview fetcher ──────────────────────────────────
 // fetchPreview moved to WikiEditor.helpers.ts
 
@@ -589,19 +560,54 @@ function useAutoSave(
 interface ImageDropOpts {
   pageId: number
   isFullscreen: boolean
-  content: string
+  contentRef: React.MutableRefObject<string>
   setContent: (c: string) => void
   syncToYjs: (c: string) => void
   isDirtyRef: React.MutableRefObject<boolean>
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
   fsTextareaRef: React.RefObject<HTMLTextAreaElement | null>
+  onError: (message: string) => void
 }
 
+let uploadPlaceholderSeq = 0
+
 function useImageDrop(opts: ImageDropOpts) {
-  const { pageId, isFullscreen, content, setContent, syncToYjs, isDirtyRef, textareaRef, fsTextareaRef } = opts
+  const { pageId, isFullscreen, contentRef, setContent, syncToYjs, isDirtyRef, textareaRef, fsTextareaRef, onError } = opts
   const dragCounterRef = useRef(0)
   const [isDragOver, setIsDragOver] = useState(false)
-  const [isDropUploading, setIsDropUploading] = useState(false)
+  const [uploadingCount, setUploadingCount] = useState(0)
+
+  // Edits go through contentRef so consecutive uploads build on each other
+  // instead of on the content captured when the drop started.
+  const applyContent = useCallback((next: string) => {
+    contentRef.current = next
+    setContent(next)
+    syncToYjs(next)
+    isDirtyRef.current = true
+  }, [contentRef, setContent, syncToYjs, isDirtyRef])
+
+  const uploadFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return
+    const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
+    const placeholders = files.map(f => `![Uploading ${f.name}…](uploading-${++uploadPlaceholderSeq})`)
+    const current = contentRef.current
+    const start = textarea?.selectionStart ?? current.length
+    const end = textarea?.selectionEnd ?? current.length
+    applyContent(current.substring(0, start) + placeholders.join('\n') + '\n' + current.substring(end))
+
+    setUploadingCount(n => n + files.length)
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const media = await uploadMedia({ pageId }, files[i])
+        applyContent(contentRef.current.replace(placeholders[i], mediaMarkdown(media, files[i])))
+      } catch (err: unknown) {
+        applyContent(contentRef.current.replace(`${placeholders[i]}\n`, '').replace(placeholders[i], ''))
+        onError(err instanceof Error ? err.message : `Failed to upload ${files[i].name}`)
+      } finally {
+        setUploadingCount(n => n - 1)
+      }
+    }
+  }, [pageId, isFullscreen, fsTextareaRef, textareaRef, contentRef, applyContent, onError])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -623,36 +629,23 @@ function useImageDrop(opts: ImageDropOpts) {
     }
   }, [])
 
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     dragCounterRef.current = 0
     setIsDragOver(false)
+    void uploadFiles(mediaFilesFrom(e.dataTransfer))
+  }, [uploadFiles])
 
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    // Rich copies (text plus an image) keep their normal text paste.
+    if (e.clipboardData.types.includes('text/plain')) return
+    const files = mediaFilesFrom(e.clipboardData)
     if (files.length === 0) return
+    e.preventDefault()
+    void uploadFiles(files)
+  }, [uploadFiles])
 
-    setIsDropUploading(true)
-    const textarea = isFullscreen ? fsTextareaRef.current : textareaRef.current
-
-    try {
-      for (const file of files) {
-        const { url, altName } = await uploadSingleFile(file, pageId)
-        const markup = `![${altName}](${url})`
-        const start = textarea?.selectionStart ?? content.length
-        const end = textarea?.selectionEnd ?? content.length
-        const newContent = content.substring(0, start) + markup + '\n' + content.substring(end)
-        setContent(newContent)
-        syncToYjs(newContent)
-        isDirtyRef.current = true
-      }
-    } catch (err) {
-      console.error('Drop upload failed:', err)
-    } finally {
-      setIsDropUploading(false)
-    }
-  }, [isFullscreen, content, setContent, syncToYjs, pageId, isDirtyRef, textareaRef, fsTextareaRef])
-
-  return { isDragOver, isDropUploading, handleDragEnter, handleDragOver, handleDragLeave, handleDrop }
+  return { isDragOver, isDropUploading: uploadingCount > 0, handleDragEnter, handleDragOver, handleDragLeave, handleDrop, handlePaste }
 }
 
 // ── Draw browser hook ─────────────────────────────────────────────
@@ -669,6 +662,7 @@ interface ContentOpts {
 }
 
 function useDrawBrowser(opts: ContentOpts) {
+  const dialog = useDialog()
   const { content, setContent, syncToYjs, isDirtyRef, isFullscreen, textareaRef, fsTextareaRef, projectId } = opts
 
   const [showDrawBrowser, setShowDrawBrowser] = useState(false)
@@ -711,9 +705,9 @@ function useDrawBrowser(opts: ContentOpts) {
 
   const handleDrawDelete = useCallback(async (id: string) => {
     const ok = await deleteDrawing(id)
-    if (!ok) { alert('Failed to delete drawing'); return }
+    if (!ok) { dialog.notify('Failed to delete drawing', 'error'); return }
     setDrawList(prev => prev.filter(d => d.id !== id))
-  }, [])
+  }, [dialog])
 
   const handleDrawNew = useCallback(async () => {
     const created = await createDrawing(projectId)
@@ -728,12 +722,12 @@ function useDrawBrowser(opts: ContentOpts) {
   const handleEditDraw = useCallback(() => {
     const draws = findDrawsInContent(content)
     if (draws.length === 0) {
-      alert('No draw shortcodes found in content')
+      dialog.notify('No drawings found in this page', 'info')
       return
     }
     setEditDrawList(draws)
     setSelectedEditDraw(null)
-  }, [content])
+  }, [content, dialog])
 
   const selectDrawForEdit = (draw: DrawInfo) => {
     setSelectedEditDraw(draw)
@@ -766,6 +760,7 @@ function useDrawBrowser(opts: ContentOpts) {
 // ── Image edit hook ──────────────────────────────────────────────
 
 function useImageEdit(opts: Pick<ContentOpts, 'content' | 'setContent' | 'syncToYjs' | 'isDirtyRef'>) {
+  const dialog = useDialog()
   const { content, setContent, syncToYjs, isDirtyRef } = opts
 
   const [editImgList, setEditImgList] = useState<ImageInfo[] | null>(null)
@@ -777,12 +772,12 @@ function useImageEdit(opts: Pick<ContentOpts, 'content' | 'setContent' | 'syncTo
   const handleEditImg = useCallback(() => {
     const images = findImagesInContent(content)
     if (images.length === 0) {
-      alert('No images found in content')
+      dialog.notify('No images found in this page', 'info')
       return
     }
     setEditImgList(images)
     setSelectedEditImg(null)
-  }, [content])
+  }, [content, dialog])
 
   const selectImgForEdit = (img: ImageInfo) => {
     setSelectedEditImg(img)
@@ -1026,6 +1021,7 @@ function PreviewContent({ previewHTML, content, previewRef, error, onRetry }: Re
 // ── Component ────────────────────────────────────────────────────
 
 export default function WikiEditor({ page, annotations, selectedAnnotationId, showAnnotationHighlights = true, onAnnotationCreate, onAnnotationClick, onAnnotationUpdate, onAnnotationDelete, onCommentCreate, onCommentUpdate, onCommentDelete, showResolved = false, onToggleShowResolved, onPageUpdate }: Readonly<WikiEditorProps>) {
+  const dialog = useDialog()
   const navigate = useNavigate()
   const { user } = useAuth()
   const { registerSyncTask } = useSync()
@@ -1100,7 +1096,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
       return
     }
     if (next.length > 500) {
-      alert('Title is too long (max 500 characters)')
+      dialog.notify('Title is too long (max 500 characters)', 'error')
       return
     }
     try {
@@ -1109,12 +1105,12 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
       onPageUpdate?.(updated)
       setIsEditingTitle(false)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to rename page')
+      dialog.notify(err instanceof Error ? err.message : 'Failed to rename page', 'error')
       setTitleDraft(page.title)
     } finally {
       setTitleSaving(false)
     }
-  }, [titleDraft, page.id, page.title, onPageUpdate])
+  }, [titleDraft, page.id, page.title, onPageUpdate, dialog])
 
   // ── Version history state ─────────────────────────────────────
   const [showDownloadMenu, setShowDownloadMenu] = useState(false)
@@ -1518,8 +1514,9 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
     setShowImagePicker(false)
   }
 
-  const { isDragOver, isDropUploading, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } =
-    useImageDrop({ pageId: page.id, isFullscreen, content, setContent, syncToYjs, isDirtyRef, textareaRef, fsTextareaRef })
+  const reportUploadError = useCallback((message: string) => dialog.notify(message, 'error'), [dialog])
+  const { isDragOver, isDropUploading, handleDragEnter, handleDragOver, handleDragLeave, handleDrop, handlePaste } =
+    useImageDrop({ pageId: page.id, isFullscreen, contentRef, setContent, syncToYjs, isDirtyRef, textareaRef, fsTextareaRef, onError: reportUploadError })
 
   const {
     editImgList, selectedEditImg, editAlt, editCaption, editSize,
@@ -1824,6 +1821,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
             ref={fsTextareaRef}
             value={content}
             onChange={handleTextareaChange}
+            onPaste={handlePaste}
             onKeyDown={handleKeyDown}
             onDoubleClick={handleDoubleClick}
             className="flex-1 w-full bg-dark-bg-primary text-dark-text-primary resize-none focus:outline-none font-mono text-sm p-4"
@@ -2091,6 +2089,7 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
                     ref={textareaRef}
                     value={content}
                     onChange={handleTextareaChange}
+                    onPaste={handlePaste}
                     onKeyDown={handleKeyDown}
                     onDoubleClick={handleDoubleClick}
                     placeholder="Start writing in Markdown...

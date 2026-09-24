@@ -416,10 +416,16 @@ func (s *Server) resolveTaskUploadTarget(ctx context.Context, taskIDStr string) 
 		return nil, &httpError{http.StatusBadRequest, "maximum 99 attachments per task", "attachment_limit_exceeded"}
 	}
 
+	next, herr := s.nextAttachmentNumber(ctx,
+		`SELECT cloudinary_public_id FROM task_attachments WHERE task_id = $1`, taskID, attachmentCount)
+	if herr != nil {
+		return nil, herr
+	}
+
 	return &uploadTargetInfo{
 		projectID:   projectID,
 		projectName: projectName,
-		publicID:    fmt.Sprintf("%d_%02d", taskID, attachmentCount+1),
+		publicID:    fmt.Sprintf("%d_%02d", taskID, next),
 	}, nil
 }
 
@@ -461,11 +467,51 @@ func (s *Server) resolveWikiPageUploadTarget(ctx context.Context, pageIDStr stri
 		return nil, &httpError{http.StatusBadRequest, "maximum 100 attachments per wiki page", "attachment_limit_exceeded"}
 	}
 
+	next, herr := s.nextAttachmentNumber(ctx,
+		`SELECT cloudinary_public_id FROM wiki_page_attachments WHERE wiki_page_id = $1`, pageID, attachmentCount)
+	if herr != nil {
+		return nil, herr
+	}
+
 	return &uploadTargetInfo{
 		projectID:   projectID,
 		projectName: projectName,
-		publicID:    fmt.Sprintf("w%d_%03d", pageID, attachmentCount+1),
+		publicID:    fmt.Sprintf("w%d_%03d", pageID, next),
 	}, nil
+}
+
+var attachmentNumberRe = regexp.MustCompile(`_(\d+)$`)
+
+// nextAttachmentNumber picks the number for the next upload's Cloudinary
+// public ID. It is one past the highest number already used, not the count:
+// after a deletion the count drops, and reusing a number would silently
+// overwrite another attachment's file on Cloudinary.
+func (s *Server) nextAttachmentNumber(ctx context.Context, query string, ownerID int64, count int) (int, *httpError) {
+	rows, err := s.db.QueryContext(ctx, query, ownerID)
+	if err != nil {
+		s.logger.Error("Failed to list attachment public IDs", zap.Error(err))
+		return 0, &httpError{http.StatusInternalServerError, errFailedCountAttachments, "internal_error"}
+	}
+	defer rows.Close()
+
+	highest := count
+	for rows.Next() {
+		var publicID string
+		if err := rows.Scan(&publicID); err != nil {
+			s.logger.Error("Failed to scan attachment public ID", zap.Error(err))
+			return 0, &httpError{http.StatusInternalServerError, errFailedCountAttachments, "internal_error"}
+		}
+		if m := attachmentNumberRe.FindStringSubmatch(publicID); m != nil {
+			if n, err := strconv.Atoi(m[1]); err == nil && n > highest {
+				highest = n
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		s.logger.Error("Failed to iterate attachment public IDs", zap.Error(err))
+		return 0, &httpError{http.StatusInternalServerError, errFailedCountAttachments, "internal_error"}
+	}
+	return highest + 1, nil
 }
 
 // lookupProjectName fetches the project name by ID.

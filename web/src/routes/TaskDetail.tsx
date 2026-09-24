@@ -13,6 +13,8 @@ import { preprocessGraphLinks, parseGraphLinkUrl } from '../lib/graphLinks'
 import FigmaEmbed from '../components/FigmaEmbed'
 import { REACTION_EMOJI, REACTION_ORDER } from '../lib/reactionUtils'
 import MentionTextarea from '../components/MentionTextarea'
+import { useMediaPasteUpload } from '../hooks/useMediaPasteUpload'
+import { uploadMedia, isUploadableFile } from '../lib/upload'
 
 const FIGMA_URL_RE = /(^|[\s\n])(https:\/\/(?:www\.)?figma\.com\/(?:file|design|proto)\/[^\s\n)]+)/g
 
@@ -154,6 +156,16 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
   const [watching, setWatching] = useState(false)
   const [activityEntries, setActivityEntries] = useState<import('../lib/api').ActivityEntry[]>([])
   const [showActivity, setShowActivity] = useState(false)
+
+  // Paste or drop screenshots/files into any markdown box on this page
+  const uploadTarget = useMemo(() => (task?.id ? { taskId: task.id } : null), [task?.id])
+  const reportUploadError = useCallback((message: string) => setError(message), [])
+  const refreshAttachments = useCallback(() => {
+    if (task?.id) apiClient.getTaskAttachments(task.id).then(setAttachments).catch(() => {})
+  }, [task?.id])
+  const descPaste = useMediaPasteUpload({ target: uploadTarget, value: editValue, setValue: setEditValue, onError: reportUploadError, onUploaded: refreshAttachments })
+  const commentPaste = useMediaPasteUpload({ target: uploadTarget, value: newComment, setValue: setNewComment, onError: reportUploadError, onUploaded: refreshAttachments })
+  const editCommentPaste = useMediaPasteUpload({ target: uploadTarget, value: editingCommentText, setValue: setEditingCommentText, onError: reportUploadError, onUploaded: refreshAttachments })
 
   // Image picker
   const [imagePickerTarget, setImagePickerTarget] = useState<'description' | 'comment' | null>(null)
@@ -416,8 +428,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
     const file = e.target.files?.[0]
     if (!file) return
 
-    const allowedTypes = ['image/', 'video/', 'application/pdf']
-    if (!allowedTypes.some(t => file.type.startsWith(t))) {
+    if (!isUploadableFile(file)) {
       setError('Only images, videos, and PDFs are allowed')
       e.target.value = ''
       return
@@ -430,38 +441,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
   const handleConfirmUpload = async (file: File, altText: string) => {
     try {
       setUploading(true)
-      const sig = await apiClient.getUploadSignature({ taskId: task!.id! })
-
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('api_key', sig.api_key)
-      formData.append('timestamp', String(sig.timestamp))
-      formData.append('signature', sig.signature)
-      formData.append('folder', sig.folder)
-      formData.append('public_id', sig.public_id)
-
-      const uploadRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${sig.cloud_name}/auto/upload`,
-        { method: 'POST', body: formData }
-      )
-
-      if (!uploadRes.ok) throw new Error('Upload to Cloudinary failed')
-      const uploadData = await uploadRes.json()
-
-      let fileType = 'image'
-      if (file.type.startsWith('video/')) fileType = 'video'
-      else if (file.type === 'application/pdf') fileType = 'pdf'
-
-      await apiClient.createTaskAttachment(task!.id!, {
-        filename: file.name,
-        alt_name: altText,
-        file_type: fileType,
-        content_type: file.type,
-        file_size: file.size,
-        cloudinary_url: uploadData.secure_url,
-        cloudinary_public_id: uploadData.public_id,
-      })
-
+      await uploadMedia({ taskId: task!.id! }, file, altText)
       await loadAttachments()
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to upload file')
@@ -862,20 +842,23 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                     ref={descRef}
                     value={editValue}
                     onChange={(e) => setEditValue(e.target.value)}
+                    onPaste={descPaste.onPaste}
+                    onDrop={descPaste.onDrop}
+                    onDragOver={descPaste.onDragOver}
                     rows={12}
                     className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none font-mono text-sm placeholder-dark-text-tertiary"
-                    placeholder="Add a description in markdown format..."
+                    placeholder="Add a description in markdown format... (paste or drop screenshots to upload)"
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') cancelEdit()
-                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !descPaste.isUploading) {
                         e.preventDefault()
                         saveField('description', editValue)
                       }
                     }}
                   />
                   <div className="flex items-center gap-2 mt-2">
-                    <Button size="sm" onClick={() => saveField('description', editValue)} disabled={saving}>
-                      {saving ? 'Saving...' : 'Save'}
+                    <Button size="sm" onClick={() => saveField('description', editValue)} disabled={saving || descPaste.isUploading}>
+                      {descPaste.isUploading ? 'Uploading...' : saving ? 'Saving...' : 'Save'}
                     </Button>
                     <Button size="sm" variant="secondary" onClick={cancelEdit}>
                       Cancel
@@ -1060,12 +1043,15 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                   ref={commentRef}
                   value={newComment}
                   onChange={setNewComment}
+                  onPaste={commentPaste.onPaste}
+                  onDrop={commentPaste.onDrop}
+                  onDragOver={commentPaste.onDragOver}
                   projectId={Number(projectId)}
                   rows={3}
                   className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm placeholder-dark-text-tertiary"
-                  placeholder="Add a comment... (type @ to mention someone)"
+                  placeholder="Add a comment... (type @ to mention someone, paste screenshots to upload)"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && newComment.trim()) {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && newComment.trim() && !commentPaste.isUploading) {
                       e.preventDefault()
                       handlePostComment()
                     }
@@ -1078,9 +1064,9 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                   <Button
                     onClick={handlePostComment}
                     size="sm"
-                    disabled={!newComment.trim() || postingComment}
+                    disabled={!newComment.trim() || postingComment || commentPaste.isUploading}
                   >
-                    {postingComment ? 'Posting...' : 'Post Comment'}
+                    {commentPaste.isUploading ? 'Uploading...' : postingComment ? 'Posting...' : 'Post Comment'}
                   </Button>
                 </div>
               </div>
@@ -1144,6 +1130,9 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                               <textarea
                                 value={editingCommentText}
                                 onChange={(e) => setEditingCommentText(e.target.value)}
+                                onPaste={editCommentPaste.onPaste}
+                                onDrop={editCommentPaste.onDrop}
+                                onDragOver={editCommentPaste.onDragOver}
                                 className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none text-sm"
                                 rows={3}
                                 onKeyDown={(e) => {
@@ -1167,9 +1156,9 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
                                 <Button
                                   onClick={() => handleUpdateComment(comment.id)}
                                   size="sm"
-                                  disabled={!editingCommentText.trim() || savingComment}
+                                  disabled={!editingCommentText.trim() || savingComment || editCommentPaste.isUploading}
                                 >
-                                  {savingComment ? 'Saving...' : 'Save'}
+                                  {editCommentPaste.isUploading ? 'Uploading...' : savingComment ? 'Saving...' : 'Save'}
                                 </Button>
                               </div>
                             </div>

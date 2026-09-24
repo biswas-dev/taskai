@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { apiClient, type Attachment } from '../lib/api'
+import { uploadMedia } from '../lib/upload'
 
 interface ImagePickerModalProps {
   onSelect: (alt: string, url: string, caption?: string, size?: string) => void
@@ -66,52 +67,13 @@ export default function ImagePickerModal({ onSelect, onClose, projectId, taskId,
 
     try {
       setUploading(true)
-      const sig = await apiClient.getUploadSignature(
-        taskId ? { taskId } : { pageId: wikiPageId }
-      )
-
-      const formData = new FormData()
-      formData.append('file', pendingUploadFile)
-      formData.append('api_key', sig.api_key)
-      formData.append('timestamp', String(sig.timestamp))
-      formData.append('signature', sig.signature)
-      formData.append('folder', sig.folder)
-      formData.append('public_id', sig.public_id)
-
-      const uploadRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${sig.cloud_name}/auto/upload`,
-        { method: 'POST', body: formData }
-      )
-
-      if (!uploadRes.ok) throw new Error('Upload to Cloudinary failed')
-      const uploadData = await uploadRes.json()
-
+      const target = taskId ? { taskId } : wikiPageId ? { pageId: wikiPageId } : null
+      if (!target) throw new Error('Nothing to attach the image to')
       const altName = uploadAltText.trim()
-
-      if (taskId) {
-        await apiClient.createTaskAttachment(taskId, {
-          filename: pendingUploadFile.name,
-          alt_name: altName,
-          file_type: 'image',
-          content_type: pendingUploadFile.type,
-          file_size: pendingUploadFile.size,
-          cloudinary_url: uploadData.secure_url,
-          cloudinary_public_id: uploadData.public_id,
-        })
-      } else if (wikiPageId) {
-        await apiClient.createWikiPageAttachment(wikiPageId, {
-          filename: pendingUploadFile.name,
-          alt_name: altName,
-          file_type: 'image',
-          content_type: pendingUploadFile.type,
-          file_size: pendingUploadFile.size,
-          cloudinary_url: uploadData.secure_url,
-          cloudinary_public_id: uploadData.public_id,
-        })
-      }
+      const media = await uploadMedia(target, pendingUploadFile, altName)
 
       onUploadComplete()
-      onSelect(altName, uploadData.secure_url, uploadCaption.trim() || undefined, uploadSize)
+      onSelect(altName, media.url, uploadCaption.trim() || undefined, uploadSize)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to upload')
     } finally {
