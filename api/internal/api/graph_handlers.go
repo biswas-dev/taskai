@@ -206,9 +206,12 @@ func (s *Server) HandleGetProjectGraph(w http.ResponseWriter, r *http.Request) {
 		SELECT id, project_id, entity_type, entity_id, entity_number, title, created_at, updated_at
 		FROM graph_nodes
 		WHERE project_id = ?
+		  AND (entity_type <> 'wiki' OR entity_id IN (
+		    SELECT wp.id FROM wiki_pages wp WHERE wp.project_id = ? AND `+wikiVisibleSQL("wp", "?")+`
+		  ))
 		ORDER BY created_at DESC
 		LIMIT 200
-	`), projectID)
+	`), projectID, projectID, userID, userID, userID)
 	if err != nil {
 		s.logger.Error("Failed to fetch graph nodes", zap.Int64("project_id", projectID), zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to fetch graph", "internal_error")

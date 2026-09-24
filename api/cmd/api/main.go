@@ -427,6 +427,8 @@ func main() {
 			r.Use(api.RateLimitMiddleware(30))
 			r.Get("/invites/validate", server.HandleValidateInvite)
 			r.Get("/team/invitations/by-token", server.HandleGetInvitationByToken)
+			// Read-only wiki pages shared by public link
+			r.Get("/public/wiki/{token}", server.HandleGetPublicWikiPage)
 		})
 
 		// User notification WebSocket — auth via ?token= query param
@@ -477,6 +479,10 @@ func main() {
 			r.Post("/wiki/pages/{pageId}/pdf", server.HandleStartWikiPagePDF)
 			r.Get("/wiki/pages/{pageId}/pdf/{jobId}", server.HandleGetWikiPagePDFJob)
 			r.Get("/wiki/pages/{pageId}/markdown", server.HandleWikiPageMarkdown)
+			r.Get("/wiki/pages/{pageId}/sharing", server.HandleGetWikiSharing)
+			r.Put("/wiki/pages/{pageId}/sharing", server.HandleUpdateWikiSharing)
+			r.Post("/wiki/pages/{pageId}/public-link", server.HandleCreateWikiPublicLink)
+			r.Delete("/wiki/pages/{pageId}/public-link", server.HandleDeleteWikiPublicLink)
 			r.Post("/wiki/preview", server.HandleWikiPreview)
 
 			// Wiki WebSocket route for real-time collaboration

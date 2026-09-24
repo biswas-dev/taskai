@@ -26,6 +26,8 @@ func (WikiPage) Fields() []ent.Field {
 		field.Int64("parent_id").Optional().Nillable(),
 		field.Int("position").Default(0),
 		field.Text("content").Optional().Default(""),
+		field.String("visibility").Default("project"),
+		field.String("public_token").Optional().Nillable(),
 		field.Time("created_at").Default(time.Now).Immutable(),
 		field.Time("updated_at").Default(time.Now).UpdateDefault(time.Now),
 	}

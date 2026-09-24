@@ -22974,6 +22974,8 @@ type WikiPageMutation struct {
 	position                  *int
 	addposition               *int
 	content                   *string
+	visibility                *string
+	public_token              *string
 	created_at                *time.Time
 	updated_at                *time.Time
 	clearedFields             map[string]struct{}
@@ -23454,6 +23456,91 @@ func (m *WikiPageMutation) ContentCleared() bool {
 func (m *WikiPageMutation) ResetContent() {
 	m.content = nil
 	delete(m.clearedFields, wikipage.FieldContent)
+}
+
+// SetVisibility sets the "visibility" field.
+func (m *WikiPageMutation) SetVisibility(s string) {
+	m.visibility = &s
+}
+
+// Visibility returns the value of the "visibility" field in the mutation.
+func (m *WikiPageMutation) Visibility() (r string, exists bool) {
+	v := m.visibility
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVisibility returns the old "visibility" field's value of the WikiPage entity.
+// If the WikiPage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WikiPageMutation) OldVisibility(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVisibility is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVisibility requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVisibility: %w", err)
+	}
+	return oldValue.Visibility, nil
+}
+
+// ResetVisibility resets all changes to the "visibility" field.
+func (m *WikiPageMutation) ResetVisibility() {
+	m.visibility = nil
+}
+
+// SetPublicToken sets the "public_token" field.
+func (m *WikiPageMutation) SetPublicToken(s string) {
+	m.public_token = &s
+}
+
+// PublicToken returns the value of the "public_token" field in the mutation.
+func (m *WikiPageMutation) PublicToken() (r string, exists bool) {
+	v := m.public_token
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPublicToken returns the old "public_token" field's value of the WikiPage entity.
+// If the WikiPage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *WikiPageMutation) OldPublicToken(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPublicToken is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPublicToken requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPublicToken: %w", err)
+	}
+	return oldValue.PublicToken, nil
+}
+
+// ClearPublicToken clears the value of the "public_token" field.
+func (m *WikiPageMutation) ClearPublicToken() {
+	m.public_token = nil
+	m.clearedFields[wikipage.FieldPublicToken] = struct{}{}
+}
+
+// PublicTokenCleared returns if the "public_token" field was cleared in this mutation.
+func (m *WikiPageMutation) PublicTokenCleared() bool {
+	_, ok := m.clearedFields[wikipage.FieldPublicToken]
+	return ok
+}
+
+// ResetPublicToken resets all changes to the "public_token" field.
+func (m *WikiPageMutation) ResetPublicToken() {
+	m.public_token = nil
+	delete(m.clearedFields, wikipage.FieldPublicToken)
 }
 
 // SetCreatedAt sets the "created_at" field.
@@ -23966,7 +24053,7 @@ func (m *WikiPageMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *WikiPageMutation) Fields() []string {
-	fields := make([]string, 0, 10)
+	fields := make([]string, 0, 12)
 	if m.project != nil {
 		fields = append(fields, wikipage.FieldProjectID)
 	}
@@ -23990,6 +24077,12 @@ func (m *WikiPageMutation) Fields() []string {
 	}
 	if m.content != nil {
 		fields = append(fields, wikipage.FieldContent)
+	}
+	if m.visibility != nil {
+		fields = append(fields, wikipage.FieldVisibility)
+	}
+	if m.public_token != nil {
+		fields = append(fields, wikipage.FieldPublicToken)
 	}
 	if m.created_at != nil {
 		fields = append(fields, wikipage.FieldCreatedAt)
@@ -24021,6 +24114,10 @@ func (m *WikiPageMutation) Field(name string) (ent.Value, bool) {
 		return m.Position()
 	case wikipage.FieldContent:
 		return m.Content()
+	case wikipage.FieldVisibility:
+		return m.Visibility()
+	case wikipage.FieldPublicToken:
+		return m.PublicToken()
 	case wikipage.FieldCreatedAt:
 		return m.CreatedAt()
 	case wikipage.FieldUpdatedAt:
@@ -24050,6 +24147,10 @@ func (m *WikiPageMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldPosition(ctx)
 	case wikipage.FieldContent:
 		return m.OldContent(ctx)
+	case wikipage.FieldVisibility:
+		return m.OldVisibility(ctx)
+	case wikipage.FieldPublicToken:
+		return m.OldPublicToken(ctx)
 	case wikipage.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	case wikipage.FieldUpdatedAt:
@@ -24119,6 +24220,20 @@ func (m *WikiPageMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetContent(v)
 		return nil
+	case wikipage.FieldVisibility:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVisibility(v)
+		return nil
+	case wikipage.FieldPublicToken:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPublicToken(v)
+		return nil
 	case wikipage.FieldCreatedAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -24187,6 +24302,9 @@ func (m *WikiPageMutation) ClearedFields() []string {
 	if m.FieldCleared(wikipage.FieldContent) {
 		fields = append(fields, wikipage.FieldContent)
 	}
+	if m.FieldCleared(wikipage.FieldPublicToken) {
+		fields = append(fields, wikipage.FieldPublicToken)
+	}
 	return fields
 }
 
@@ -24209,6 +24327,9 @@ func (m *WikiPageMutation) ClearField(name string) error {
 		return nil
 	case wikipage.FieldContent:
 		m.ClearContent()
+		return nil
+	case wikipage.FieldPublicToken:
+		m.ClearPublicToken()
 		return nil
 	}
 	return fmt.Errorf("unknown WikiPage nullable field %s", name)
@@ -24241,6 +24362,12 @@ func (m *WikiPageMutation) ResetField(name string) error {
 		return nil
 	case wikipage.FieldContent:
 		m.ResetContent()
+		return nil
+	case wikipage.FieldVisibility:
+		m.ResetVisibility()
+		return nil
+	case wikipage.FieldPublicToken:
+		m.ResetPublicToken()
 		return nil
 	case wikipage.FieldCreatedAt:
 		m.ResetCreatedAt()

@@ -527,12 +527,16 @@ func init() {
 	wikipageDescContent := wikipageFields[8].Descriptor()
 	// wikipage.DefaultContent holds the default value on creation for the content field.
 	wikipage.DefaultContent = wikipageDescContent.Default.(string)
+	// wikipageDescVisibility is the schema descriptor for visibility field.
+	wikipageDescVisibility := wikipageFields[9].Descriptor()
+	// wikipage.DefaultVisibility holds the default value on creation for the visibility field.
+	wikipage.DefaultVisibility = wikipageDescVisibility.Default.(string)
 	// wikipageDescCreatedAt is the schema descriptor for created_at field.
-	wikipageDescCreatedAt := wikipageFields[9].Descriptor()
+	wikipageDescCreatedAt := wikipageFields[11].Descriptor()
 	// wikipage.DefaultCreatedAt holds the default value on creation for the created_at field.
 	wikipage.DefaultCreatedAt = wikipageDescCreatedAt.Default.(func() time.Time)
 	// wikipageDescUpdatedAt is the schema descriptor for updated_at field.
-	wikipageDescUpdatedAt := wikipageFields[10].Descriptor()
+	wikipageDescUpdatedAt := wikipageFields[12].Descriptor()
 	// wikipage.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	wikipage.DefaultUpdatedAt = wikipageDescUpdatedAt.Default.(func() time.Time)
 	// wikipage.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

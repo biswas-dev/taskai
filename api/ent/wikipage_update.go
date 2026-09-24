@@ -171,6 +171,40 @@ func (_u *WikiPageUpdate) ClearContent() *WikiPageUpdate {
 	return _u
 }
 
+// SetVisibility sets the "visibility" field.
+func (_u *WikiPageUpdate) SetVisibility(v string) *WikiPageUpdate {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *WikiPageUpdate) SetNillableVisibility(v *string) *WikiPageUpdate {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
+// SetPublicToken sets the "public_token" field.
+func (_u *WikiPageUpdate) SetPublicToken(v string) *WikiPageUpdate {
+	_u.mutation.SetPublicToken(v)
+	return _u
+}
+
+// SetNillablePublicToken sets the "public_token" field if the given value is not nil.
+func (_u *WikiPageUpdate) SetNillablePublicToken(v *string) *WikiPageUpdate {
+	if v != nil {
+		_u.SetPublicToken(*v)
+	}
+	return _u
+}
+
+// ClearPublicToken clears the value of the "public_token" field.
+func (_u *WikiPageUpdate) ClearPublicToken() *WikiPageUpdate {
+	_u.mutation.ClearPublicToken()
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *WikiPageUpdate) SetUpdatedAt(v time.Time) *WikiPageUpdate {
 	_u.mutation.SetUpdatedAt(v)
@@ -512,6 +546,15 @@ func (_u *WikiPageUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ContentCleared() {
 		_spec.ClearField(wikipage.FieldContent, field.TypeString)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(wikipage.FieldVisibility, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PublicToken(); ok {
+		_spec.SetField(wikipage.FieldPublicToken, field.TypeString, value)
+	}
+	if _u.mutation.PublicTokenCleared() {
+		_spec.ClearField(wikipage.FieldPublicToken, field.TypeString)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(wikipage.FieldUpdatedAt, field.TypeTime, value)
@@ -1014,6 +1057,40 @@ func (_u *WikiPageUpdateOne) ClearContent() *WikiPageUpdateOne {
 	return _u
 }
 
+// SetVisibility sets the "visibility" field.
+func (_u *WikiPageUpdateOne) SetVisibility(v string) *WikiPageUpdateOne {
+	_u.mutation.SetVisibility(v)
+	return _u
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_u *WikiPageUpdateOne) SetNillableVisibility(v *string) *WikiPageUpdateOne {
+	if v != nil {
+		_u.SetVisibility(*v)
+	}
+	return _u
+}
+
+// SetPublicToken sets the "public_token" field.
+func (_u *WikiPageUpdateOne) SetPublicToken(v string) *WikiPageUpdateOne {
+	_u.mutation.SetPublicToken(v)
+	return _u
+}
+
+// SetNillablePublicToken sets the "public_token" field if the given value is not nil.
+func (_u *WikiPageUpdateOne) SetNillablePublicToken(v *string) *WikiPageUpdateOne {
+	if v != nil {
+		_u.SetPublicToken(*v)
+	}
+	return _u
+}
+
+// ClearPublicToken clears the value of the "public_token" field.
+func (_u *WikiPageUpdateOne) ClearPublicToken() *WikiPageUpdateOne {
+	_u.mutation.ClearPublicToken()
+	return _u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *WikiPageUpdateOne) SetUpdatedAt(v time.Time) *WikiPageUpdateOne {
 	_u.mutation.SetUpdatedAt(v)
@@ -1385,6 +1462,15 @@ func (_u *WikiPageUpdateOne) sqlSave(ctx context.Context) (_node *WikiPage, err 
 	}
 	if _u.mutation.ContentCleared() {
 		_spec.ClearField(wikipage.FieldContent, field.TypeString)
+	}
+	if value, ok := _u.mutation.Visibility(); ok {
+		_spec.SetField(wikipage.FieldVisibility, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PublicToken(); ok {
+		_spec.SetField(wikipage.FieldPublicToken, field.TypeString, value)
+	}
+	if _u.mutation.PublicTokenCleared() {
+		_spec.ClearField(wikipage.FieldPublicToken, field.TypeString)
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(wikipage.FieldUpdatedAt, field.TypeTime, value)

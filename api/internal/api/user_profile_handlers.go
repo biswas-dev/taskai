@@ -196,6 +196,7 @@ func (s *Server) fetchUserActivity(ctx context.Context, viewerID, targetUserID i
 		JOIN projects p ON p.id = wp.project_id
 		WHERE wp.created_by = $2
 		  AND wp.project_id IN (`+sharedProjectsSubquery+`)
+		  AND `+wikiVisibleSQL("wp", "$1")+`
 		`+cc("wp.created_at")+`
 		ORDER BY wp.created_at DESC
 		LIMIT `+strconv.Itoa(pageSize)+`
@@ -221,6 +222,7 @@ func (s *Server) fetchUserActivity(ctx context.Context, viewerID, targetUserID i
 		JOIN projects p ON p.id = wp.project_id
 		WHERE wac.author_id = $2
 		  AND wp.project_id IN (`+sharedProjectsSubquery+`)
+		  AND `+wikiVisibleSQL("wp", "$1")+`
 		`+cc("wac.created_at")+`
 		ORDER BY wac.created_at DESC
 		LIMIT `+strconv.Itoa(pageSize)+`
@@ -270,6 +272,7 @@ func (s *Server) fetchUserActivity(ctx context.Context, viewerID, targetUserID i
 		JOIN projects p ON p.id = wp.project_id
 		WHERE wa.author_id = $2
 		  AND wp.project_id IN (`+sharedProjectsSubquery+`)
+		  AND `+wikiVisibleSQL("wp", "$1")+`
 		`+cc("wa.created_at")+`
 		ORDER BY wa.created_at DESC
 		LIMIT `+strconv.Itoa(pageSize)+`
@@ -295,6 +298,7 @@ func (s *Server) fetchUserActivity(ctx context.Context, viewerID, targetUserID i
 		JOIN projects p ON p.id = wp.project_id
 		WHERE yu.created_by = $2
 		  AND wp.project_id IN (`+sharedProjectsSubquery+`)
+		  AND `+wikiVisibleSQL("wp", "$1")+`
 		`+cc("yu.created_at")+`
 		GROUP BY yu.page_id, wp.title, wp.project_id, p.name
 		ORDER BY MAX(yu.created_at) DESC

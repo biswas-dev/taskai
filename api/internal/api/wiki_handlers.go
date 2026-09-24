@@ -40,6 +40,8 @@ type WikiPageResponse struct {
 	UpdaterName *string   `json:"updater_name,omitempty"`
 	AgentName   *string   `json:"agent_name,omitempty"`
 	Content     *string   `json:"content,omitempty"`
+	Visibility  string    `json:"visibility"`
+	IsPublic    bool      `json:"is_public"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -62,16 +64,18 @@ type UpdateWikiPageRequest struct {
 // newWikiPageResponse maps an Ent page to its API representation.
 func newWikiPageResponse(p *ent.WikiPage) WikiPageResponse {
 	wp := WikiPageResponse{
-		ID:        p.ID,
-		ProjectID: p.ProjectID,
-		Title:     p.Title,
-		Slug:      p.Slug,
-		ParentID:  p.ParentID,
-		Position:  p.Position,
-		CreatedBy: p.CreatedBy,
-		UpdatedBy: p.UpdatedBy,
-		CreatedAt: p.CreatedAt,
-		UpdatedAt: p.UpdatedAt,
+		ID:         p.ID,
+		ProjectID:  p.ProjectID,
+		Title:      p.Title,
+		Slug:       p.Slug,
+		ParentID:   p.ParentID,
+		Position:   p.Position,
+		CreatedBy:  p.CreatedBy,
+		UpdatedBy:  p.UpdatedBy,
+		Visibility: p.Visibility,
+		IsPublic:   p.PublicToken != nil,
+		CreatedAt:  p.CreatedAt,
+		UpdatedAt:  p.UpdatedAt,
 	}
 	if p.Edges.Creator != nil && p.Edges.Creator.Name != nil {
 		wp.CreatorName = p.Edges.Creator.Name
@@ -121,6 +125,14 @@ func (s *Server) HandleListWikiPages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Restricted pages the caller isn't allowed to see are left out entirely.
+	hidden, err := s.hiddenWikiPageIDs(ctx, userID, projectID)
+	if err != nil {
+		s.logger.Error("Failed to resolve wiki page visibility", zap.Int64("project_id", projectID), zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to fetch wiki pages", "internal_error")
+		return
+	}
+
 	// Bulk-fetch agent_name (not in Ent schema) for all pages in this project
 	agentNames := make(map[int64]*string)
 	if len(pages) > 0 {
@@ -140,7 +152,15 @@ func (s *Server) HandleListWikiPages(w http.ResponseWriter, r *http.Request) {
 	// Convert to response format
 	response := make([]WikiPageResponse, 0, len(pages))
 	for _, p := range pages {
+		if hidden[p.ID] {
+			continue
+		}
 		wp := newWikiPageResponse(p)
+		// A visible child of a hidden page is shown at the top level so the
+		// hidden parent is never revealed.
+		if wp.ParentID != nil && hidden[*wp.ParentID] {
+			wp.ParentID = nil
+		}
 		if an, ok := agentNames[p.ID]; ok {
 			wp.AgentName = an
 		}
@@ -209,6 +229,10 @@ func (s *Server) HandleCreateWikiPage(w http.ResponseWriter, r *http.Request) {
 		respondWikiHierarchyError(w, err)
 		return
 	}
+	parent, ok := s.visibleWikiParent(ctx, w, userID, req.ParentID)
+	if !ok {
+		return
+	}
 	position, err := s.nextWikiSiblingPosition(ctx, projectID, req.ParentID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to determine page position", "internal_error")
@@ -256,6 +280,14 @@ func (s *Server) HandleCreateWikiPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if parent != nil && parent.Visibility == wikiVisibilityRestricted {
+		if page, err = s.inheritWikiRestriction(ctx, page, parent); err != nil {
+			s.logger.Error("Failed to inherit wiki page restriction", zap.Int64("page_id", page.ID), zap.Error(err))
+			respondError(w, http.StatusInternalServerError, "failed to create wiki page", "internal_error")
+			return
+		}
+	}
+
 	respondJSON(w, http.StatusCreated, newWikiPageResponse(page))
 }
 
@@ -292,7 +324,7 @@ func (s *Server) HandleGetWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify user has access to the project
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
 		return
@@ -339,7 +371,7 @@ func (s *Server) HandleUpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify user has access to the project
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
 		return
@@ -379,6 +411,9 @@ func (s *Server) HandleUpdateWikiPage(w http.ResponseWriter, r *http.Request) {
 	if req.ParentID.Set {
 		if err := s.validateWikiParent(ctx, page.ProjectID, &page.ID, req.ParentID.Value); err != nil {
 			respondWikiHierarchyError(w, err)
+			return
+		}
+		if _, ok := s.visibleWikiParent(ctx, w, userID, req.ParentID.Value); !ok {
 			return
 		}
 		if req.ParentID.Value == nil {
@@ -477,7 +512,7 @@ func (s *Server) HandleGetWikiPageContent(w http.ResponseWriter, r *http.Request
 	}
 
 	// Verify user has access to the project
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
 		return
@@ -537,7 +572,7 @@ func (s *Server) HandleUpdateWikiPageContent(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Verify user has access to the project
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
 		return
@@ -804,7 +839,7 @@ func (s *Server) HandleListWikiPageVersions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
 		return
@@ -876,7 +911,7 @@ func (s *Server) HandleGetWikiPageVersion(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
 		return
@@ -959,7 +994,7 @@ func (s *Server) HandleRestoreWikiPageVersion(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
 		return
@@ -1143,7 +1178,7 @@ func (s *Server) HandleDeleteWikiPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify user has access to the project
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to verify project access", "internal_error")
 		return

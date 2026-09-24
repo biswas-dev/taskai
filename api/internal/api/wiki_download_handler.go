@@ -41,7 +41,9 @@ type pdfJob struct {
 	Error     string       `json:"error,omitempty"`
 	CreatedAt time.Time    `json:"created_at"`
 
-	data []byte // PDF bytes — not serialized to JSON
+	data   []byte // PDF bytes — not serialized to JSON
+	userID int64  // only the requester may poll or download the job
+	pageID int64
 }
 
 // pdfJobStore is a simple in-memory store for PDF generation jobs.
@@ -57,12 +59,14 @@ func newPDFJobStore() *pdfJobStore {
 	return s
 }
 
-func (s *pdfJobStore) create(filename string) *pdfJob {
+func (s *pdfJobStore) create(filename string, userID, pageID int64) *pdfJob {
 	j := &pdfJob{
 		ID:        uuid.New().String(),
 		Status:    pdfJobPending,
 		Filename:  filename,
 		CreatedAt: time.Now(),
+		userID:    userID,
+		pageID:    pageID,
 	}
 	s.mu.Lock()
 	s.jobs[j.ID] = j
@@ -234,7 +238,7 @@ func (s *Server) HandleStartWikiPagePDF(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	job := pdfJobs.create(pg.Slug + ".pdf")
+	job := pdfJobs.create(pg.Slug+".pdf", userID, pg.ID)
 
 	// Run generation in the background — fully detached from the HTTP request.
 	go s.generatePDF(job.ID, pg.Title, pg.Slug, pg.Content)
@@ -248,9 +252,10 @@ func (s *Server) HandleStartWikiPagePDF(w http.ResponseWriter, r *http.Request) 
 // HandleGetWikiPagePDFJob checks job status or downloads the finished PDF.
 // GET /wiki/pages/{pageId}/pdf/{jobId}
 func (s *Server) HandleGetWikiPagePDFJob(w http.ResponseWriter, r *http.Request) {
+	userID := r.Context().Value(UserIDKey).(int64)
 	jobID := chi.URLParam(r, "jobId")
 	job := pdfJobs.get(jobID)
-	if job == nil {
+	if job == nil || job.userID != userID || chi.URLParam(r, "pageId") != strconv.FormatInt(job.pageID, 10) {
 		respondError(w, http.StatusNotFound, "job not found or expired", "not_found")
 		return
 	}
@@ -315,13 +320,7 @@ func (s *Server) generatePDF(jobID, title, slug, content string) {
 	defer cancel()
 
 	// Render markdown → HTML.
-	renderedHTML := stripDrawEditMode(
-		wiki.RenderContent(
-			preprocessFigmaShortcodes(
-				preprocessGraphLinksForPreview(content),
-			),
-		),
-	)
+	renderedHTML := renderWikiHTML(content)
 
 	// Inline draw diagrams as SVGs (fast — HTTP call to local server).
 	renderedHTML = s.inlineDrawSVGs(ctx, renderedHTML)
@@ -484,7 +483,7 @@ func (s *Server) fetchWikiPageWithAccess(ctx context.Context, userID, pageID int
 		return nil, err
 	}
 
-	hasAccess, err := s.checkProjectAccess(ctx, userID, pg.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, pg)
 	if err != nil {
 		return nil, fmt.Errorf("access check: %w", err)
 	}

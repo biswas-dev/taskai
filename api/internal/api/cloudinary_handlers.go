@@ -585,6 +585,18 @@ func (s *Server) HandleGetUploadSignature(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Only people who can see the task or page may upload to it.
+	if pageIDStr != "" {
+		pageID, _ := strconv.ParseInt(pageIDStr, 10, 64)
+		if err := s.checkWikiPageAccess(ctx, userID, pageID); err != nil {
+			handleWikiAccessError(w, err)
+			return
+		}
+	} else if member, err := s.checkProjectAccess(ctx, userID, target.projectID); err != nil || !member {
+		respondError(w, http.StatusForbidden, "access denied", "forbidden")
+		return
+	}
+
 	// Fetch Cloudinary credentials
 	cloudName, apiKey, apiSecret, herr := s.fetchCloudinarySecret(ctx, userID)
 	if herr != nil {
@@ -687,6 +699,11 @@ func (s *Server) HandleCreateTaskAttachment(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		s.logger.Error("Failed to look up task", zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to look up task", "internal_error")
+		return
+	}
+
+	if member, err := s.checkProjectAccess(ctx, userID, projectID); err != nil || !member {
+		respondError(w, http.StatusForbidden, "access denied", "forbidden")
 		return
 	}
 
@@ -836,10 +853,11 @@ func (s *Server) HandleListImages(w http.ResponseWriter, r *http.Request) {
 			 FROM wiki_page_attachments
 			 WHERE file_type = 'image' AND project_id = $4
 			   AND (alt_name LIKE $5 OR filename LIKE $6)
+			   AND wiki_page_id IN (SELECT wp.id FROM wiki_pages wp WHERE wp.project_id = $4 AND `+wikiVisibleSQL("wp", "$7")+`)
 			 ORDER BY created_at DESC
 			 LIMIT 50`,
 			projectID, searchPattern, searchPattern,
-			projectID, searchPattern, searchPattern,
+			projectID, searchPattern, searchPattern, userID,
 		)
 	} else {
 		rows, err = s.db.QueryContext(ctx,
@@ -856,9 +874,10 @@ func (s *Server) HandleListImages(w http.ResponseWriter, r *http.Request) {
 			        '' as user_name
 			 FROM wiki_page_attachments
 			 WHERE file_type = 'image' AND project_id = $2
+			   AND wiki_page_id IN (SELECT wp.id FROM wiki_pages wp WHERE wp.project_id = $2 AND `+wikiVisibleSQL("wp", "$3")+`)
 			 ORDER BY created_at DESC
 			 LIMIT 50`,
-			projectID, projectID,
+			projectID, projectID, userID,
 		)
 	}
 
@@ -1144,9 +1163,16 @@ func (s *Server) HandleListWikiPageAttachments(w http.ResponseWriter, r *http.Re
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
+	userID := r.Context().Value(UserIDKey).(int64)
+
 	pageID, err := strconv.ParseInt(chi.URLParam(r, "pageId"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid page ID", "bad_request")
+		return
+	}
+
+	if err := s.checkWikiPageAccess(ctx, userID, pageID); err != nil {
+		handleWikiAccessError(w, err)
 		return
 	}
 
@@ -1194,6 +1220,11 @@ func (s *Server) HandleCreateWikiPageAttachment(w http.ResponseWriter, r *http.R
 	pageID, err := strconv.ParseInt(chi.URLParam(r, "pageId"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid page ID", "bad_request")
+		return
+	}
+
+	if err := s.checkWikiPageAccess(ctx, userID, pageID); err != nil {
+		handleWikiAccessError(w, err)
 		return
 	}
 

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"taskai/ent"
 )
 
 // AppNotification is a notification delivered to a user.
@@ -325,11 +327,27 @@ func (s *Server) notifyAnnotationComment(
 ) {
 	notified := map[int64]bool{commenterID: true}
 
+	// Nobody is notified about a page they cannot open (restricted pages).
+	var page *ent.WikiPage
+	var pageID int64
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT wiki_page_id FROM wiki_annotations WHERE id = $1`, annotationID,
+	).Scan(&pageID); err == nil {
+		page, _ = s.db.Client.WikiPage.Get(ctx, pageID)
+	}
+	canSee := func(uid int64) bool {
+		if page == nil {
+			return false
+		}
+		ok, err := s.canViewWikiPage(ctx, uid, page)
+		return err == nil && ok
+	}
+
 	// Notify annotation author
 	var annotationAuthorID int64
 	if err := s.db.QueryRowContext(ctx,
 		`SELECT author_id FROM wiki_annotations WHERE id = $1`, annotationID,
-	).Scan(&annotationAuthorID); err == nil && !notified[annotationAuthorID] {
+	).Scan(&annotationAuthorID); err == nil && !notified[annotationAuthorID] && canSee(annotationAuthorID) {
 		notified[annotationAuthorID] = true
 		msg := commenterName + " commented on your annotation"
 		s.createNotification(ctx, annotationAuthorID, commenterID, projectID, commentID, "annotation_comment", "annotation_comment", msg, link)
@@ -340,7 +358,7 @@ func (s *Server) notifyAnnotationComment(
 		var parentAuthorID int64
 		if err := s.db.QueryRowContext(ctx,
 			`SELECT author_id FROM wiki_annotation_comments WHERE id = $1`, *parentCommentID,
-		).Scan(&parentAuthorID); err == nil && !notified[parentAuthorID] {
+		).Scan(&parentAuthorID); err == nil && !notified[parentAuthorID] && canSee(parentAuthorID) {
 			notified[parentAuthorID] = true
 			msg := commenterName + " replied to your comment"
 			s.createNotification(ctx, parentAuthorID, commenterID, projectID, commentID, "reply", "annotation_comment", msg, link)
@@ -348,5 +366,9 @@ func (s *Server) notifyAnnotationComment(
 	}
 
 	// Notify @mentions
-	s.notifyMentions(ctx, content, projectID, commenterID, commentID, "annotation_comment", commenterName, link)
+	for _, uid := range s.extractMentionedUserIDs(ctx, content, projectID, commenterID) {
+		if canSee(uid) {
+			s.createNotification(ctx, uid, commenterID, projectID, commentID, "mention", "annotation_comment", commenterName+" mentioned you", link)
+		}
+	}
 }

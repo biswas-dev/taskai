@@ -30,6 +30,10 @@ const (
 	FieldPosition = "position"
 	// FieldContent holds the string denoting the content field in the database.
 	FieldContent = "content"
+	// FieldVisibility holds the string denoting the visibility field in the database.
+	FieldVisibility = "visibility"
+	// FieldPublicToken holds the string denoting the public_token field in the database.
+	FieldPublicToken = "public_token"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -124,6 +128,8 @@ var Columns = []string{
 	FieldParentID,
 	FieldPosition,
 	FieldContent,
+	FieldVisibility,
+	FieldPublicToken,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
@@ -147,6 +153,8 @@ var (
 	DefaultPosition int
 	// DefaultContent holds the default value on creation for the "content" field.
 	DefaultContent string
+	// DefaultVisibility holds the default value on creation for the "visibility" field.
+	DefaultVisibility string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 	// DefaultUpdatedAt holds the default value on creation for the "updated_at" field.
@@ -201,6 +209,16 @@ func ByPosition(opts ...sql.OrderTermOption) OrderOption {
 // ByContent orders the results by the content field.
 func ByContent(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldContent, opts...).ToFunc()
+}
+
+// ByVisibility orders the results by the visibility field.
+func ByVisibility(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVisibility, opts...).ToFunc()
+}
+
+// ByPublicToken orders the results by the public_token field.
+func ByPublicToken(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPublicToken, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

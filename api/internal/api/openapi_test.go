@@ -61,6 +61,8 @@ func buildTestRouter(server *Server) chi.Router {
 			r.Post("/login", server.HandleLogin)
 		})
 
+		r.Get("/public/wiki/{token}", server.HandleGetPublicWikiPage)
+
 		r.Group(func(r chi.Router) {
 			r.Use(server.JWTAuth)
 
@@ -135,6 +137,11 @@ func buildTestRouter(server *Server) chi.Router {
 			r.Get("/teams/{teamId}/users/search", server.HandleSearchUsers)
 			r.Get("/teams/{teamId}/invitations/sent", server.HandleGetTeamSentInvitations)
 			r.Post("/teams/{teamId}/leave", server.HandleLeaveTeam)
+
+			r.Get("/wiki/pages/{pageId}/sharing", server.HandleGetWikiSharing)
+			r.Put("/wiki/pages/{pageId}/sharing", server.HandleUpdateWikiSharing)
+			r.Post("/wiki/pages/{pageId}/public-link", server.HandleCreateWikiPublicLink)
+			r.Delete("/wiki/pages/{pageId}/public-link", server.HandleDeleteWikiPublicLink)
 
 			r.Get("/team/invitations", server.HandleGetMyInvitations)
 			r.Post("/team/invitations/{id}/accept", server.HandleAcceptInvitation)

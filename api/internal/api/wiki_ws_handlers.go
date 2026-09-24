@@ -103,7 +103,7 @@ func (s *Server) HandleWikiWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if user has access to the project
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		s.logger.Error("Failed to check project access",
 			zap.Int64("user_id", userID),

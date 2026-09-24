@@ -95,6 +95,16 @@ func Content(v string) predicate.WikiPage {
 	return predicate.WikiPage(sql.FieldEQ(FieldContent, v))
 }
 
+// Visibility applies equality check predicate on the "visibility" field. It's identical to VisibilityEQ.
+func Visibility(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEQ(FieldVisibility, v))
+}
+
+// PublicToken applies equality check predicate on the "public_token" field. It's identical to PublicTokenEQ.
+func PublicToken(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEQ(FieldPublicToken, v))
+}
+
 // CreatedAt applies equality check predicate on the "created_at" field. It's identical to CreatedAtEQ.
 func CreatedAt(v time.Time) predicate.WikiPage {
 	return predicate.WikiPage(sql.FieldEQ(FieldCreatedAt, v))
@@ -448,6 +458,146 @@ func ContentEqualFold(v string) predicate.WikiPage {
 // ContentContainsFold applies the ContainsFold predicate on the "content" field.
 func ContentContainsFold(v string) predicate.WikiPage {
 	return predicate.WikiPage(sql.FieldContainsFold(FieldContent, v))
+}
+
+// VisibilityEQ applies the EQ predicate on the "visibility" field.
+func VisibilityEQ(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEQ(FieldVisibility, v))
+}
+
+// VisibilityNEQ applies the NEQ predicate on the "visibility" field.
+func VisibilityNEQ(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNEQ(FieldVisibility, v))
+}
+
+// VisibilityIn applies the In predicate on the "visibility" field.
+func VisibilityIn(vs ...string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldIn(FieldVisibility, vs...))
+}
+
+// VisibilityNotIn applies the NotIn predicate on the "visibility" field.
+func VisibilityNotIn(vs ...string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNotIn(FieldVisibility, vs...))
+}
+
+// VisibilityGT applies the GT predicate on the "visibility" field.
+func VisibilityGT(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldGT(FieldVisibility, v))
+}
+
+// VisibilityGTE applies the GTE predicate on the "visibility" field.
+func VisibilityGTE(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldGTE(FieldVisibility, v))
+}
+
+// VisibilityLT applies the LT predicate on the "visibility" field.
+func VisibilityLT(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldLT(FieldVisibility, v))
+}
+
+// VisibilityLTE applies the LTE predicate on the "visibility" field.
+func VisibilityLTE(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldLTE(FieldVisibility, v))
+}
+
+// VisibilityContains applies the Contains predicate on the "visibility" field.
+func VisibilityContains(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldContains(FieldVisibility, v))
+}
+
+// VisibilityHasPrefix applies the HasPrefix predicate on the "visibility" field.
+func VisibilityHasPrefix(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldHasPrefix(FieldVisibility, v))
+}
+
+// VisibilityHasSuffix applies the HasSuffix predicate on the "visibility" field.
+func VisibilityHasSuffix(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldHasSuffix(FieldVisibility, v))
+}
+
+// VisibilityEqualFold applies the EqualFold predicate on the "visibility" field.
+func VisibilityEqualFold(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEqualFold(FieldVisibility, v))
+}
+
+// VisibilityContainsFold applies the ContainsFold predicate on the "visibility" field.
+func VisibilityContainsFold(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldContainsFold(FieldVisibility, v))
+}
+
+// PublicTokenEQ applies the EQ predicate on the "public_token" field.
+func PublicTokenEQ(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEQ(FieldPublicToken, v))
+}
+
+// PublicTokenNEQ applies the NEQ predicate on the "public_token" field.
+func PublicTokenNEQ(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNEQ(FieldPublicToken, v))
+}
+
+// PublicTokenIn applies the In predicate on the "public_token" field.
+func PublicTokenIn(vs ...string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldIn(FieldPublicToken, vs...))
+}
+
+// PublicTokenNotIn applies the NotIn predicate on the "public_token" field.
+func PublicTokenNotIn(vs ...string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNotIn(FieldPublicToken, vs...))
+}
+
+// PublicTokenGT applies the GT predicate on the "public_token" field.
+func PublicTokenGT(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldGT(FieldPublicToken, v))
+}
+
+// PublicTokenGTE applies the GTE predicate on the "public_token" field.
+func PublicTokenGTE(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldGTE(FieldPublicToken, v))
+}
+
+// PublicTokenLT applies the LT predicate on the "public_token" field.
+func PublicTokenLT(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldLT(FieldPublicToken, v))
+}
+
+// PublicTokenLTE applies the LTE predicate on the "public_token" field.
+func PublicTokenLTE(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldLTE(FieldPublicToken, v))
+}
+
+// PublicTokenContains applies the Contains predicate on the "public_token" field.
+func PublicTokenContains(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldContains(FieldPublicToken, v))
+}
+
+// PublicTokenHasPrefix applies the HasPrefix predicate on the "public_token" field.
+func PublicTokenHasPrefix(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldHasPrefix(FieldPublicToken, v))
+}
+
+// PublicTokenHasSuffix applies the HasSuffix predicate on the "public_token" field.
+func PublicTokenHasSuffix(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldHasSuffix(FieldPublicToken, v))
+}
+
+// PublicTokenIsNil applies the IsNil predicate on the "public_token" field.
+func PublicTokenIsNil() predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldIsNull(FieldPublicToken))
+}
+
+// PublicTokenNotNil applies the NotNil predicate on the "public_token" field.
+func PublicTokenNotNil() predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldNotNull(FieldPublicToken))
+}
+
+// PublicTokenEqualFold applies the EqualFold predicate on the "public_token" field.
+func PublicTokenEqualFold(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldEqualFold(FieldPublicToken, v))
+}
+
+// PublicTokenContainsFold applies the ContainsFold predicate on the "public_token" field.
+func PublicTokenContainsFold(v string) predicate.WikiPage {
+	return predicate.WikiPage(sql.FieldContainsFold(FieldPublicToken, v))
 }
 
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,8 +38,8 @@ type SearchTaskResult struct {
 	Snippet           string `json:"snippet"`
 	Status            string `json:"status"`
 	Priority          string `json:"priority"`
-	GithubIssueNumber *int    `json:"github_issue_number,omitempty"`
-	GithubRepo        string  `json:"github_repo,omitempty"`
+	GithubIssueNumber *int   `json:"github_issue_number,omitempty"`
+	GithubRepo        string `json:"github_repo,omitempty"`
 }
 
 // GlobalSearchWikiResult represents a wiki page in global search results
@@ -86,7 +87,7 @@ func normalizeSearchLimit(limit int) int {
 }
 
 // executeParallelSearch runs task and wiki searches concurrently and assembles the response.
-func (s *Server) executeParallelSearch(ctx context.Context, req GlobalSearchRequest, searchTasks, searchWiki bool, accessibleProjects []int64, projectNameMap map[int64]string) GlobalSearchResponse {
+func (s *Server) executeParallelSearch(ctx context.Context, userID int64, req GlobalSearchRequest, searchTasks, searchWiki bool, accessibleProjects []int64, projectNameMap map[int64]string) GlobalSearchResponse {
 	var (
 		taskResults []SearchTaskResult
 		wikiResults []GlobalSearchWikiResult
@@ -107,7 +108,7 @@ func (s *Server) executeParallelSearch(ctx context.Context, req GlobalSearchRequ
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			wikiResults, wikiErr = s.searchWikiForGlobal(ctx, req, accessibleProjects, projectNameMap)
+			wikiResults, wikiErr = s.searchWikiForGlobal(ctx, userID, req, accessibleProjects, projectNameMap)
 		}()
 	}
 
@@ -173,6 +174,11 @@ func (s *Server) HandleGlobalSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A project filter only ever narrows the user's own projects.
+	if req.ProjectID != nil && !slices.Contains(accessibleProjects, *req.ProjectID) {
+		accessibleProjects = nil
+	}
+
 	if len(accessibleProjects) == 0 {
 		respondJSON(w, http.StatusOK, GlobalSearchResponse{
 			Tasks: []SearchTaskResult{},
@@ -189,7 +195,7 @@ func (s *Server) HandleGlobalSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := s.executeParallelSearch(ctx, req, searchTasks, searchWiki, accessibleProjects, projectNameMap)
+	response := s.executeParallelSearch(ctx, userID, req, searchTasks, searchWiki, accessibleProjects, projectNameMap)
 	respondJSON(w, http.StatusOK, response)
 }
 
@@ -338,15 +344,15 @@ func (s *Server) searchTasksPostgres(ctx context.Context, req GlobalSearchReques
 }
 
 // searchWikiForGlobal searches wiki blocks, using Postgres FTS when available
-func (s *Server) searchWikiForGlobal(ctx context.Context, req GlobalSearchRequest, accessibleProjects []int64, projectNameMap map[int64]string) ([]GlobalSearchWikiResult, error) {
+func (s *Server) searchWikiForGlobal(ctx context.Context, userID int64, req GlobalSearchRequest, accessibleProjects []int64, projectNameMap map[int64]string) ([]GlobalSearchWikiResult, error) {
 	if s.config.DBDriver == "postgres" {
-		return s.searchWikiPostgres(ctx, req, accessibleProjects, projectNameMap)
+		return s.searchWikiPostgres(ctx, userID, req, accessibleProjects, projectNameMap)
 	}
-	return s.searchWikiSQLite(ctx, req, accessibleProjects, projectNameMap)
+	return s.searchWikiSQLite(ctx, userID, req, accessibleProjects, projectNameMap)
 }
 
 // searchWikiSQLite uses Ent ORM with ContainsFold (LIKE) for SQLite
-func (s *Server) searchWikiSQLite(ctx context.Context, req GlobalSearchRequest, accessibleProjects []int64, projectNameMap map[int64]string) ([]GlobalSearchWikiResult, error) {
+func (s *Server) searchWikiSQLite(ctx context.Context, userID int64, req GlobalSearchRequest, accessibleProjects []int64, projectNameMap map[int64]string) ([]GlobalSearchWikiResult, error) {
 	query := s.db.Client.WikiBlock.Query().
 		// Select only columns that exist in both SQLite and Postgres (excludes search_text/search_vector)
 		Select(
@@ -362,11 +368,10 @@ func (s *Server) searchWikiSQLite(ctx context.Context, req GlobalSearchRequest, 
 			q.Select(wikipage.FieldID, wikipage.FieldTitle, wikipage.FieldSlug, wikipage.FieldProjectID)
 		})
 
-	// Filter by project
+	// Only the user's projects (narrowed to one if asked) and pages they may see
+	query = query.Where(wikiblock.HasPageWith(wikipage.ProjectIDIn(accessibleProjects...), wikiVisiblePredicate(userID)))
 	if req.ProjectID != nil {
 		query = query.Where(wikiblock.HasPageWith(wikipage.ProjectID(*req.ProjectID)))
-	} else {
-		query = query.Where(wikiblock.HasPageWith(wikipage.ProjectIDIn(accessibleProjects...)))
 	}
 
 	// Use ContainsFold for case-insensitive search (generates ILIKE on Postgres)
@@ -387,21 +392,21 @@ func (s *Server) searchWikiSQLite(ctx context.Context, req GlobalSearchRequest, 
 
 // searchWikiPostgres searches both wiki_blocks (FTS) and wiki_pages.content (ILIKE fallback).
 // Many wiki pages store content as markdown directly without wiki_blocks, so we search both.
-func (s *Server) searchWikiPostgres(ctx context.Context, req GlobalSearchRequest, accessibleProjects []int64, projectNameMap map[int64]string) ([]GlobalSearchWikiResult, error) {
+func (s *Server) searchWikiPostgres(ctx context.Context, userID int64, req GlobalSearchRequest, accessibleProjects []int64, projectNameMap map[int64]string) ([]GlobalSearchWikiResult, error) {
 	// $1 = query (for FTS), $2 = query (for ILIKE), $3 = limit
 	args := []interface{}{req.Query, req.Query, req.Limit}
 
-	var projectFilter string
+	// Only the user's projects (narrowed to one if asked) and pages they may see
+	placeholders := make([]string, len(accessibleProjects))
+	for i, pid := range accessibleProjects {
+		args = append(args, pid)
+		placeholders[i] = fmt.Sprintf("$%d", len(args))
+	}
+	args = append(args, userID)
+	projectFilter := fmt.Sprintf("AND wp.project_id IN (%s) AND %s", strings.Join(placeholders, ","), wikiVisibleSQL("wp", fmt.Sprintf("$%d", len(args))))
 	if req.ProjectID != nil {
-		projectFilter = "AND wp.project_id = $4"
 		args = append(args, *req.ProjectID)
-	} else {
-		placeholders := make([]string, len(accessibleProjects))
-		for i, pid := range accessibleProjects {
-			placeholders[i] = fmt.Sprintf("$%d", 4+i)
-			args = append(args, pid)
-		}
-		projectFilter = fmt.Sprintf("AND wp.project_id IN (%s)", strings.Join(placeholders, ","))
+		projectFilter += fmt.Sprintf(" AND wp.project_id = $%d", len(args))
 	}
 
 	// Search wiki pages by title and content directly.
