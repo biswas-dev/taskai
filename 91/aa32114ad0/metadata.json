@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "91aa32114ad0",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "web/src/App.tsx",
+    "web/src/components/WikiContent.tsx",
+    "web/src/components/WikiEditor.tsx",
+    "web/src/components/WikiPageTree.tsx",
+    "web/src/lib/api.ts",
+    "web/src/lib/api.types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/91/aa32114ad0/0/metadata.json",
+      "transcript": "/91/aa32114ad0/0/full.jsonl",
+      "content_hash": "/91/aa32114ad0/0/content_hash.txt",
+      "prompt": "/91/aa32114ad0/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 660,
+    "cache_creation_tokens": 1007804,
+    "cache_read_tokens": 108360727,
+    "output_tokens": 243411,
+    "api_call_count": 326
+  }
+}
