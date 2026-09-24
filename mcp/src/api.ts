@@ -7,6 +7,8 @@ export interface Project {
   id: string;
   name: string;
   description: string;
+  /** The team the project belongs to; only that team's members can join it. */
+  team_id?: number | null;
   created_at: string;
   updated_at: string;
   [key: string]: unknown;
@@ -67,6 +69,61 @@ export interface WikiPage {
   created_by: string;
   created_at: string;
   updated_at: string;
+  [key: string]: unknown;
+}
+
+export type WikiVisibility = "project" | "restricted";
+
+export interface WikiShareUser {
+  user_id: number;
+  email: string;
+  user_name?: string;
+}
+
+export interface WikiSharing {
+  visibility: WikiVisibility;
+  /** Whether the caller may change sharing (page creator or project owner). */
+  can_manage: boolean;
+  created_by: number;
+  /** Explicit shares. The creator and project owner can always see the page and are not listed. */
+  shared_with: WikiShareUser[];
+  /** Set when a public read-only link is on; only returned to people who can manage the page. */
+  public_token?: string;
+}
+
+export type ProjectRole = "viewer" | "member" | "editor" | "owner";
+
+export interface ProjectMember {
+  /** Membership row ID, not the user ID. */
+  id: number;
+  project_id: number;
+  user_id: number;
+  email: string;
+  name?: string | null;
+  role: string;
+  granted_by: number;
+  granted_at: string;
+}
+
+export interface TeamMember {
+  id: number;
+  team_id: number;
+  user_id: number;
+  user_name?: string;
+  email: string;
+  role: string;
+  status: string;
+  joined_at: string;
+}
+
+export interface TeamInvitation {
+  id: number;
+  team_id: number;
+  team_name: string;
+  invitee_email: string;
+  invitee_id?: number;
+  /** "accepted" when the user already existed and was added; "pending" when a signup email was sent. */
+  status: string;
   [key: string]: unknown;
 }
 
@@ -540,6 +597,56 @@ export class TaskAIClient {
     return this.request<WikiPage>(`/api/wiki/pages/${encodeURIComponent(pageId)}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    });
+  }
+
+  // --- Wiki sharing endpoints ---
+  async getWikiSharing(pageId: string): Promise<WikiSharing> {
+    return this.request<WikiSharing>(`/api/wiki/pages/${encodeURIComponent(pageId)}/sharing`);
+  }
+
+  /** Sets visibility and the FULL share list (the API replaces the list). */
+  async updateWikiSharing(pageId: string, visibility: WikiVisibility, userIds: number[]): Promise<WikiSharing> {
+    return this.request<WikiSharing>(`/api/wiki/pages/${encodeURIComponent(pageId)}/sharing`, {
+      method: "PUT",
+      body: JSON.stringify({ visibility, user_ids: userIds }),
+    });
+  }
+
+  // --- Project member endpoints ---
+  async listProjectMembers(projectId: string): Promise<ProjectMember[]> {
+    return this.request<ProjectMember[]>(`/api/projects/${encodeURIComponent(projectId)}/members`);
+  }
+
+  /** Adds an existing user directly (no acceptance step). They must already be in the project's team. */
+  async addProjectMember(projectId: string, email: string, role: ProjectRole): Promise<{ message: string; member_id: number }> {
+    return this.request(`/api/projects/${encodeURIComponent(projectId)}/members`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    });
+  }
+
+  // --- Team member endpoints ---
+  async listTeamMembers(teamId: number): Promise<TeamMember[]> {
+    return this.request<TeamMember[]>(`/api/teams/${teamId}/members`);
+  }
+
+  /** Adds an existing user to a team by user ID. */
+  async addTeamMember(teamId: number, userId: number): Promise<{ message: string }> {
+    return this.request(`/api/teams/${teamId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    });
+  }
+
+  /**
+   * Invites an email to a team. A registered user is added at once (status
+   * "accepted"); anyone else gets a signup email and a "pending" invitation.
+   */
+  async inviteTeamMember(teamId: number, email: string): Promise<TeamInvitation> {
+    return this.request<TeamInvitation>(`/api/teams/${teamId}/invite`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
     });
   }
 

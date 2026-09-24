@@ -2,7 +2,8 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { TaskAIClient, Task, Project, SwimLane, Comment, WikiPage, WikiBlock, User, Milestone, WikiAnnotation } from "./api.js";
+import { TaskAIClient, Task, Project, SwimLane, Comment, WikiPage, WikiBlock, User, Milestone, WikiAnnotation, ProjectMember, WikiSharing } from "./api.js";
+import { ToolInputError, addProjectMember, updateWikiSharing } from "./membership.js";
 
 const TASKAI_API_URL = process.env.TASKAI_API_URL || "https://taskai.cc";
 const PORT = parseInt(process.env.PORT || "3000", 10);
@@ -139,6 +140,38 @@ function minimizeWikiAnnotation(annotation: WikiAnnotation) {
 }
 
 /**
+ * Extract minimal fields from a project member. user_id (not the membership id)
+ * is what the sharing tools take.
+ */
+function minimizeProjectMember(member: ProjectMember) {
+  return { user_id: member.user_id, email: member.email, name: member.name ?? null, role: member.role };
+}
+
+/**
+ * Minimal view of a page's sharing: the public link token is reduced to a flag.
+ */
+function minimizeWikiSharing(sharing: WikiSharing) {
+  return {
+    visibility: sharing.visibility,
+    can_manage: sharing.can_manage,
+    created_by: sharing.created_by,
+    shared_with: sharing.shared_with.map((u) => ({ user_id: u.user_id, email: u.email, name: u.user_name ?? null })),
+    public_link: !!sharing.public_token,
+  };
+}
+
+/**
+ * Report an actionable input problem as a tool error; rethrow anything else so
+ * API failures surface the way they do for every other tool.
+ */
+function toolError(err: unknown) {
+  if (err instanceof ToolInputError) {
+    return { content: [{ type: "text" as const, text: err.message }], isError: true };
+  }
+  throw err;
+}
+
+/**
  * Create and configure the MCP server with all TaskAI tools.
  */
 function createServer(client: TaskAIClient, cachedUser?: User, defaultProjectIds?: string[]): McpServer {
@@ -187,6 +220,42 @@ function createServer(client: TaskAIClient, cachedUser?: User, defaultProjectIds
     async ({ project_id, verbose }) => {
       const project = await client.getProject(project_id);
       return { content: [{ type: "text", text: formatResponse(project, verbose) }] };
+    }
+  );
+
+  // --- list_project_members ---
+  server.tool(
+    "list_project_members",
+    "List the members of a project: user_id, email, name and role. Use it to find someone's user_id or exact email before sharing a wiki page with them (pages can only be shared with project members) or to check who can be added. Pass user_id, not the membership id, to other tools.",
+    {
+      project_id: z.string().describe("Project ID"),
+      verbose: z.boolean().optional().describe("Return full details including membership id and granted_at (default: false)"),
+    },
+    async ({ project_id, verbose }) => {
+      const members = await client.listProjectMembers(project_id);
+      const data = verbose ? members : members.map(minimizeProjectMember);
+      return { content: [{ type: "text", text: formatResponse(data, verbose) }] };
+    }
+  );
+
+  // --- add_project_member ---
+  server.tool(
+    "add_project_member",
+    "Add a person to a project so they can see its tasks and wiki, and so restricted wiki pages can be shared with them. They are added immediately (no invitation to accept). Only the project owner or a project admin can do this. Every project belongs to one team and only that team's members can join it: if the person is not in the team, the call fails unless add_to_team=true, which adds them to the team first. Someone with no TaskAI account can only be invited to the team by email; they must sign up before they can be added. Existing members are left unchanged.",
+    {
+      project_id: z.string().describe("Project ID"),
+      email: z.string().email().optional().describe("Email of the person to add (give this or user_id)"),
+      user_id: z.number().int().positive().optional().describe("User ID of the person to add (give this or email)"),
+      role: z.enum(["viewer", "member", "editor", "owner"]).optional().describe("Project role (default: member)"),
+      add_to_team: z.boolean().optional().describe("If they are not in the project's team, add them to it first (default: false). With an email that has no TaskAI account, this sends them a signup invitation instead."),
+    },
+    async (args) => {
+      try {
+        const result = await addProjectMember(client, args);
+        return { content: [{ type: "text", text: formatResponse(result) }] };
+      } catch (err) {
+        return toolError(err);
+      }
     }
   );
 
@@ -728,6 +797,42 @@ function createServer(client: TaskAIClient, cachedUser?: User, defaultProjectIds
       if (position !== undefined) data.position = position;
       const page = await client.updateWikiPage(page_id, data);
       return { content: [{ type: "text", text: formatResponse(verbose ? page : minimizeWikiPage(page), verbose) }] };
+    }
+  );
+
+  // --- get_wiki_sharing ---
+  server.tool(
+    "get_wiki_sharing",
+    "Get who can see a wiki page. visibility 'project' means every project member; 'restricted' means only the page creator, the project owner and the people in shared_with (the creator and owner always have access and are not listed). can_manage says whether you may change it. public_link is true when a read-only public link is on.",
+    {
+      page_id: z.string().describe("Wiki page ID"),
+      verbose: z.boolean().optional().describe("Return the raw API response, including the public link token if you can manage the page (default: false)"),
+    },
+    async ({ page_id, verbose }) => {
+      const sharing = await client.getWikiSharing(page_id);
+      return { content: [{ type: "text", text: formatResponse(verbose ? sharing : minimizeWikiSharing(sharing), verbose) }] };
+    }
+  );
+
+  // --- update_wiki_sharing ---
+  server.tool(
+    "update_wiki_sharing",
+    "Make a wiki page private or project-wide, and choose who it is shared with. visibility 'restricted' limits the page to its creator, the project owner and the people you share it with; 'project' opens it to every project member. Name people by email or user_id; they must be members of the page's project (see list_project_members, add_project_member), otherwise nothing is changed. mode 'add' (default) keeps everyone already shared and adds these people; 'replace' makes these people the whole list (replace with no one: only the creator and project owner keep access). Omitting user_ids and emails keeps the current list. Only the page creator or the project owner can change sharing. Returns the resulting sharing.",
+    {
+      page_id: z.string().describe("Wiki page ID"),
+      visibility: z.enum(["project", "restricted"]).describe("'restricted' = private to the people it is shared with; 'project' = every project member"),
+      emails: z.array(z.string().email()).max(200).optional().describe("Emails of project members to share with"),
+      user_ids: z.array(z.number().int().positive()).max(200).optional().describe("User IDs of project members to share with"),
+      mode: z.enum(["add", "replace"]).optional().describe("'add' (default) adds to the current share list; 'replace' sets the whole list"),
+      verbose: z.boolean().optional().describe("Return the raw API response (default: false)"),
+    },
+    async ({ verbose, ...args }) => {
+      try {
+        const sharing = await updateWikiSharing(client, args);
+        return { content: [{ type: "text", text: formatResponse(verbose ? sharing : minimizeWikiSharing(sharing), verbose) }] };
+      } catch (err) {
+        return toolError(err);
+      }
     }
   );
 
