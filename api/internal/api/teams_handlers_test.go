@@ -516,3 +516,42 @@ func TestHandleUpdateProject_ChangeTeam(t *testing.T) {
 		t.Errorf("project team = %d, want %d", teamID, f.intelliviz)
 	}
 }
+
+func TestHandleInviteProjectMember_OnlyProjectTeam(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+	f := newMultiTeamFixture(t, ts)
+	projectID := ts.CreateTestProject(t, f.owner, "Elastio - BlueStack")
+	if _, err := ts.DB.ExecContext(context.Background(), `UPDATE projects SET team_id = ? WHERE id = ?`, f.elastio, projectID); err != nil {
+		t.Fatal(err)
+	}
+	idParam := map[string]string{"id": fmt.Sprintf("%d", projectID)}
+
+	invite := func(userID int64) int {
+		rec, req := ts.MakeAuthRequest(t, http.MethodPost, "/api/projects/x/invitations",
+			InviteProjectMemberRequest{UserID: userID, Role: "member"}, f.owner, idParam)
+		ts.HandleInviteProjectMember(rec, req)
+		return rec.Code
+	}
+
+	tests := []struct {
+		name       string
+		userID     int64
+		wantStatus int
+	}{
+		{"member of the project's team can be invited", f.elastioDev, http.StatusCreated},
+		{"member of the owner's other team cannot", f.nakul, http.StatusBadRequest},
+		{"member of an unrelated team cannot", f.faiz, http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			AssertStatusCode(t, invite(tt.userID), tt.wantStatus)
+		})
+	}
+
+	// Once the project moves to Intelliviz, that team's members become eligible.
+	if _, err := ts.DB.ExecContext(context.Background(), `UPDATE projects SET team_id = ? WHERE id = ?`, f.intelliviz, projectID); err != nil {
+		t.Fatal(err)
+	}
+	AssertStatusCode(t, invite(f.nakul), http.StatusCreated)
+}
