@@ -2487,3 +2487,48 @@ func TestHandleGetUploadSignature_WikiPageLimitExceeded(t *testing.T) {
 	AssertError(t, rec, http.StatusBadRequest, "maximum 100 attachments per wiki page", "attachment_limit_exceeded")
 }
 
+
+func TestHandleGetUploadSignature_PublicIDSkipsNumbersInUse(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []string
+		want     string
+	}{
+		{"no attachments", nil, "_01"},
+		{"contiguous", []string{"_01", "_02"}, "_03"},
+		// _02 was deleted: count is 2 but _03 exists, so reusing _03 would overwrite it.
+		{"gap after deletion", []string{"_01", "_03"}, "_04"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := NewTestServer(t)
+			defer ts.Close()
+
+			userID := ts.CreateTestUser(t, "user@example.com", "password123")
+			createTestCloudinaryCredential(t, ts, userID, "cloud", "key", "secret")
+			projectID := ts.CreateTestProject(t, userID, "Uploads")
+			taskID := ts.CreateTestTask(t, projectID, "Task")
+
+			for _, suffix := range tt.existing {
+				publicID := fmt.Sprintf("taskai/uploads/%d%s", taskID, suffix)
+				if _, err := ts.DB.ExecContext(context.Background(),
+					`INSERT INTO task_attachments (task_id, project_id, user_id, filename, alt_name, file_type, content_type, file_size, cloudinary_url, cloudinary_public_id)
+					 VALUES (?, ?, ?, 'f.png', 'f', 'image', 'image/png', 1, 'https://x', ?)`,
+					taskID, projectID, userID, publicID); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			rec, req := makeAuthRequest(t, http.MethodGet, fmt.Sprintf("/api/settings/cloudinary/signature?task_id=%d", taskID), nil, userID, nil)
+			ts.HandleGetUploadSignature(rec, req)
+			AssertStatusCode(t, rec.Code, http.StatusOK)
+
+			var resp UploadSignatureResponse
+			DecodeJSON(t, rec, &resp)
+			if want := fmt.Sprintf("%d%s", taskID, tt.want); resp.PublicID != want {
+				t.Errorf("public_id = %q, want %q", resp.PublicID, want)
+			}
+		})
+	}
+}

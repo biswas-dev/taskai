@@ -3,8 +3,10 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, WikiPage, Project, WikiAnnotation, AnnotationComment, AnnotationColor } from '../lib/api'
 import WikiEditor from '../components/WikiEditor'
 import WikiAnnotationSidebar from '../components/WikiAnnotationSidebar'
+import { useDialog } from '../state/DialogContext'
 
 export default function Wiki() {
+  const dialog = useDialog()
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -94,14 +96,14 @@ export default function Wiki() {
       setShowNewPageInput(false)
       setSearchParams({ page: String(newPage.id) })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create page')
+      dialog.notify(err instanceof Error ? err.message : 'Failed to create page', 'error')
     } finally {
       setCreating(false)
     }
   }
 
   const handleDeletePage = async (pageId: number) => {
-    if (!confirm('Are you sure you want to delete this wiki page?')) return
+    if (!(await dialog.confirm({ title: 'Delete wiki page?', message: 'This wiki page will be permanently deleted.', confirmLabel: 'Delete', danger: true }))) return
 
     try {
       await api.deleteWikiPage(pageId)
@@ -110,7 +112,7 @@ export default function Wiki() {
         setSearchParams({})
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete page')
+      dialog.notify(err instanceof Error ? err.message : 'Failed to delete page', 'error')
     }
   }
 

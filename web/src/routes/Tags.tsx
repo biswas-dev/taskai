@@ -5,6 +5,7 @@ import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import { apiClient, type Project } from '../lib/api'
+import { useDialog } from '../state/DialogContext'
 
 interface Tag {
   id: number
@@ -15,6 +16,7 @@ interface Tag {
 }
 
 export default function Tags() {
+  const dialog = useDialog()
   const navigate = useNavigate()
   const { projectId } = useParams<{ projectId: string }>()
   const projectIdNum = Number(projectId)
@@ -99,7 +101,7 @@ export default function Tags() {
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this tag?')) {
+    if (!(await dialog.confirm({ title: 'Delete tag?', message: 'This tag will be permanently deleted.', confirmLabel: 'Delete', danger: true }))) {
       return
     }
 

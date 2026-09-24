@@ -1,7 +1,9 @@
+import type { ReactElement } from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TeamsPanel from './TeamsPanel'
+import { DialogProvider } from '../state/DialogContext'
 
 vi.mock('./ui/FormError', () => ({
   default: ({ message }: { message: string }) => (message ? <div role="alert">{message}</div> : null),
@@ -36,6 +38,8 @@ const membersByTeam: Record<number, unknown[]> = {
   ],
 }
 
+const renderWithDialogs = (ui: ReactElement) => render(<DialogProvider>{ui}</DialogProvider>)
+
 describe('TeamsPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -45,11 +49,10 @@ describe('TeamsPanel', () => {
     mocks.getTeamSentInvitations.mockResolvedValue([])
     mocks.getTeamMembers.mockImplementation(async (teamId: number) => membersByTeam[teamId] ?? [])
     mocks.searchTeamUsers.mockResolvedValue([])
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
   it('opens on the primary team and only shows that team\'s members', async () => {
-    render(<TeamsPanel />)
+    renderWithDialogs(<TeamsPanel />)
     expect(await screen.findByText('bob@elastio.test')).toBeInTheDocument()
     expect(mocks.getTeamMembers).toHaveBeenCalledWith(1)
     expect(screen.queryByText('nakul@intelliviz.test')).not.toBeInTheDocument()
@@ -57,7 +60,7 @@ describe('TeamsPanel', () => {
 
   it('switches teams and loads the selected roster', async () => {
     const user = userEvent.setup()
-    render(<TeamsPanel />)
+    renderWithDialogs(<TeamsPanel />)
     await screen.findByText('bob@elastio.test')
 
     await user.click(screen.getByRole('button', { name: /Intelliviz/ }))
@@ -71,7 +74,7 @@ describe('TeamsPanel', () => {
     const user = userEvent.setup()
     const acme = { ...intelliviz, id: 3, name: 'Acme', member_count: 1, project_count: 0 }
     mocks.createTeam.mockResolvedValue({ id: 3, name: 'Acme' })
-    render(<TeamsPanel />)
+    renderWithDialogs(<TeamsPanel />)
     await screen.findByText('bob@elastio.test')
 
     mocks.listTeams.mockResolvedValue([elastio, intelliviz, acme])
@@ -87,10 +90,15 @@ describe('TeamsPanel', () => {
   it('moves a member to another team', async () => {
     const user = userEvent.setup()
     mocks.moveTeamMember.mockResolvedValue({ message: 'member moved' })
-    render(<TeamsPanel />)
+    renderWithDialogs(<TeamsPanel />)
     await screen.findByText('bob@elastio.test')
 
     await user.selectOptions(screen.getByLabelText(/Move bob@elastio.test to another team/), '2')
+
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('Move bob@elastio.test from Elastio to Intelliviz? Their project access is not changed.')).toBeInTheDocument()
+    expect(mocks.moveTeamMember).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Move' }))
 
     await waitFor(() => expect(mocks.moveTeamMember).toHaveBeenCalledWith(1, 12, 2))
     expect(await screen.findByText('bob@elastio.test moved to Intelliviz')).toBeInTheDocument()
@@ -103,7 +111,7 @@ describe('TeamsPanel', () => {
       { ...elastio, id: 5, name: 'Mine', is_home: true },
     ])
     mocks.leaveTeam.mockResolvedValue({ message: 'left team' })
-    render(<TeamsPanel />)
+    renderWithDialogs(<TeamsPanel />)
 
     const group = await screen.findByRole('group', { name: 'Select a team' })
     await user.click(within(group).getByRole('button', { name: /Intelliviz/ }))
@@ -113,6 +121,7 @@ describe('TeamsPanel', () => {
     expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Leave team' }))
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Leave' }))
     await waitFor(() => expect(mocks.leaveTeam).toHaveBeenCalledWith(2))
   })
 })

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, usePa
 import { AuthProvider, useAuth } from './state/AuthContext'
 import { SyncProvider } from './state/SyncContext'
 import { ThemeProvider } from './state/ThemeContext'
+import { DialogProvider } from './state/DialogContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Landing from './routes/Landing'
 import Login from './routes/Login'
@@ -169,13 +170,15 @@ function TaskDetailModal() {
 function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <SyncProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </SyncProvider>
-      </AuthProvider>
+      <DialogProvider>
+        <AuthProvider>
+          <SyncProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+          </SyncProvider>
+        </AuthProvider>
+      </DialogProvider>
     </ThemeProvider>
   )
 }

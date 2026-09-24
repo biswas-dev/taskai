@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, WikiAnnotation, AnnotationComment, AnnotationColor } from '../lib/api'
 import { useAuth } from '../state/AuthContext'
 import MentionTextarea from './MentionTextarea'
+import { useDialog } from '../state/DialogContext'
 
 const COLOR_LABELS: Record<AnnotationColor, string> = {
   yellow: 'Note',
@@ -146,6 +147,7 @@ function AnnotationCard({
   onCommentUpdate,
   onCommentDelete,
 }: Readonly<AnnotationCardProps>) {
+  const dialog = useDialog()
   const [replyText, setReplyText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [replyTo, setReplyTo] = useState<number | null>(null) // parent comment id
@@ -160,7 +162,7 @@ function AnnotationCard({
   }
 
   const handleDelete = async () => {
-    if (!confirm('Delete this annotation and all its comments?')) return
+    if (!(await dialog.confirm({ title: 'Delete annotation?', message: 'This annotation and all its comments will be deleted.', confirmLabel: 'Delete', danger: true }))) return
     try {
       await api.deleteWikiAnnotation(annotation.id)
       onDelete(annotation.id)
@@ -330,6 +332,7 @@ function CommentThread({
   onUpdate,
   onDelete,
 }: Readonly<CommentThreadProps>) {
+  const dialog = useDialog()
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(comment.content)
   const [saving, setSaving] = useState(false)
@@ -349,7 +352,7 @@ function CommentThread({
   }
 
   const handleDelete = async () => {
-    if (!confirm('Delete this comment?')) return
+    if (!(await dialog.confirm({ title: 'Delete comment?', message: 'This comment will be permanently deleted.', confirmLabel: 'Delete', danger: true }))) return
     try {
       await api.deleteAnnotationComment(comment.id)
       onDelete(comment.id)

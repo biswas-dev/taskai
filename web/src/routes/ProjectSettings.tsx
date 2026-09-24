@@ -7,6 +7,7 @@ import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
 import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubRepo, type GitHubProgressEvent, type Collaborator, type TeamSummary } from '../lib/api'
+import { useDialog } from '../state/DialogContext'
 
 interface ProjectMember {
   id: number
@@ -42,6 +43,7 @@ interface ProjectSettingsProps {
 }
 
 export default function ProjectSettings({ embedded, projectIdOverride }: ProjectSettingsProps = {}) {
+  const dialog = useDialog()
   const navigate = useNavigate()
   const { projectId: projectIdParam } = useParams<{ projectId: string }>()
   const projectId = projectIdOverride || parseInt(projectIdParam || '0')
@@ -215,7 +217,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     try {
       const updated = await apiClient.updateProject(projectId, { team_id: teamId })
       setProject(updated)
-      setMemberSuccess(`Project moved to ${target.name}. Existing members keep their access.`)
+      setMemberSuccess(`Project moved to ${target.name}. Existing members keep their access; new invites are limited to ${target.name}.`)
     } catch (error: unknown) {
       setMemberError(error instanceof Error ? error.message : 'Failed to change the project team')
     } finally {
@@ -493,7 +495,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   }
 
   const handleDeleteSwimLane = async (laneId: number) => {
-    if (!confirm('Are you sure you want to delete this swim lane? Tasks using this swim lane will need to be reassigned.')) {
+    if (!(await dialog.confirm({ title: 'Delete swim lane?', message: 'Tasks using this swim lane will need to be reassigned.', confirmLabel: 'Delete', danger: true }))) {
       return
     }
 
@@ -583,36 +585,21 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     }
   }
 
-  // Filter collaborators that aren't already project members and don't have a pending invitation
+  // A project belongs to exactly one team: only that team's members can be
+  // invited, and people from the user's other teams are never offered.
   const availableCollaborators = collaborators.filter(
-    c => !members.some(pm => pm.user_id === c.user_id) &&
+    c => c.team_id === project?.team_id &&
+         !members.some(pm => pm.user_id === c.user_id) &&
          !invitations.some(inv => inv.invitee_user_id === c.user_id && inv.status === 'pending')
   )
 
   const projectTeamName = myTeams.find(t => t.id === project?.team_id)?.name ?? project?.team_name ?? undefined
 
-  // Group candidates by team, the project's own team first. Someone in several
-  // of your teams is listed once, under the first group they appear in.
-  const projectTeamId = project?.team_id
-  const seenCollaborators = new Set<number>()
-  const collaboratorOptions = [...availableCollaborators]
-    .sort((a, b) => {
-      const aFirst = a.team_id === projectTeamId ? 0 : 1
-      const bFirst = b.team_id === projectTeamId ? 0 : 1
-      if (aFirst !== bFirst) return aFirst - bFirst
-      return a.team_name.localeCompare(b.team_name) || a.team_id - b.team_id
-    })
-    .filter(c => {
-      if (seenCollaborators.has(c.user_id)) return false
-      seenCollaborators.add(c.user_id)
-      return true
-    })
-    .map(c => ({
-      value: String(c.user_id),
-      label: c.user_name || c.email,
-      description: c.user_name ? c.email : undefined,
-      group: c.team_id === projectTeamId ? `${c.team_name} (this project's team)` : c.team_name,
-    }))
+  const collaboratorOptions = availableCollaborators.map(c => ({
+    value: String(c.user_id),
+    label: c.user_name || c.email,
+    description: c.user_name ? c.email : undefined,
+  }))
 
   const handleUpdateMemberRole = async (memberId: number, role: string) => {
     try {
@@ -625,7 +612,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   }
 
   const handleRemoveMember = async (memberId: number) => {
-    if (!confirm('Are you sure you want to remove this member?')) {
+    if (!(await dialog.confirm({ title: 'Remove member?', message: 'This member will lose access to the project.', confirmLabel: 'Remove', danger: true }))) {
       return
     }
 
@@ -787,7 +774,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                     <SearchSelect
                       value={selectedUserId}
                       onChange={setSelectedUserId}
-                      placeholder="Select a collaborator..."
+                      placeholder={`Select a member of ${projectTeamName ?? "the project's team"}...`}
                       options={collaboratorOptions}
                     />
                   </div>
@@ -812,7 +799,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                     {isAddingMember ? 'Sending...' : 'Send Invite'}
                   </Button>
                   {availableCollaborators.length === 0 && (
-                    <p className="text-sm text-dark-text-tertiary mt-2">No eligible collaborators. Add people to a team in Settings → Teams first, or everyone in your teams already has access.</p>
+                    <p className="text-sm text-dark-text-tertiary mt-2">No one else in {projectTeamName ?? "this project's team"} can be invited. Add people to that team in Settings → Teams first.</p>
                   )}
                 </div>
               </form>

@@ -1,7 +1,9 @@
+import type { ReactElement } from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Tags from './Tags'
+import { DialogProvider } from '../state/DialogContext'
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
@@ -32,6 +34,8 @@ const tags = [
   { id: 2, name: 'feature', color: '#3B82F6', created_at: '2024-01-02T00:00:00Z' },
 ]
 
+const renderWithDialogs = (ui: ReactElement) => render(<DialogProvider>{ui}</DialogProvider>)
+
 describe('Tags', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -39,7 +43,7 @@ describe('Tags', () => {
   })
 
   it('renders heading and description', async () => {
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Tags' })).toBeInTheDocument()
       expect(screen.getByText('Label and categorize your tasks')).toBeInTheDocument()
@@ -47,7 +51,7 @@ describe('Tags', () => {
   })
 
   it('displays tags after loading', async () => {
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
       expect(screen.getByText('feature')).toBeInTheDocument()
@@ -56,7 +60,7 @@ describe('Tags', () => {
 
   it('shows empty state when no tags', async () => {
     mocks.getTags.mockResolvedValue([])
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('No tags yet')).toBeInTheDocument()
     })
@@ -64,7 +68,7 @@ describe('Tags', () => {
 
   it('opens create form on New Tag click', async () => {
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
@@ -76,7 +80,7 @@ describe('Tags', () => {
 
   it('validates tag name on submit', async () => {
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
@@ -97,7 +101,7 @@ describe('Tags', () => {
   it('creates a tag successfully', async () => {
     mocks.createTag.mockResolvedValue(undefined)
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
@@ -118,7 +122,7 @@ describe('Tags', () => {
 
   it('opens edit form with pre-filled data', async () => {
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
@@ -133,7 +137,7 @@ describe('Tags', () => {
   it('updates a tag', async () => {
     mocks.updateTag.mockResolvedValue(undefined)
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
@@ -149,24 +153,24 @@ describe('Tags', () => {
 
   it('deletes a tag with confirmation', async () => {
     mocks.deleteTag.mockResolvedValue(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
 
     const deleteButtons = screen.getAllByTitle('Delete')
     await user.click(deleteButtons[0])
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
 
-    expect(mocks.deleteTag).toHaveBeenCalledWith(1)
+    await waitFor(() => expect(mocks.deleteTag).toHaveBeenCalledWith(1))
   })
 
   it('shows error on failed create', async () => {
     mocks.createTag.mockRejectedValue(new Error('Create failed'))
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
@@ -184,7 +188,7 @@ describe('Tags', () => {
 
   it('navigates back on Back button click', async () => {
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })
@@ -194,7 +198,7 @@ describe('Tags', () => {
 
   it('cancel button hides the form', async () => {
     const user = userEvent.setup()
-    render(<Tags />)
+    renderWithDialogs(<Tags />)
     await waitFor(() => {
       expect(screen.getByText('bug')).toBeInTheDocument()
     })

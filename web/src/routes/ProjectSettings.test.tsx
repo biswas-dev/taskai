@@ -101,23 +101,21 @@ describe('ProjectSettings', () => {
   })
 
   describe('Teams', () => {
-    it('groups invite candidates by team with the project team first, listing each person once', async () => {
+    it("only offers members of the project's team, never the user's other teams", async () => {
       const user = userEvent.setup()
       mocks.getCollaborators.mockResolvedValue([
-        { user_id: 30, email: 'carol@elastio.test', team_id: 2, team_name: 'Elastio' },
-        { user_id: 20, email: 'nakul@intelliviz.test', team_id: 2, team_name: 'Elastio' },
+        { user_id: 30, email: 'thiva@tickrapi.test', team_id: 2, team_name: 'TickrAPI' },
         { user_id: 20, email: 'nakul@intelliviz.test', team_id: 1, team_name: 'Intelliviz' },
       ])
       render(<ProjectSettings />)
 
-      const input = await screen.findByPlaceholderText('Select a collaborator...')
+      const input = await screen.findByPlaceholderText('Select a member of Intelliviz...')
       await user.type(input, '@')
 
       const listbox = await screen.findByRole('listbox')
-      const headings = within(listbox).getAllByText(/^(Intelliviz \(this project's team\)|Elastio)$/)
-      expect(headings.map(h => h.textContent)).toEqual(["Intelliviz (this project's team)", 'Elastio'])
-      expect(within(listbox).getAllByRole('option')).toHaveLength(2)
-      expect(within(listbox).getAllByText('nakul@intelliviz.test')).toHaveLength(1)
+      expect(within(listbox).getAllByRole('option')).toHaveLength(1)
+      expect(within(listbox).getByText('nakul@intelliviz.test')).toBeInTheDocument()
+      expect(within(listbox).queryByText('thiva@tickrapi.test')).not.toBeInTheDocument()
     })
 
     it('lets the project owner move the project to another team', async () => {

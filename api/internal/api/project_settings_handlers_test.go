@@ -420,16 +420,15 @@ func TestHandleAddProjectMember(t *testing.T) {
 		ts.HandleAddProjectMember(rec, req)
 
 		AssertStatusCode(t, rec.Code, http.StatusBadRequest)
-		if !strings.Contains(rec.Body.String(), "must share an active team") {
-			t.Errorf("Expected shared-team error, got %q", rec.Body.String())
+		if !strings.Contains(rec.Body.String(), "member of this project's team") {
+			t.Errorf("Expected project-team error, got %q", rec.Body.String())
 		}
 	})
 
-	t.Run("user from a different shared team can be added", func(t *testing.T) {
-		// Setup mirrors the real-world case: project owner is in their own team
-		// (which owns the project) AND is a member of someone else's team. They
-		// should be able to add a member of that other team to their project,
-		// even though that user is not in the project's team.
+	t.Run("member of another team the owner shares cannot be added", func(t *testing.T) {
+		// A project belongs to exactly one team. The owner also belongs to
+		// someone else's team, but that team's members must not be offered
+		// access to this project.
 		ts := NewTestServer(t)
 		defer ts.Close()
 
@@ -463,7 +462,7 @@ func TestHandleAddProjectMember(t *testing.T) {
 
 		ts.HandleAddProjectMember(rec, req)
 
-		AssertStatusCode(t, rec.Code, http.StatusCreated)
+		AssertStatusCode(t, rec.Code, http.StatusBadRequest)
 	})
 
 	t.Run("duplicate member fails on second add", func(t *testing.T) {
