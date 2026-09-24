@@ -156,7 +156,16 @@ export interface WikiPage {
   agent_name?: string | null
   created_at: string
   updated_at: string
+  /** Who can see the page: every project member, or only chosen people. */
+  visibility?: WikiPageVisibility
+  /** True when an anonymous public link exists for the page. */
+  is_public?: boolean
 }
+
+export type WikiPageVisibility = 'project' | 'restricted'
+export type WikiSharing = components['schemas']['WikiSharing']
+export type PublicWikiPage =
+  operations['getPublicWikiPage']['responses'][200]['content']['application/json']
 
 export interface AppNotification {
   id: number
@@ -2005,6 +2014,38 @@ class ApiClient {
     return this.request<void>(`/api/wiki/pages/${pageId}`, {
       method: 'DELETE',
     })
+  }
+
+  async getWikiSharing(pageId: number): Promise<WikiSharing> {
+    return this.request<WikiSharing>(`/api/wiki/pages/${pageId}/sharing`)
+  }
+
+  /** Replaces the page's visibility and its whole shared-with list. */
+  async updateWikiSharing(
+    pageId: number,
+    data: { visibility: WikiPageVisibility; user_ids: number[] },
+  ): Promise<WikiSharing> {
+    return this.request<WikiSharing>(`/api/wiki/pages/${pageId}/sharing`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async createWikiPublicLink(pageId: number): Promise<{ public_token: string }> {
+    return this.request<{ public_token: string }>(`/api/wiki/pages/${pageId}/public-link`, {
+      method: 'POST',
+    })
+  }
+
+  async deleteWikiPublicLink(pageId: number): Promise<void> {
+    return this.request<void>(`/api/wiki/pages/${pageId}/public-link`, {
+      method: 'DELETE',
+    })
+  }
+
+  /** Fetches a publicly shared wiki page. Works without signing in. */
+  async getPublicWikiPage(token: string): Promise<PublicWikiPage> {
+    return this.request<PublicWikiPage>(`/api/public/wiki/${encodeURIComponent(token)}`)
   }
 
   async getWikiPageContent(pageId: number): Promise<{ page_id: number; content: string; updated_at: string }> {
