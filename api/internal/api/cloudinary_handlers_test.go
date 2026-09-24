@@ -2044,6 +2044,7 @@ func TestHandleGetUploadSignature_FolderAndPublicID(t *testing.T) {
 		t.Fatalf("Failed to create project: %v", err)
 	}
 	projectID, _ := result.LastInsertId()
+	ts.AddProjectMember(t, projectID, userID, userID, "owner")
 
 	taskResult, err := ts.DB.ExecContext(ctx,
 		`INSERT INTO tasks (project_id, title, status, priority) VALUES (?, ?, ?, ?)`,
@@ -2217,6 +2218,7 @@ func TestHandleGetUploadSignature_WikiPage(t *testing.T) {
 		t.Fatalf("Failed to create project: %v", err)
 	}
 	projectID, _ := result.LastInsertId()
+	ts.AddProjectMember(t, projectID, userID, userID, "owner")
 	pageID := createTestWikiPage(t, ts, projectID, userID)
 	pageIDStr := strconv.FormatInt(pageID, 10)
 

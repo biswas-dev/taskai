@@ -156,16 +156,8 @@ func (s *Server) HandleListWikiPageWatchers(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Verify project access via page
-	var projectID int64
-	err = s.db.QueryRowContext(ctx, `SELECT project_id FROM wiki_pages WHERE id = $1`, pageID).Scan(&projectID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "page not found", "not_found")
-		return
-	}
-	hasAccess, _ := s.checkProjectAccess(ctx, userID, projectID)
-	if !hasAccess {
-		respondError(w, http.StatusForbidden, "access denied", "forbidden")
+	if err := s.checkWikiPageAccess(ctx, userID, pageID); err != nil {
+		handleWikiAccessError(w, err)
 		return
 	}
 
@@ -207,15 +199,8 @@ func (s *Server) HandleToggleWikiPageWatcher(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var projectID int64
-	err = s.db.QueryRowContext(ctx, `SELECT project_id FROM wiki_pages WHERE id = $1`, pageID).Scan(&projectID)
-	if err != nil {
-		respondError(w, http.StatusNotFound, "page not found", "not_found")
-		return
-	}
-	hasAccess, _ := s.checkProjectAccess(ctx, userID, projectID)
-	if !hasAccess {
-		respondError(w, http.StatusForbidden, "access denied", "forbidden")
+	if err := s.checkWikiPageAccess(ctx, userID, pageID); err != nil {
+		handleWikiAccessError(w, err)
 		return
 	}
 

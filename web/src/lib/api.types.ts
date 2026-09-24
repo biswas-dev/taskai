@@ -1044,6 +1044,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/wiki/pages/{pageId}/sharing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Wiki Page Sharing
+         * @description Visibility and share list of a page (public token only for the creator or project owner)
+         */
+        get: operations["getWikiSharing"];
+        /**
+         * Update Wiki Page Sharing
+         * @description Set visibility and the full share list (creator or project owner). Only project members can be added.
+         */
+        put: operations["updateWikiSharing"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/wiki/pages/{pageId}/public-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Enable Public Link
+         * @description Create (or return) the read-only public link token (creator or project owner)
+         */
+        post: operations["createWikiPublicLink"];
+        /**
+         * Revoke Public Link
+         * @description Disable the public link; the old URL stops working (creator or project owner)
+         */
+        delete: operations["deleteWikiPublicLink"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/public/wiki/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Public Wiki Page
+         * @description Read-only, sanitized page for anyone holding the public link. No authentication.
+         */
+        get: operations["getPublicWikiPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users": {
         parameters: {
             query?: never;
@@ -1697,6 +1765,21 @@ export interface components {
             created_at?: string;
             /** Format: date-time */
             expires_at?: string | null;
+        };
+        WikiSharing: {
+            /** @enum {string} */
+            visibility: "project" | "restricted";
+            can_manage: boolean;
+            /** Format: int64 */
+            created_by: number;
+            shared_with: {
+                /** Format: int64 */
+                user_id: number;
+                email: string;
+                user_name?: string;
+            }[];
+            /** @description Present only for the page creator or project owner when a public link exists */
+            public_token?: string;
         };
         TeamSummary: {
             /** Format: int64 */
@@ -4488,6 +4571,158 @@ export interface operations {
                 };
             };
             500: components["responses"]["InternalError"];
+        };
+    };
+    getWikiSharing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pageId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sharing settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WikiSharing"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    updateWikiSharing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pageId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    visibility: "project" | "restricted";
+                    user_ids?: number[];
+                };
+            };
+        };
+        responses: {
+            /** @description Updated sharing settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WikiSharing"];
+                };
+            };
+            /** @description Invalid visibility or user outside the project */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    createWikiPublicLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pageId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        public_token?: string;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deleteWikiPublicLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pageId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getPublicWikiPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        title: string;
+                        html: string;
+                        project_name: string;
+                        /** Format: date-time */
+                        updated_at: string;
+                    };
+                };
+            };
+            404: components["responses"]["NotFound"];
         };
     };
     adminListUsers: {

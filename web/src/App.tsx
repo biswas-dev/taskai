@@ -25,6 +25,7 @@ const Assets = lazy(() => import('./routes/Assets'))
 const AcceptTeamInvite = lazy(() => import('./routes/AcceptTeamInvite'))
 const KnowledgeGraphPage = lazy(() => import('./routes/KnowledgeGraphPage'))
 const UserProfile = lazy(() => import('./routes/UserProfile'))
+const PublicWikiPage = lazy(() => import('./routes/PublicWikiPage'))
 
 function HomeRoute() {
   const { user } = useAuth()
@@ -101,6 +102,7 @@ function AppRoutes() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/accept-invite" element={<AcceptTeamInvite />} />
+        <Route path="/share/wiki/:token" element={<PublicWikiPage />} />
 
         {/* Protected routes */}
         <Route

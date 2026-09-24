@@ -98,3 +98,35 @@ func minLen(a, b int) int {
 	}
 	return b
 }
+
+func TestRenderWikiHTML_StripsScript(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		mustNotHave []string
+		mustHave    []string
+	}{
+		{"script tag", "<script>alert(1)</script>", []string{"<script"}, nil},
+		{"event handler", "<img src=x onerror=alert(1)>", []string{"onerror"}, nil},
+		{"javascript link", "[x](javascript:alert(1))", []string{"javascript:"}, nil},
+		{"mixed-case javascript link", `<a href="JaVaScRiPt:alert(1)">y</a>`, []string{"JaVaScRiPt", "javascript:"}, nil},
+		{"draw embed keeps its data but loses the script", "[draw:abc123]", []string{"<script"}, []string{`class="godraw-embed"`, `data-src="/draw/abc123"`}},
+		{"graph link keeps styling hooks", "[[wiki:5|Page]]", nil, []string{`data-graph-type="wiki"`, `data-entity-id="5"`, "style="}},
+		{"normal markdown survives", "# Title\n\n![alt](https://res.cloudinary.com/x.png) [in](/app/projects/1)", nil, []string{`<h1 id="title">`, `src="https://res.cloudinary.com/x.png"`, `href="/app/projects/1"`}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := renderWikiHTML(tt.input)
+			for _, bad := range tt.mustNotHave {
+				if strings.Contains(out, bad) {
+					t.Errorf("output contains %q: %s", bad, out)
+				}
+			}
+			for _, good := range tt.mustHave {
+				if !strings.Contains(out, good) {
+					t.Errorf("output missing %q: %s", good, out)
+				}
+			}
+		})
+	}
+}

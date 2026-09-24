@@ -35,6 +35,10 @@ type WikiPage struct {
 	Position int `json:"position,omitempty"`
 	// Content holds the value of the "content" field.
 	Content string `json:"content,omitempty"`
+	// Visibility holds the value of the "visibility" field.
+	Visibility string `json:"visibility,omitempty"`
+	// PublicToken holds the value of the "public_token" field.
+	PublicToken *string `json:"public_token,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -166,7 +170,7 @@ func (*WikiPage) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case wikipage.FieldID, wikipage.FieldProjectID, wikipage.FieldCreatedBy, wikipage.FieldUpdatedBy, wikipage.FieldParentID, wikipage.FieldPosition:
 			values[i] = new(sql.NullInt64)
-		case wikipage.FieldTitle, wikipage.FieldSlug, wikipage.FieldContent:
+		case wikipage.FieldTitle, wikipage.FieldSlug, wikipage.FieldContent, wikipage.FieldVisibility, wikipage.FieldPublicToken:
 			values[i] = new(sql.NullString)
 		case wikipage.FieldCreatedAt, wikipage.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -240,6 +244,19 @@ func (_m *WikiPage) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field content", values[i])
 			} else if value.Valid {
 				_m.Content = value.String
+			}
+		case wikipage.FieldVisibility:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field visibility", values[i])
+			} else if value.Valid {
+				_m.Visibility = value.String
+			}
+		case wikipage.FieldPublicToken:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field public_token", values[i])
+			} else if value.Valid {
+				_m.PublicToken = new(string)
+				*_m.PublicToken = value.String
 			}
 		case wikipage.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -361,6 +378,14 @@ func (_m *WikiPage) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("content=")
 	builder.WriteString(_m.Content)
+	builder.WriteString(", ")
+	builder.WriteString("visibility=")
+	builder.WriteString(_m.Visibility)
+	builder.WriteString(", ")
+	if v := _m.PublicToken; v != nil {
+		builder.WriteString("public_token=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

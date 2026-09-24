@@ -60,7 +60,7 @@ func (s *Server) checkWikiPageAccess(ctx context.Context, userID, pageID int64) 
 	if err != nil {
 		return err
 	}
-	hasAccess, err := s.checkProjectAccess(ctx, userID, page.ProjectID)
+	hasAccess, err := s.canViewWikiPage(ctx, userID, page)
 	if err != nil {
 		return err
 	}
@@ -68,6 +68,21 @@ func (s *Server) checkWikiPageAccess(ctx context.Context, userID, pageID int64) 
 		return errAnnotationForbidden
 	}
 	return nil
+}
+
+// checkAnnotationCommentAccess applies the page's visibility rules to a
+// comment: losing access to a page also ends editing your comments on it.
+func (s *Server) checkAnnotationCommentAccess(ctx context.Context, userID, commentID int64) error {
+	var pageID int64
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT a.wiki_page_id
+		FROM wiki_annotation_comments c
+		JOIN wiki_annotations a ON a.id = c.annotation_id
+		WHERE c.id = $1`, commentID,
+	).Scan(&pageID); err != nil {
+		return err
+	}
+	return s.checkWikiPageAccess(ctx, userID, pageID)
 }
 
 func handleWikiAccessError(w http.ResponseWriter, err error) {
@@ -464,6 +479,11 @@ func (s *Server) HandleUpdateAnnotationComment(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if err := s.checkAnnotationCommentAccess(ctx, userID, commentID); err != nil {
+		handleWikiAccessError(w, err)
+		return
+	}
+
 	if req.Content != nil {
 		if len(*req.Content) > 5000 {
 			respondError(w, http.StatusBadRequest, "content too long (max 5000 characters)", "invalid_input")
@@ -520,6 +540,11 @@ func (s *Server) HandleDeleteAnnotationComment(w http.ResponseWriter, r *http.Re
 
 	if authorID != userID {
 		respondError(w, http.StatusForbidden, "only the author can delete this comment", "forbidden")
+		return
+	}
+
+	if err := s.checkAnnotationCommentAccess(ctx, userID, commentID); err != nil {
+		handleWikiAccessError(w, err)
 		return
 	}
 

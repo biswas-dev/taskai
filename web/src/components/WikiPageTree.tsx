@@ -17,6 +17,7 @@ import {
   type WikiSortMode,
   type WikiTreeNode,
 } from '../lib/wikiTree'
+import { WikiVisibilityBadges } from './WikiVisibilityIcon'
 
 interface WikiPageTreeProps {
   projectId: number
@@ -27,6 +28,8 @@ interface WikiPageTreeProps {
   onCreate: (title: string, parentId: number | null) => Promise<WikiPage | null>
   onMove: (pageId: number, parentId: number | null) => Promise<void>
   onDelete: (pageId: number) => void
+  /** Opens the sharing dialog for a page. The menu item is hidden when omitted. */
+  onShare?: (pageId: number) => void
 }
 
 /** Left padding per depth level. Static strings so Tailwind can see them. */
@@ -133,6 +136,7 @@ export default function WikiPageTree({
   onCreate,
   onMove,
   onDelete,
+  onShare,
 }: Readonly<WikiPageTreeProps>) {
   const [view, setView] = useState<WikiTreeView>(() => loadView(projectId))
   const [showViewMenu, setShowViewMenu] = useState(false)
@@ -509,6 +513,8 @@ export default function WikiPageTree({
             {page.title}
           </span>
 
+          <WikiVisibilityBadges page={page} />
+
           {children.length > 0 && !isExpanded && (
             <span className="shrink-0 text-[10px] text-dark-text-quaternary tabular-nums group-hover:hidden">{children.length}</span>
           )}
@@ -574,6 +580,19 @@ export default function WikiPageTree({
               >
                 Move to…
               </button>
+              {onShare && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuFor(null)
+                    onShare(page.id)
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-dark-text-secondary hover:bg-dark-bg-tertiary hover:text-dark-text-primary"
+                >
+                  Share…
+                </button>
+              )}
               {page.parent_id !== null && (
                 <button
                   type="button"

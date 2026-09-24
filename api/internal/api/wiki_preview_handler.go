@@ -10,6 +10,7 @@ import (
 
 	gowiki "github.com/anchoo2kewl/go-wiki"
 	"github.com/anchoo2kewl/go-wiki/render"
+	"github.com/microcosm-cc/bluemonday"
 )
 
 // wiki is the shared go-wiki instance for server-side markdown rendering.
@@ -24,6 +25,33 @@ var wiki = gowiki.New(
 )
 
 // drawEditSrcRe matches data-src attributes ending in /edit inside godraw-embed divs.
+// wikiHTMLPolicy strips anything executable from rendered wiki HTML: the
+// markdown renderer passes raw HTML through, so without this a page author
+// could run script in every reader's browser (and in the PDF renderer).
+// Classes, data-* attributes and the inline styles the renderer emits for
+// graph links are kept; draw embeds are initialised by the frontend, so their
+// <script> tag is not needed.
+var wikiHTMLPolicy = func() *bluemonday.Policy {
+	p := bluemonday.UGCPolicy()
+	p.AllowAttrs("class").Globally()
+	p.AllowDataAttributes()
+	p.AllowAttrs("id").OnElements("h1", "h2", "h3", "h4", "h5", "h6")
+	p.AllowAttrs("style").OnElements("a", "span", "div", "img", "figure", "figcaption")
+	p.AllowElements("input", "figure", "figcaption")
+	p.AllowAttrs("type", "disabled", "checked").OnElements("input")
+	p.AllowAttrs("rel").OnElements("a")
+	p.RequireNoFollowOnLinks(false)
+	p.AllowRelativeURLs(true)
+	return p
+}()
+
+// renderWikiHTML renders wiki markdown to sanitized HTML, as shown in the
+// preview pane, PDFs and public links.
+func renderWikiHTML(content string) string {
+	rendered := wiki.RenderContent(preprocessFigmaShortcodes(preprocessGraphLinksForPreview(content)))
+	return stripDrawEditMode(wikiHTMLPolicy.Sanitize(rendered))
+}
+
 var drawEditSrcRe = regexp.MustCompile(`(data-src="[^"]+)/edit"`)
 
 // graphLinkPreRe matches [[wiki:ID|Label]] and [[task:ID|Label]] for preview rendering.
@@ -122,7 +150,7 @@ func (s *Server) HandleWikiPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html := stripDrawEditMode(wiki.RenderContent(preprocessFigmaShortcodes(preprocessGraphLinksForPreview(req.Content))))
+	html := renderWikiHTML(req.Content)
 
 	respondJSON(w, http.StatusOK, wikiPreviewResponse{HTML: html})
 }

@@ -4,6 +4,7 @@ import { api, WikiPage, WikiAnnotation, AnnotationColor, AnnotationComment } fro
 import WikiEditor from './WikiEditor'
 import WikiAnnotationSidebar from './WikiAnnotationSidebar'
 import WikiPageTree from './WikiPageTree'
+import WikiShareModal from './WikiShareModal'
 import { getWikiAncestors, getWikiDepth, WIKI_MAX_DEPTH } from '../lib/wikiTree'
 import { useSync } from '../state/SyncContext'
 import { useDialog } from '../state/DialogContext'
@@ -24,6 +25,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [sharePageId, setSharePageId] = useState<number | null>(null)
 
   const [annotations, setAnnotations] = useState<WikiAnnotation[]>([])
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<number | null>(null)
@@ -170,6 +172,10 @@ export default function WikiContent({ projectId }: WikiContentProps) {
     setPages(prev => prev.map(p => (p.id === updated.id ? { ...p, ...updated } : p)))
   }, [])
 
+  const handleSharingChanged = useCallback((pageId: number, changes: Partial<WikiPage>) => {
+    setPages(prev => prev.map(p => (p.id === pageId ? { ...p, ...changes } : p)))
+  }, [])
+
   const handleMovePage = useCallback(async (pageId: number, parentId: number | null) => {
     // Optimistic: reflect the move immediately, then reconcile with the server's response.
     const snapshot = pages
@@ -264,6 +270,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
     ? pages.filter(p => p.parent_id === selectedPage.id).sort((a, b) => a.position - b.position || a.title.localeCompare(b.title))
     : []
   const selectedDepth = selectedPage ? getWikiDepth(pages, selectedPage.id) : 0
+  const sharePage = sharePageId === null ? undefined : pages.find(p => p.id === sharePageId)
 
   return (
     <div className="flex flex-1 overflow-hidden">
@@ -293,6 +300,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
             onCreate={handleCreatePage}
             onMove={handleMovePage}
             onDelete={handleDeletePage}
+            onShare={setSharePageId}
           />
         )}
       </div>
@@ -373,6 +381,7 @@ export default function WikiContent({ projectId }: WikiContentProps) {
             showResolved={showResolved}
             onToggleShowResolved={() => setShowResolved(v => !v)}
             onPageUpdate={handlePageUpdate}
+            onShare={() => setSharePageId(selectedPage.id)}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-dark-text-tertiary">
@@ -461,6 +470,15 @@ export default function WikiContent({ projectId }: WikiContentProps) {
           </div>
         )}
       </div>
+
+      {sharePage && (
+        <WikiShareModal
+          page={sharePage}
+          projectId={Number(projectId)}
+          onClose={() => setSharePageId(null)}
+          onChanged={changes => handleSharingChanged(sharePage.id, changes)}
+        />
+      )}
     </div>
   )
 }

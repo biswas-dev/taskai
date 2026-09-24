@@ -159,7 +159,7 @@ func (s *Server) searchWikiBlocks(ctx context.Context, userID int64, req SearchW
 
 	// Filter by resolved project IDs (respects project_id, project_ids, or all accessible)
 	effectiveProjects := resolveProjectIDs(req, accessibleProjects)
-	query = query.Where(wikiblock.HasPageWith(wikipage.ProjectIDIn(effectiveProjects...)))
+	query = query.Where(wikiblock.HasPageWith(wikipage.ProjectIDIn(effectiveProjects...), wikiVisiblePredicate(userID)))
 
 	// Use ContainsFold for case-insensitive search (generates ILIKE on Postgres)
 	query = query.Where(wikiblock.Or(
@@ -228,7 +228,7 @@ func (s *Server) searchWikiFTS(ctx context.Context, userID int64, req SearchWiki
 
 	// Build project filter
 	effectiveProjects := resolveProjectIDs(req, accessibleProjects)
-	projectFilter, args := buildProjectFilterFromIDs(effectiveProjects)
+	projectFilter, args := buildProjectFilterFromIDs(effectiveProjects, userID)
 
 	// plainto_tsquery handles user input safely (no special syntax needed)
 	nextArg := len(args) + 1
@@ -288,7 +288,7 @@ func (s *Server) searchWikiSemantic(ctx context.Context, userID int64, req Searc
 
 	// Build project filter
 	effectiveProjects := resolveProjectIDs(req, accessibleProjects)
-	projectFilter, args := buildProjectFilterFromIDs(effectiveProjects)
+	projectFilter, args := buildProjectFilterFromIDs(effectiveProjects, userID)
 	nextArg := len(args) + 1
 
 	query := fmt.Sprintf(`
@@ -346,7 +346,7 @@ func (s *Server) searchWikiHybrid(ctx context.Context, userID int64, req SearchW
 
 	// Build project filter
 	effectiveProjects := resolveProjectIDs(req, accessibleProjects)
-	projectFilter, args := buildProjectFilterFromIDs(effectiveProjects)
+	projectFilter, args := buildProjectFilterFromIDs(effectiveProjects, userID)
 	nextArg := len(args) + 1
 
 	// Reciprocal Rank Fusion (RRF): merges FTS and vector rankings without needing score normalization.
@@ -440,15 +440,18 @@ func resolveProjectIDs(req SearchWikiRequest, accessibleProjects []int64) []int6
 	return accessibleProjects
 }
 
-// buildProjectFilterFromIDs returns a SQL WHERE clause for a slice of project IDs.
-func buildProjectFilterFromIDs(projectIDs []int64) (string, []interface{}) {
+// buildProjectFilterFromIDs returns a SQL WHERE clause limiting wiki pages
+// (aliased wp) to the given projects and to pages the user may see.
+func buildProjectFilterFromIDs(projectIDs []int64, userID int64) (string, []interface{}) {
 	placeholders := make([]string, len(projectIDs))
-	args := make([]interface{}, len(projectIDs))
+	args := make([]interface{}, 0, len(projectIDs)+1)
 	for i, pid := range projectIDs {
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = pid
+		args = append(args, pid)
 	}
-	return fmt.Sprintf("wp.project_id IN (%s)", strings.Join(placeholders, ",")), args
+	args = append(args, userID)
+	userParam := fmt.Sprintf("$%d", len(args))
+	return fmt.Sprintf("wp.project_id IN (%s) AND %s", strings.Join(placeholders, ","), wikiVisibleSQL("wp", userParam)), args
 }
 
 // scanSearchResults scans rows from FTS/semantic/hybrid queries into SearchResultBlock slices.
@@ -556,11 +559,11 @@ func (s *Server) HandleAutocompletePages(w http.ResponseWriter, r *http.Request)
 	// Build query
 	pageQuery := s.db.Client.WikiPage.Query()
 
-	// Filter by project if specified
+	// Only projects the user belongs to, narrowed to one project if asked,
+	// and only pages visible to them.
+	pageQuery = pageQuery.Where(wikipage.ProjectIDIn(accessibleProjects...), wikiVisiblePredicate(userID))
 	if projectID != nil {
 		pageQuery = pageQuery.Where(wikipage.ProjectID(*projectID))
-	} else {
-		pageQuery = pageQuery.Where(wikipage.ProjectIDIn(accessibleProjects...))
 	}
 
 	// Simple title contains search (can be enhanced with trigram similarity for Postgres)

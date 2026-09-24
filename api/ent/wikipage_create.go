@@ -106,6 +106,34 @@ func (_c *WikiPageCreate) SetNillableContent(v *string) *WikiPageCreate {
 	return _c
 }
 
+// SetVisibility sets the "visibility" field.
+func (_c *WikiPageCreate) SetVisibility(v string) *WikiPageCreate {
+	_c.mutation.SetVisibility(v)
+	return _c
+}
+
+// SetNillableVisibility sets the "visibility" field if the given value is not nil.
+func (_c *WikiPageCreate) SetNillableVisibility(v *string) *WikiPageCreate {
+	if v != nil {
+		_c.SetVisibility(*v)
+	}
+	return _c
+}
+
+// SetPublicToken sets the "public_token" field.
+func (_c *WikiPageCreate) SetPublicToken(v string) *WikiPageCreate {
+	_c.mutation.SetPublicToken(v)
+	return _c
+}
+
+// SetNillablePublicToken sets the "public_token" field if the given value is not nil.
+func (_c *WikiPageCreate) SetNillablePublicToken(v *string) *WikiPageCreate {
+	if v != nil {
+		_c.SetPublicToken(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *WikiPageCreate) SetCreatedAt(v time.Time) *WikiPageCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -298,6 +326,10 @@ func (_c *WikiPageCreate) defaults() {
 		v := wikipage.DefaultContent
 		_c.mutation.SetContent(v)
 	}
+	if _, ok := _c.mutation.Visibility(); !ok {
+		v := wikipage.DefaultVisibility
+		_c.mutation.SetVisibility(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := wikipage.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -334,6 +366,9 @@ func (_c *WikiPageCreate) check() error {
 	}
 	if _, ok := _c.mutation.Position(); !ok {
 		return &ValidationError{Name: "position", err: errors.New(`ent: missing required field "WikiPage.position"`)}
+	}
+	if _, ok := _c.mutation.Visibility(); !ok {
+		return &ValidationError{Name: "visibility", err: errors.New(`ent: missing required field "WikiPage.visibility"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "WikiPage.created_at"`)}
@@ -394,6 +429,14 @@ func (_c *WikiPageCreate) createSpec() (*WikiPage, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Content(); ok {
 		_spec.SetField(wikipage.FieldContent, field.TypeString, value)
 		_node.Content = value
+	}
+	if value, ok := _c.mutation.Visibility(); ok {
+		_spec.SetField(wikipage.FieldVisibility, field.TypeString, value)
+		_node.Visibility = value
+	}
+	if value, ok := _c.mutation.PublicToken(); ok {
+		_spec.SetField(wikipage.FieldPublicToken, field.TypeString, value)
+		_node.PublicToken = &value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(wikipage.FieldCreatedAt, field.TypeTime, value)

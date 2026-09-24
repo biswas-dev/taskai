@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { WikiPage, WikiPageVersion, WikiPageVersionWithContent, WikiAnnotation, AnnotationColor, AnnotationComment, apiClient } from '../lib/api'
 import WikiAnnotationSidebar from './WikiAnnotationSidebar'
 import FigmaEmbed from './FigmaEmbed'
+import { WikiIcon } from './WikiVisibilityIcon'
 import { useAuth } from '../state/AuthContext'
 import { useSync } from '../state/SyncContext'
 import SearchSelect from './ui/SearchSelect'
@@ -61,6 +62,8 @@ interface WikiEditorProps {
   showResolved?: boolean
   onToggleShowResolved?: () => void
   onPageUpdate?: (page: WikiPage) => void
+  /** Opens the sharing dialog. The Share button is hidden when omitted. */
+  onShare?: () => void
 }
 
 // Annotation highlight helpers are provided by window.GoWikiAnnotations (go-wiki package).
@@ -1020,7 +1023,7 @@ function PreviewContent({ previewHTML, content, previewRef, error, onRetry }: Re
 
 // ── Component ────────────────────────────────────────────────────
 
-export default function WikiEditor({ page, annotations, selectedAnnotationId, showAnnotationHighlights = true, onAnnotationCreate, onAnnotationClick, onAnnotationUpdate, onAnnotationDelete, onCommentCreate, onCommentUpdate, onCommentDelete, showResolved = false, onToggleShowResolved, onPageUpdate }: Readonly<WikiEditorProps>) {
+export default function WikiEditor({ page, annotations, selectedAnnotationId, showAnnotationHighlights = true, onAnnotationCreate, onAnnotationClick, onAnnotationUpdate, onAnnotationDelete, onCommentCreate, onCommentUpdate, onCommentDelete, showResolved = false, onToggleShowResolved, onPageUpdate, onShare }: Readonly<WikiEditorProps>) {
   const dialog = useDialog()
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -1989,6 +1992,17 @@ export default function WikiEditor({ page, annotations, selectedAnnotationId, sh
                 >
                   Preview
                 </button>
+                {onShare && (
+                  <button
+                    type="button"
+                    onClick={onShare}
+                    className="px-3 py-2 rounded text-sm font-medium transition-colors bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80 flex items-center gap-1.5"
+                    title={page.visibility === 'restricted' ? 'Protected: only chosen people can see this page' : page.is_public ? 'Anyone with the link can read this page' : 'Everyone in this project can see this page'}
+                  >
+                    <WikiIcon kind={page.visibility === 'restricted' ? 'lock' : page.is_public ? 'globe' : 'people'} />
+                    {page.visibility === 'restricted' ? 'Protected' : 'Share'}
+                  </button>
+                )}
                 <button
                   onClick={openVersionHistory}
                   className="px-3 py-2 rounded text-sm font-medium transition-colors bg-dark-bg-tertiary text-dark-text-secondary hover:bg-dark-bg-tertiary/80"

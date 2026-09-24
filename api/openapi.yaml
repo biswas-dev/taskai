@@ -2460,6 +2460,194 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  # ── Wiki page sharing ───────────────────────────────────────────────
+  # visibility "project": every project member; "restricted": the creator,
+  # the project owner and the people listed. A public link is separate and
+  # lets anyone with the URL read the page.
+
+  /api/wiki/pages/{pageId}/sharing:
+    get:
+      summary: Get Wiki Page Sharing
+      description: Visibility and share list of a page (public token only for the creator or project owner)
+      tags: [Wiki]
+      operationId: getWikiSharing
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: pageId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Sharing settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiSharing"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      summary: Update Wiki Page Sharing
+      description: Set visibility and the full share list (creator or project owner). Only project members can be added.
+      tags: [Wiki]
+      operationId: updateWikiSharing
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: pageId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visibility]
+              properties:
+                visibility:
+                  type: string
+                  enum: [project, restricted]
+                user_ids:
+                  type: array
+                  items:
+                    type: integer
+                    format: int64
+      responses:
+        "200":
+          description: Updated sharing settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WikiSharing"
+        "400":
+          description: Invalid visibility or user outside the project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/wiki/pages/{pageId}/public-link:
+    post:
+      summary: Enable Public Link
+      description: Create (or return) the read-only public link token (creator or project owner)
+      tags: [Wiki]
+      operationId: createWikiPublicLink
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: pageId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Public token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  public_token:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      summary: Revoke Public Link
+      description: Disable the public link; the old URL stops working (creator or project owner)
+      tags: [Wiki]
+      operationId: deleteWikiPublicLink
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: pageId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/public/wiki/{token}:
+    get:
+      summary: Read Public Wiki Page
+      description: Read-only, sanitized page for anyone holding the public link. No authentication.
+      tags: [Wiki]
+      operationId: getPublicWikiPage
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [title, html, project_name, updated_at]
+                properties:
+                  title:
+                    type: string
+                  html:
+                    type: string
+                  project_name:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   # ── Admin ───────────────────────────────────────────────────────────
 
   /api/admin/users:
@@ -3503,6 +3691,35 @@ components:
         expires_at:
           type: ["string", "null"]
           format: date-time
+
+    WikiSharing:
+      type: object
+      required: [visibility, can_manage, created_by, shared_with]
+      properties:
+        visibility:
+          type: string
+          enum: [project, restricted]
+        can_manage:
+          type: boolean
+        created_by:
+          type: integer
+          format: int64
+        shared_with:
+          type: array
+          items:
+            type: object
+            required: [user_id, email]
+            properties:
+              user_id:
+                type: integer
+                format: int64
+              email:
+                type: string
+              user_name:
+                type: string
+        public_token:
+          type: string
+          description: Present only for the page creator or project owner when a public link exists
 
     TeamSummary:
       type: object
