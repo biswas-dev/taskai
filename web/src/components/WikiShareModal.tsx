@@ -8,7 +8,7 @@ import {
 } from '../lib/api'
 import { useDialog } from '../state/DialogContext'
 import FormError from './ui/FormError'
-import SearchSelect from './ui/SearchSelect'
+import Select from './ui/Select'
 import { WikiIcon } from './WikiVisibilityIcon'
 
 type SharedPerson = WikiSharing['shared_with'][number]
@@ -260,9 +260,12 @@ export default function WikiShareModal({ page, projectId, onClose, onChanged }: 
                   {membersError ? (
                     <FormError message={membersError} />
                   ) : (
-                    <SearchSelect
+                    <Select
+                      aria-label="Add person"
                       value=""
                       onChange={addPerson}
+                      searchable
+                      searchPlaceholder="Search members…"
                       options={memberOptions}
                       placeholder={memberOptions.length ? 'Add a project member…' : 'No more members to add'}
                       disabled={memberOptions.length === 0}

@@ -181,7 +181,7 @@ describe('TaskDetail', () => {
     await waitFor(() => {
       expect(screen.getByText('Fix bug in login')).toBeInTheDocument()
     })
-    // Swim lane shown via InlineSelect (select element)
-    expect(screen.getByDisplayValue('In Progress')).toBeInTheDocument()
+    // Swim lane shown on the Select trigger
+    expect(screen.getByRole('button', { name: 'In Progress' })).toHaveAttribute('aria-haspopup', 'listbox')
   })
 })

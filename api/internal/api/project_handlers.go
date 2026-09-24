@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 
 	"taskai/ent"
 	"taskai/ent/project"
@@ -263,10 +264,42 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	proj, err := s.db.Client.Project.Get(ctx, projectID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			respondError(w, http.StatusNotFound, "project not found", "not_found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "failed to load project", "internal_error")
+		return
+	}
+	isProjectOwner := proj.OwnerID == userID
+
 	// Only owners and editors can update projects
-	if projectMember.Role != "owner" && projectMember.Role != "editor" {
+	if !isProjectOwner && projectMember.Role != "owner" && projectMember.Role != "editor" {
 		respondError(w, http.StatusForbidden, "only project owners and editors can update projects", "forbidden")
 		return
+	}
+
+	// Moving a project to another team changes who can be invited to it, so it
+	// is reserved for the project's owner (projects.owner_id), not anyone who
+	// holds the Owner role, and only into a team the owner belongs to as owner
+	// or member.
+	if req.TeamID != nil {
+		if !isProjectOwner {
+			respondError(w, http.StatusForbidden, "only the project owner can move this project to another team", "forbidden")
+			return
+		}
+		if _, err := s.getUserTeamRole(ctx, userID, *req.TeamID); err != nil {
+			if !ent.IsNotFound(err) {
+				s.logger.Error("Failed to check team membership for project move",
+					zap.Error(err), zap.Int64("user_id", userID), zap.Int64("team_id", *req.TeamID))
+				respondError(w, http.StatusInternalServerError, "failed to check team membership", "internal_error")
+				return
+			}
+			respondError(w, http.StatusForbidden, "you can only move a project to a team you are a member of", "forbidden")
+			return
+		}
 	}
 
 	// Validation
@@ -277,19 +310,6 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		}
 		if len(*req.Name) > 255 {
 			respondError(w, http.StatusBadRequest, "project name is too long (max 255 characters)", "invalid_input")
-			return
-		}
-	}
-
-	// Moving a project to another team is reserved for the project owner, who
-	// must belong to the target team.
-	if req.TeamID != nil {
-		if projectMember.Role != "owner" {
-			respondError(w, http.StatusForbidden, "only the project owner can change the project's team", "forbidden")
-			return
-		}
-		if _, err := s.getUserTeamRole(ctx, userID, *req.TeamID); err != nil {
-			respondError(w, http.StatusForbidden, "you are not a member of that team", "forbidden")
 			return
 		}
 	}

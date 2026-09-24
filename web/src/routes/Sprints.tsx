@@ -4,7 +4,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
-import SearchSelect from '../components/ui/SearchSelect'
+import Select from '../components/ui/Select'
 import { apiClient, type Project } from '../lib/api'
 import { useDialog } from '../state/DialogContext'
 
@@ -259,7 +259,7 @@ export default function Sprints() {
 
                   <div>
                     <label className="block text-sm font-medium text-dark-text-primary mb-1">Status</label>
-                    <SearchSelect
+                    <Select
                       value={formData.status}
                       onChange={(v) => setFormData({ ...formData, status: v as 'planned' | 'active' | 'completed' })}
                       options={[

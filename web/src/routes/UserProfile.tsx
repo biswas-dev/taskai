@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { apiClient, UserProfile as UserProfileType, UserProfileActivity } from '../lib/api'
+import Select from '../components/ui/Select'
 
 const activityIcon: Record<string, string> = {
   task_comment: '💬',
@@ -238,16 +239,16 @@ export default function UserProfile() {
             />
             {/* Project filter */}
             {projects.length > 1 && (
-              <select
+              <Select
+                aria-label="Filter by project"
+                size="sm"
+                className="w-40 shrink-0"
+                buttonClassName="py-1.5"
                 value={projectFilter}
-                onChange={e => setProjectFilter(e.target.value)}
-                className="shrink-0 px-2 py-1.5 bg-dark-bg-primary border border-dark-border-subtle rounded text-xs text-dark-text-primary focus:outline-none focus:border-primary-500"
-              >
-                <option value="all">All projects</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+                onChange={setProjectFilter}
+                searchPlaceholder="Search projects…"
+                options={[{ value: 'all', label: 'All projects' }, ...projects.map(p => ({ value: String(p.id), label: p.name }))]}
+              />
             )}
           </div>
           {/* Type filter chips */}

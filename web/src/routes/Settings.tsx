@@ -4,7 +4,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
-import SearchSelect from '../components/ui/SearchSelect'
+import Select from '../components/ui/Select'
 import TeamsPanel from '../components/TeamsPanel'
 import { apiClient, type CloudinaryCredentialResponse, type APIKey, type Invite, type ProjectInvitation } from '../lib/api'
 import type { FigmaCredentialsStatus } from '../lib/api'
@@ -1071,19 +1071,15 @@ export default function Settings() {
                   />
 
                   <div>
-                    <label className="block text-sm font-medium text-dark-text-primary mb-2">
+                    <label htmlFor="cloudinary-max-size" className="block text-sm font-medium text-dark-text-primary mb-2">
                       Max File Size (MB)
                     </label>
-                    <SearchSelect
-                      value={String(cloudMaxSize)}
-                      onChange={(v) => setCloudMaxSize(Number.parseInt(v))}
-                      options={[
-                        { value: '5', label: '5 MB' },
-                        { value: '10', label: '10 MB' },
-                        { value: '25', label: '25 MB' },
-                        { value: '50', label: '50 MB' },
-                        { value: '100', label: '100 MB' },
-                      ]}
+                    <Select
+                      id="cloudinary-max-size"
+                      className="w-full"
+                      value={cloudMaxSize}
+                      onChange={setCloudMaxSize}
+                      options={[5, 10, 25, 50, 100].map((mb) => ({ value: mb, label: `${mb} MB` }))}
                     />
                   </div>
 
@@ -1248,20 +1244,22 @@ export default function Settings() {
                   />
 
                   <div>
-                    <label className="block text-sm font-medium text-dark-text-primary mb-2">
+                    <label htmlFor="api-key-expiration" className="block text-sm font-medium text-dark-text-primary mb-2">
                       Expiration
                     </label>
-                    <select
-                      value={newKeyExpires === undefined ? '' : String(newKeyExpires)}
-                      onChange={(e) => setNewKeyExpires(e.target.value ? Number.parseInt(e.target.value) : undefined)}
-                      className="w-full px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg text-sm text-dark-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500/50"
-                    >
-                      <option value="30">30 days</option>
-                      <option value="90">90 days</option>
-                      <option value="180">180 days</option>
-                      <option value="365">1 year</option>
-                      <option value="">Never expires</option>
-                    </select>
+                    <Select<number | ''>
+                      id="api-key-expiration"
+                      className="w-full"
+                      value={newKeyExpires ?? ''}
+                      onChange={(v) => setNewKeyExpires(v === '' ? undefined : v)}
+                      options={[
+                        { value: 30, label: '30 days' },
+                        { value: 90, label: '90 days' },
+                        { value: 180, label: '180 days' },
+                        { value: 365, label: '1 year' },
+                        { value: '', label: 'Never expires' },
+                      ]}
+                    />
                   </div>
 
                   <Button type="submit" disabled={isCreatingKey}>

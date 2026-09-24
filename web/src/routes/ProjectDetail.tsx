@@ -6,6 +6,7 @@ import { useLocalTasks } from '../hooks/useLocalTasks'
 import { useSync } from '../state/SyncContext'
 import { REACTION_EMOJI, REACTION_ORDER } from '../lib/reactionUtils'
 import BoardFilterBar, { applyBoardFilters } from '../components/board/BoardFilterBar'
+import Select from '../components/ui/Select'
 import { useDialog } from '../state/DialogContext'
 
 const WikiContent = lazy(() => import('../components/WikiContent'))
@@ -452,21 +453,18 @@ export default function ProjectDetail() {
                           className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                           style={{ backgroundColor: swimLanes.find(l => l.id === mobileLane)?.color }}
                         />
-                        <select
-                          value={mobileLane}
-                          onChange={e => setMobileLane(Number(e.target.value))}
-                          className="flex-1 bg-transparent text-sm font-medium text-dark-text-primary outline-none appearance-none cursor-pointer"
+                        <Select
                           aria-label="Select swim lane"
-                        >
-                          {swimLanes.map(lane => (
-                            <option key={lane.id} value={lane.id}>
-                              {lane.name} ({tasksBySwimLane[lane.id]?.length || 0})
-                            </option>
-                          ))}
-                        </select>
-                        <svg className="w-4 h-4 text-dark-text-tertiary pointer-events-none flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
+                          variant="ghost"
+                          className="flex-1"
+                          buttonClassName="px-0 py-0 font-medium"
+                          value={mobileLane}
+                          onChange={setMobileLane}
+                          options={swimLanes.map(lane => ({
+                            value: lane.id,
+                            label: `${lane.name} (${tasksBySwimLane[lane.id]?.length || 0})`,
+                          }))}
+                        />
                       </div>
                     </div>
                   )}
