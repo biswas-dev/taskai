@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Card from './ui/Card'
 import Button from './ui/Button'
 import FormError from './ui/FormError'
+import { useDialog } from '../state/DialogContext'
 import {
   apiClient,
   type SentInvitation,
@@ -34,6 +35,7 @@ const isManager = (role?: string) => role === 'owner' || role === 'admin'
 const errorMessage = (error: unknown, fallback: string) => (error instanceof Error ? error.message : fallback)
 
 export default function TeamsPanel() {
+  const dialog = useDialog()
   const [teams, setTeams] = useState<TeamSummary[]>([])
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
   const [members, setMembers] = useState<TeamMember[]>([])
@@ -173,7 +175,7 @@ export default function TeamsPanel() {
 
   const handleDeleteTeam = async () => {
     if (!selectedTeam) return
-    if (!confirm(`Delete the team "${selectedTeam.name}"? Its members lose access to the team, but keep any project access they were given.`)) return
+    if (!(await dialog.confirm({ title: 'Delete team?', message: `Delete the team "${selectedTeam.name}"? Its members lose access to the team, but keep any project access they were given.`, confirmLabel: 'Delete', danger: true }))) return
     resetMessages()
     setIsChangingTeam(true)
     try {
@@ -190,7 +192,7 @@ export default function TeamsPanel() {
 
   const handleLeaveTeam = async () => {
     if (!selectedTeam) return
-    if (!confirm(`Leave "${selectedTeam.name}"? You will stop seeing its members.`)) return
+    if (!(await dialog.confirm({ title: 'Leave team?', message: `Leave "${selectedTeam.name}"? You will stop seeing its members.`, confirmLabel: 'Leave', danger: true }))) return
     resetMessages()
     setIsChangingTeam(true)
     try {
@@ -208,7 +210,7 @@ export default function TeamsPanel() {
   const handleRemoveMember = async (member: TeamMember) => {
     if (!selectedTeam) return
     const label = member.user_name || member.email
-    if (!confirm(`Remove ${label} from ${selectedTeam.name}?`)) return
+    if (!(await dialog.confirm({ title: 'Remove member?', message: `Remove ${label} from ${selectedTeam.name}?`, confirmLabel: 'Remove', danger: true }))) return
     resetMessages()
     setBusyMemberId(member.id)
     try {
@@ -227,7 +229,7 @@ export default function TeamsPanel() {
     const target = teams.find((t) => t.id === targetTeamId)
     if (!target) return
     const label = member.user_name || member.email
-    if (!confirm(`Move ${label} from ${selectedTeam.name} to ${target.name}? Their project access is not changed.`)) return
+    if (!(await dialog.confirm({ title: 'Move member?', message: `Move ${label} from ${selectedTeam.name} to ${target.name}? Their project access is not changed.`, confirmLabel: 'Move' }))) return
     resetMessages()
     setBusyMemberId(member.id)
     try {

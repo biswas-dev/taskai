@@ -6,6 +6,7 @@ import { useLocalTasks } from '../hooks/useLocalTasks'
 import { useSync } from '../state/SyncContext'
 import { REACTION_EMOJI, REACTION_ORDER } from '../lib/reactionUtils'
 import BoardFilterBar, { applyBoardFilters } from '../components/board/BoardFilterBar'
+import { useDialog } from '../state/DialogContext'
 
 const WikiContent = lazy(() => import('../components/WikiContent'))
 const ProjectSettings = lazy(() => import('./ProjectSettings'))
@@ -13,6 +14,7 @@ const Roadmap = lazy(() => import('./Roadmap'))
 
 
 export default function ProjectDetail() {
+  const dialog = useDialog()
   const { projectId } = useParams<{ projectId: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const activeTab = searchParams.get('tab') || 'board'
@@ -207,7 +209,7 @@ export default function ProjectDetail() {
       setNewTaskDescription('')
       setNewTaskDueDate('')
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create task')
+      dialog.notify(err instanceof Error ? err.message : 'Failed to create task', 'error')
     } finally {
       setCreating(false)
     }
@@ -240,7 +242,7 @@ export default function ProjectDetail() {
         swim_lane_id: newSwimLaneId,
       })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update task status')
+      dialog.notify(err instanceof Error ? err.message : 'Failed to update task status', 'error')
     }
   }
 

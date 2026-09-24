@@ -6,12 +6,14 @@ import WikiAnnotationSidebar from './WikiAnnotationSidebar'
 import WikiPageTree from './WikiPageTree'
 import { getWikiAncestors, getWikiDepth, WIKI_MAX_DEPTH } from '../lib/wikiTree'
 import { useSync } from '../state/SyncContext'
+import { useDialog } from '../state/DialogContext'
 
 interface WikiContentProps {
   projectId: string
 }
 
 export default function WikiContent({ projectId }: WikiContentProps) {
+  const dialog = useDialog()
   const { registerSyncTask } = useSync()
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedPageId = searchParams.get('page')
@@ -159,10 +161,10 @@ export default function WikiContent({ projectId }: WikiContentProps) {
       selectPage(newPage.id)
       return newPage
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create page')
+      dialog.notify(err instanceof Error ? err.message : 'Failed to create page', 'error')
       return null
     }
-  }, [projectId, selectPage])
+  }, [dialog, projectId, selectPage])
 
   const handlePageUpdate = useCallback((updated: WikiPage) => {
     setPages(prev => prev.map(p => (p.id === updated.id ? { ...p, ...updated } : p)))
@@ -177,17 +179,17 @@ export default function WikiContent({ projectId }: WikiContentProps) {
       setPages(prev => prev.map(p => (p.id === pageId ? { ...p, ...updated } : p)))
     } catch (err) {
       setPages(snapshot)
-      alert(err instanceof Error ? err.message : 'Failed to move page')
+      dialog.notify(err instanceof Error ? err.message : 'Failed to move page', 'error')
     }
-  }, [pages])
+  }, [dialog, pages])
 
   const handleDeletePage = useCallback(async (pageId: number) => {
     const page = pages.find(p => p.id === pageId)
     const childCount = pages.filter(p => p.parent_id === pageId).length
     const message = childCount > 0
       ? `Delete "${page?.title ?? 'this page'}"? Its ${childCount} sub-page${childCount === 1 ? '' : 's'} will be kept and moved up one level.`
-      : `Are you sure you want to delete "${page?.title ?? 'this page'}"?`
-    if (!confirm(message)) return
+      : `"${page?.title ?? 'this page'}" will be permanently deleted.`
+    if (!(await dialog.confirm({ title: 'Delete page?', message, confirmLabel: 'Delete', danger: true }))) return
     try {
       await api.deleteWikiPage(pageId)
       const grandparent = page?.parent_id ?? null
@@ -196,9 +198,9 @@ export default function WikiContent({ projectId }: WikiContentProps) {
         .map(p => (p.parent_id === pageId ? { ...p, parent_id: grandparent } : p)))
       if (selectedPageId === String(pageId)) clearSelectedPage()
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete page')
+      dialog.notify(err instanceof Error ? err.message : 'Failed to delete page', 'error')
     }
-  }, [clearSelectedPage, pages, selectedPageId])
+  }, [clearSelectedPage, dialog, pages, selectedPageId])
 
   const handleAnnotationCreate = useCallback(async (info: {
     startOffset: number; endOffset: number; selectedText: string; color: AnnotationColor

@@ -1,7 +1,9 @@
+import type { ReactElement } from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import SprintsAndTags from './SprintsAndTags'
+import { DialogProvider } from '../state/DialogContext'
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
@@ -44,6 +46,8 @@ const tags = [
   { id: 1, name: 'critical', color: '#DC2626', created_at: '2024-01-01T00:00:00Z' },
 ]
 
+const renderWithDialogs = (ui: ReactElement) => render(<DialogProvider>{ui}</DialogProvider>)
+
 describe('SprintsAndTags', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -52,14 +56,14 @@ describe('SprintsAndTags', () => {
   })
 
   it('renders page heading', async () => {
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('Sprints & Tags')).toBeInTheDocument()
     })
   })
 
   it('displays both sprints and tags sections', async () => {
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('Sprint Alpha')).toBeInTheDocument()
       expect(screen.getByText('critical')).toBeInTheDocument()
@@ -67,7 +71,7 @@ describe('SprintsAndTags', () => {
   })
 
   it('shows sprint goal and status', async () => {
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('Ship MVP')).toBeInTheDocument()
       expect(screen.getByText('active')).toBeInTheDocument()
@@ -77,7 +81,7 @@ describe('SprintsAndTags', () => {
   it('shows empty states when no data', async () => {
     mocks.getSprints.mockResolvedValue([])
     mocks.getTags.mockResolvedValue([])
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('No sprints yet')).toBeInTheDocument()
       expect(screen.getByText('No tags yet')).toBeInTheDocument()
@@ -87,7 +91,7 @@ describe('SprintsAndTags', () => {
   it('creates a sprint from the combined page', async () => {
     mocks.createSprint.mockResolvedValue(undefined)
     const user = userEvent.setup()
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('Sprint Alpha')).toBeInTheDocument()
     })
@@ -110,7 +114,7 @@ describe('SprintsAndTags', () => {
   it('creates a tag from the combined page', async () => {
     mocks.createTag.mockResolvedValue(undefined)
     const user = userEvent.setup()
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('critical')).toBeInTheDocument()
     })
@@ -132,7 +136,7 @@ describe('SprintsAndTags', () => {
 
   it('validates sprint name before creating', async () => {
     const user = userEvent.setup()
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('Sprint Alpha')).toBeInTheDocument()
     })
@@ -152,7 +156,7 @@ describe('SprintsAndTags', () => {
 
   it('validates tag name before creating', async () => {
     const user = userEvent.setup()
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('critical')).toBeInTheDocument()
     })
@@ -172,21 +176,21 @@ describe('SprintsAndTags', () => {
 
   it('deletes a sprint with confirmation', async () => {
     mocks.deleteSprint.mockResolvedValue(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
     const user = userEvent.setup()
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('Sprint Alpha')).toBeInTheDocument()
     })
 
     const deleteButtons = screen.getAllByTitle('Delete')
     await user.click(deleteButtons[0])
-    expect(mocks.deleteSprint).toHaveBeenCalledWith(1)
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(mocks.deleteSprint).toHaveBeenCalledWith(1))
   })
 
   it('navigates back on Back button', async () => {
     const user = userEvent.setup()
-    render(<SprintsAndTags />)
+    renderWithDialogs(<SprintsAndTags />)
     await waitFor(() => {
       expect(screen.getByText('Back')).toBeInTheDocument()
     })

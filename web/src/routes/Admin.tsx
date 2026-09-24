@@ -4,6 +4,7 @@ import { useAuth } from '../state/AuthContext'
 import { api, type EmailProviderResponse, type AdminInvitation, type BackupStatus, type BackupSettings, type BackupRecord, type BackupFolder } from '../lib/api'
 import { version as frontendVersion } from '../lib/version'
 import AdminAnalytics from '../components/AdminAnalytics'
+import { useDialog } from '../state/DialogContext'
 
 // API URL with fallback for production (empty string = relative URL)
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -147,6 +148,7 @@ interface VersionInfo {
 }
 
 export default function Admin() {
+  const dialog = useDialog()
   const { user } = useAuth()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -510,7 +512,7 @@ export default function Admin() {
   }
 
   const handleDeleteEmailProvider = async () => {
-    if (!confirm('Remove email provider configuration?')) return
+    if (!(await dialog.confirm({ title: 'Remove email provider?', message: 'The email provider configuration will be removed.', confirmLabel: 'Remove', danger: true }))) return
     setEmailError('')
     setEmailSuccess('')
     setIsDeletingEmail(true)
@@ -549,7 +551,7 @@ export default function Admin() {
       setCopyError('Source URL and API key are required')
       return
     }
-    if (!confirm('This will overwrite ALL data in this environment with data from the source. Are you sure?')) return
+    if (!(await dialog.confirm({ title: 'Overwrite all data?', message: 'This will overwrite ALL data in this environment with data from the source.', confirmLabel: 'Overwrite', danger: true }))) return
     setIsCopying(true)
     setCopyError('')
     setCopyStatus('')
@@ -639,7 +641,7 @@ export default function Admin() {
   }
 
   const handleDisconnectAutoBackup = async () => {
-    if (!confirm('Disconnect Google Drive? Scheduled backups will be disabled.')) return
+    if (!(await dialog.confirm({ title: 'Disconnect Google Drive?', message: 'Scheduled backups will be disabled.', confirmLabel: 'Disconnect', danger: true }))) return
     setIsDisconnectingAutoBackup(true)
     setAutoBackupError('')
     try {
@@ -654,7 +656,7 @@ export default function Admin() {
   }
 
   const handleDeleteAutoBackupRecord = async (id: string) => {
-    if (!confirm('Delete this backup record and its remote file?')) return
+    if (!(await dialog.confirm({ title: 'Delete backup?', message: 'This backup record and its remote file will be deleted.', confirmLabel: 'Delete', danger: true }))) return
     try {
       await api.deleteBackupRecord(id)
       setAutoBackupHistory(prev => prev.filter(r => r.id !== id))

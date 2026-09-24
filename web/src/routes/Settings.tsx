@@ -8,8 +8,10 @@ import SearchSelect from '../components/ui/SearchSelect'
 import TeamsPanel from '../components/TeamsPanel'
 import { apiClient, type CloudinaryCredentialResponse, type APIKey, type Invite, type ProjectInvitation } from '../lib/api'
 import type { FigmaCredentialsStatus } from '../lib/api'
+import { useDialog } from '../state/DialogContext'
 
 export default function Settings() {
+  const dialog = useDialog()
   const navigate = useNavigate()
 
   // Profile state
@@ -329,7 +331,7 @@ export default function Settings() {
   }
 
   const handleDeleteFigma = async () => {
-    if (!confirm('Are you sure you want to remove your Figma token?')) return
+    if (!(await dialog.confirm({ title: 'Remove Figma token?', message: 'Figma features will stop working until you add a token again.', confirmLabel: 'Remove', danger: true }))) return
     setIsDeletingFigma(true)
     setFigmaError('')
     setFigmaSuccess('')
@@ -402,7 +404,7 @@ export default function Settings() {
   }
 
   const handleDeleteCloudinary = async () => {
-    if (!confirm('Are you sure you want to remove your Cloudinary credentials?')) return
+    if (!(await dialog.confirm({ title: 'Remove Cloudinary credentials?', message: 'Image uploads to Cloudinary will stop working until you add credentials again.', confirmLabel: 'Remove', danger: true }))) return
 
     setIsDeletingCloudinary(true)
     setCloudinaryError('')
@@ -547,7 +549,7 @@ export default function Settings() {
   }
 
   const handleDeleteAPIKey = async (id: number, name: string) => {
-    if (!confirm(`Are you sure you want to delete the API key "${name}"?`)) {
+    if (!(await dialog.confirm({ title: 'Delete API key?', message: `Delete the API key "${name}"? Anything using it will lose access.`, confirmLabel: 'Delete', danger: true }))) {
       return
     }
 

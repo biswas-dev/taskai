@@ -7,6 +7,7 @@ import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
 import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubRepo, type GitHubProgressEvent, type Collaborator, type TeamSummary } from '../lib/api'
+import { useDialog } from '../state/DialogContext'
 
 interface ProjectMember {
   id: number
@@ -42,6 +43,7 @@ interface ProjectSettingsProps {
 }
 
 export default function ProjectSettings({ embedded, projectIdOverride }: ProjectSettingsProps = {}) {
+  const dialog = useDialog()
   const navigate = useNavigate()
   const { projectId: projectIdParam } = useParams<{ projectId: string }>()
   const projectId = projectIdOverride || parseInt(projectIdParam || '0')
@@ -493,7 +495,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   }
 
   const handleDeleteSwimLane = async (laneId: number) => {
-    if (!confirm('Are you sure you want to delete this swim lane? Tasks using this swim lane will need to be reassigned.')) {
+    if (!(await dialog.confirm({ title: 'Delete swim lane?', message: 'Tasks using this swim lane will need to be reassigned.', confirmLabel: 'Delete', danger: true }))) {
       return
     }
 
@@ -610,7 +612,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   }
 
   const handleRemoveMember = async (memberId: number) => {
-    if (!confirm('Are you sure you want to remove this member?')) {
+    if (!(await dialog.confirm({ title: 'Remove member?', message: 'This member will lose access to the project.', confirmLabel: 'Remove', danger: true }))) {
       return
     }
 

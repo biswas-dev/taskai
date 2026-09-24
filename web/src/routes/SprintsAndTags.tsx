@@ -6,6 +6,7 @@ import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
 import SearchSelect from '../components/ui/SearchSelect'
 import { apiClient } from '../lib/api'
+import { useDialog } from '../state/DialogContext'
 
 interface Sprint {
   id: number
@@ -25,6 +26,7 @@ interface Tag {
 }
 
 export default function SprintsAndTags() {
+  const dialog = useDialog()
   const navigate = useNavigate()
   const { projectId } = useParams<{ projectId: string }>()
   const projectIdNum = Number(projectId)
@@ -126,7 +128,7 @@ export default function SprintsAndTags() {
   }
 
   const handleDeleteSprint = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this sprint?')) {
+    if (!(await dialog.confirm({ title: 'Delete sprint?', message: 'This sprint will be permanently deleted.', confirmLabel: 'Delete', danger: true }))) {
       return
     }
 
@@ -177,7 +179,7 @@ export default function SprintsAndTags() {
   }
 
   const handleDeleteTag = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this tag?')) {
+    if (!(await dialog.confirm({ title: 'Delete tag?', message: 'This tag will be permanently deleted.', confirmLabel: 'Delete', danger: true }))) {
       return
     }
 

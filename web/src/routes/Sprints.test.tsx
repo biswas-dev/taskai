@@ -1,7 +1,9 @@
+import type { ReactElement } from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Sprints from './Sprints'
+import { DialogProvider } from '../state/DialogContext'
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
@@ -48,6 +50,8 @@ const sprints = [
   },
 ]
 
+const renderWithDialogs = (ui: ReactElement) => render(<DialogProvider>{ui}</DialogProvider>)
+
 describe('Sprints', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -55,7 +59,7 @@ describe('Sprints', () => {
   })
 
   it('renders heading and description', async () => {
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Sprints' })).toBeInTheDocument()
       expect(screen.getByText('Organize tasks into time-boxed iterations')).toBeInTheDocument()
@@ -63,7 +67,7 @@ describe('Sprints', () => {
   })
 
   it('displays sprints after loading', async () => {
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
       expect(screen.getByText('Sprint 2')).toBeInTheDocument()
@@ -71,14 +75,14 @@ describe('Sprints', () => {
   })
 
   it('shows sprint goal when present', async () => {
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Complete auth module')).toBeInTheDocument()
     })
   })
 
   it('shows status badges', async () => {
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('active')).toBeInTheDocument()
       expect(screen.getByText('planned')).toBeInTheDocument()
@@ -87,7 +91,7 @@ describe('Sprints', () => {
 
   it('shows empty state when no sprints', async () => {
     mocks.getSprints.mockResolvedValue([])
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('No sprints yet')).toBeInTheDocument()
     })
@@ -95,7 +99,7 @@ describe('Sprints', () => {
 
   it('opens create form on New Sprint click', async () => {
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
@@ -107,7 +111,7 @@ describe('Sprints', () => {
 
   it('validates sprint name on submit', async () => {
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
@@ -130,7 +134,7 @@ describe('Sprints', () => {
   it('creates a sprint successfully', async () => {
     mocks.createSprint.mockResolvedValue(undefined)
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
@@ -154,7 +158,7 @@ describe('Sprints', () => {
 
   it('opens edit form with pre-filled data', async () => {
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
@@ -169,7 +173,7 @@ describe('Sprints', () => {
   it('updates a sprint', async () => {
     mocks.updateSprint.mockResolvedValue(undefined)
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
@@ -185,10 +189,9 @@ describe('Sprints', () => {
 
   it('deletes a sprint with confirmation', async () => {
     mocks.deleteSprint.mockResolvedValue(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
@@ -196,20 +199,27 @@ describe('Sprints', () => {
     const deleteButtons = screen.getAllByTitle('Delete')
     await user.click(deleteButtons[0])
 
-    expect(mocks.deleteSprint).toHaveBeenCalledWith(1)
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('Delete sprint?')).toBeInTheDocument()
+    expect(mocks.deleteSprint).not.toHaveBeenCalled()
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(mocks.deleteSprint).toHaveBeenCalledWith(1))
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
   })
 
   it('does not delete when confirmation is cancelled', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false)
-
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
 
     const deleteButtons = screen.getAllByTitle('Delete')
     await user.click(deleteButtons[0])
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
 
     expect(mocks.deleteSprint).not.toHaveBeenCalled()
   })
@@ -217,7 +227,7 @@ describe('Sprints', () => {
   it('shows error on failed save', async () => {
     mocks.createSprint.mockRejectedValue(new Error('Save failed'))
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
@@ -235,7 +245,7 @@ describe('Sprints', () => {
 
   it('navigates back on Back button click', async () => {
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
@@ -245,7 +255,7 @@ describe('Sprints', () => {
 
   it('cancel button hides the form', async () => {
     const user = userEvent.setup()
-    render(<Sprints />)
+    renderWithDialogs(<Sprints />)
     await waitFor(() => {
       expect(screen.getByText('Sprint 1')).toBeInTheDocument()
     })
