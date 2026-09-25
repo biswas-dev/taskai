@@ -275,19 +275,13 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	isProjectOwner := proj.OwnerID == userID
 
-	// Only owners and editors can update projects
-	if !isProjectOwner && projectMember.Role != "owner" && projectMember.Role != "editor" {
-		respondError(w, http.StatusForbidden, "only project owners and editors can update projects", "forbidden")
-		return
-	}
-
 	// Moving a project to another team changes who can be invited to it, so it
-	// is reserved for the project's owner (projects.owner_id), not anyone who
-	// holds the Owner role, and only into a team the owner belongs to as owner
-	// or member.
+	// is reserved for the project's owners: anyone with the Owner role, plus
+	// the recorded owner (projects.owner_id) even if their role was lowered.
+	// They may only move it into a team they belong to (any role, active).
 	if req.TeamID != nil {
-		if !isProjectOwner {
-			respondError(w, http.StatusForbidden, "only the project owner can move this project to another team", "forbidden")
+		if !isProjectOwner && projectMember.Role != "owner" {
+			respondError(w, http.StatusForbidden, "only a project owner can move this project to another team", "forbidden")
 			return
 		}
 		if _, err := s.getUserTeamRole(ctx, userID, *req.TeamID); err != nil {
@@ -300,6 +294,12 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusForbidden, "you can only move a project to a team you are a member of", "forbidden")
 			return
 		}
+	}
+
+	// Only owners and editors can update projects
+	if !isProjectOwner && projectMember.Role != "owner" && projectMember.Role != "editor" {
+		respondError(w, http.StatusForbidden, "only project owners and editors can update projects", "forbidden")
+		return
 	}
 
 	// Validation

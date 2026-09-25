@@ -62,9 +62,12 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [myTeams, setMyTeams] = useState<TeamSummary[]>([])
   const [isChangingTeam, setIsChangingTeam] = useState(false)
-  // The project's owner (projects.owner_id), not anyone holding the Owner
-  // role: only they may move the project to another team.
-  const isProjectOwner = project != null && user != null && project.owner_id === user.id
+  // Any project owner may move the project to another team: anyone with the
+  // Owner role, plus the recorded owner even if their role was lowered.
+  const isProjectOwner = user != null && (
+    project?.owner_id === user.id ||
+    members.some(m => m.user_id === user.id && m.role === 'owner')
+  )
   const [selectedUserId, setSelectedUserId] = useState('')
   const [newMemberRole, setNewMemberRole] = useState('member')
   const [memberError, setMemberError] = useState('')

@@ -31,14 +31,16 @@ func projectTeamID(t *testing.T, ts *TestServer, projectID int64) *int64 {
 }
 
 // TestHandleUpdateProject_MoveTeam covers who may move a project between
-// teams: only the project's owner (projects.owner_id), and only into a team
-// they belong to as owner or member.
+// teams: any project owner (the Owner role, or the recorded owner_id even with
+// a lowered role), and only into a team the caller belongs to (any role).
 func TestHandleUpdateProject_MoveTeam(t *testing.T) {
 	type fixture struct {
 		ts        *TestServer
 		ownerID   int64
 		coOwnerID int64
 		editorID  int64
+		adminID   int64
+		memberID  int64
 		outsider  int64
 		projectID int64
 		homeTeam  int64
@@ -55,6 +57,8 @@ func TestHandleUpdateProject_MoveTeam(t *testing.T) {
 		f.ownerID = ts.CreateTestUser(t, "owner@example.com", "password123")
 		f.coOwnerID = ts.CreateTestUser(t, "coowner@example.com", "password123")
 		f.editorID = ts.CreateTestUser(t, "editor@example.com", "password123")
+		f.adminID = ts.CreateTestUser(t, "admin@example.com", "password123")
+		f.memberID = ts.CreateTestUser(t, "member@example.com", "password123")
 		f.outsider = ts.CreateTestUser(t, "outsider@example.com", "password123")
 		someoneElse := ts.CreateTestUser(t, "else@example.com", "password123")
 
@@ -65,11 +69,15 @@ func TestHandleUpdateProject_MoveTeam(t *testing.T) {
 		f.foreign = createTestTeamForUser(t, ts, someoneElse)
 		f.invited = createTestTeamForUser(t, ts, someoneElse)
 		addTeamMembership(t, ts, f.invited, f.ownerID, "member", "invited")
-		// The co-owner and editor share every team with the owner, so a refusal
-		// can only come from the project-owner rule.
+		// The co-owner is on the home team and memberTeam only (not ownedTeam).
+		// Editor, admin and member share every team with the owner, so their
+		// refusal can only come from the project-role rule.
+		addTeamMembership(t, ts, f.homeTeam, f.coOwnerID, "member", "active")
+		addTeamMembership(t, ts, f.memberTeam, f.coOwnerID, "member", "active")
 		for _, team := range []int64{f.homeTeam, f.ownedTeam, f.memberTeam} {
-			addTeamMembership(t, ts, team, f.coOwnerID, "member", "active")
-			addTeamMembership(t, ts, team, f.editorID, "member", "active")
+			for _, u := range []int64{f.editorID, f.adminID, f.memberID} {
+				addTeamMembership(t, ts, team, u, "member", "active")
+			}
 		}
 
 		f.projectID = ts.CreateTestProject(t, f.ownerID, "Movable")
@@ -78,6 +86,8 @@ func TestHandleUpdateProject_MoveTeam(t *testing.T) {
 		}
 		ts.AddProjectMember(t, f.projectID, f.coOwnerID, f.ownerID, "owner")
 		ts.AddProjectMember(t, f.projectID, f.editorID, f.ownerID, "editor")
+		ts.AddProjectMember(t, f.projectID, f.adminID, f.ownerID, "admin")
+		ts.AddProjectMember(t, f.projectID, f.memberID, f.ownerID, "member")
 		return f
 	}
 
@@ -113,18 +123,38 @@ func TestHandleUpdateProject_MoveTeam(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "someone with the Owner role who is not the project owner is refused",
+			name:       "a co-owner with the Owner role moves into a team they are on",
+			caller:     func(f fixture) int64 { return f.coOwnerID },
+			target:     func(f fixture) int64 { return f.memberTeam },
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "a co-owner cannot move into a team they are not on",
 			caller:     func(f fixture) int64 { return f.coOwnerID },
 			target:     func(f fixture) int64 { return f.ownedTeam },
 			wantStatus: http.StatusForbidden,
-			wantErr:    "only the project owner can move this project to another team",
+			wantErr:    "you can only move a project to a team you are a member of",
+		},
+		{
+			name:       "an admin is refused",
+			caller:     func(f fixture) int64 { return f.adminID },
+			target:     func(f fixture) int64 { return f.memberTeam },
+			wantStatus: http.StatusForbidden,
+			wantErr:    "only a project owner can move this project to another team",
+		},
+		{
+			name:       "a member is refused",
+			caller:     func(f fixture) int64 { return f.memberID },
+			target:     func(f fixture) int64 { return f.memberTeam },
+			wantStatus: http.StatusForbidden,
+			wantErr:    "only a project owner can move this project to another team",
 		},
 		{
 			name:       "an editor is refused",
 			caller:     func(f fixture) int64 { return f.editorID },
 			target:     func(f fixture) int64 { return f.memberTeam },
 			wantStatus: http.StatusForbidden,
-			wantErr:    "only the project owner can move this project to another team",
+			wantErr:    "only a project owner can move this project to another team",
 		},
 		{
 			name:       "owner cannot move into a team they are not on",

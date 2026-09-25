@@ -1229,7 +1229,7 @@ export interface components {
             description?: string;
             /**
              * Format: int64
-             * @description Move the project to another team. Only the project's owner (owner_id) may do this, and only into a team they are an active member of (as owner or member); anyone else gets 403. After the move, only members of the new team can be invited; existing project members keep their access.
+             * @description Move the project to another team. Any project owner may do this (a member with the Owner role, or the recorded owner_id), and only into a team they are an active member of (any role); anyone else gets 403. After the move, only members of the new team can be invited; existing project members keep their access.
              */
             team_id?: number;
         };

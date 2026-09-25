@@ -180,14 +180,40 @@ describe('ProjectSettings', () => {
       expect(await screen.findByText(/Project moved to Elastio/)).toBeInTheDocument()
     })
 
-    it('shows the team read-only to anyone who is not the project owner, even with the Owner role', async () => {
+    it('lets a co-owner with the Owner role move the project, listing their own teams', async () => {
+      const user = userEvent.setup()
       mocks.getProject.mockResolvedValue({
         id: 42, name: 'Test Project', team_id: 1, owner_id: 77, created_at: '', updated_at: '',
       })
+      mocks.listTeams.mockResolvedValue([
+        teams[0],
+        { id: 3, name: 'TickrAPI', owner_id: 99, role: 'member', is_owner: false, is_home: false, member_count: 4, project_count: 2 },
+      ])
+      mocks.updateProject.mockResolvedValue({ id: 42, name: 'Test Project', owner_id: 77, team_id: 3, created_at: '', updated_at: '' })
+      renderWithDialogs()
+
+      const trigger = await screen.findByLabelText('Move to')
+      await waitFor(() => expect(trigger).toHaveTextContent('Intelliviz'))
+      await user.click(trigger)
+      const listbox = await screen.findByRole('listbox')
+      expect(within(listbox).getAllByRole('option')).toHaveLength(2)
+      await user.click(within(listbox).getByRole('option', { name: /TickrAPI/ }))
+      await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Move project' }))
+
+      await waitFor(() => expect(mocks.updateProject).toHaveBeenCalledWith(42, { team_id: 3 }))
+    })
+
+    it.each(['editor', 'member', 'viewer'])('shows the team read-only to a %s', async (role) => {
+      mocks.getProject.mockResolvedValue({
+        id: 42, name: 'Test Project', team_id: 1, owner_id: 77, created_at: '', updated_at: '',
+      })
+      mocks.getProjectMembers.mockResolvedValue([{ ...members[0], role }])
       renderWithDialogs()
 
       expect(await screen.findByText('Intelliviz')).toBeInTheDocument()
       await waitFor(() => expect(mocks.listTeams).toHaveBeenCalled())
+      // Members have loaded, so the role check has run.
+      expect(await screen.findByText('alice@test.com')).toBeInTheDocument()
       expect(screen.queryByLabelText('Move to')).not.toBeInTheDocument()
       expect(screen.queryByText('Move to')).not.toBeInTheDocument()
     })
