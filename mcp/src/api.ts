@@ -227,6 +227,21 @@ export interface WikiBlock {
   [key: string]: unknown;
 }
 
+/**
+ * GET /api/projects returns a bare array of projects. Normalise it (and the
+ * `{ projects, total }` envelope, should the API ever paginate) to one shape
+ * so callers never map over an undefined field.
+ */
+export function normalizeProjectList(body: unknown): { projects: Project[]; total: number } {
+  if (Array.isArray(body)) {
+    return { projects: body as Project[], total: body.length };
+  }
+  const envelope = (body ?? {}) as { projects?: unknown; total?: unknown };
+  const projects = Array.isArray(envelope.projects) ? (envelope.projects as Project[]) : [];
+  const total = typeof envelope.total === "number" ? envelope.total : projects.length;
+  return { projects, total };
+}
+
 export class TaskAIClient {
   private baseURL: string;
   private apiKey: string;
@@ -268,7 +283,8 @@ export class TaskAIClient {
   }
 
   async listProjects(page = 1, limit = 20): Promise<{ projects: Project[]; total: number }> {
-    return this.request(`/api/projects?page=${page}&limit=${limit}`);
+    const body = await this.request<unknown>(`/api/projects?page=${page}&limit=${limit}`);
+    return normalizeProjectList(body);
   }
 
   async getProject(id: string): Promise<Project> {
