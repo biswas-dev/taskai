@@ -729,12 +729,12 @@ function createServer(client: TaskAIClient, cachedUser?: User, defaultProjectIds
   // --- create_wiki_page ---
   server.tool(
     "create_wiki_page",
-    `Create a new wiki page in a project. Content supports markdown with extensions: references ([^1] inline → superscript citation, [^1]: text → reference list), graph links ([[wiki:ID|Label]], [[task:ID|Label]]), drawings ([draw:id]), and Figma embeds ([figma:url]).${defaultPid ? ` Defaults to project ${defaultPid}.` : ""}`,
+    `Create a new wiki page in a project. Content supports markdown with extensions: references ([^1] or [^label] inline → numbered superscript citation, [^label]: text → reference list; labels may use letters, digits, - and _), graph links ([[wiki:ID|Label]], [[task:ID|Label]]), drawings ([draw:id]), and Figma embeds ([figma:url]).${defaultPid ? ` Defaults to project ${defaultPid}.` : ""}`,
     {
       project_id: z.string().optional().describe(`Project ID${defaultPid ? ` (default: ${defaultPid})` : ""}`),
       title: z.string().describe("Page title"),
       parent_id: z.string().optional().describe("Parent wiki page ID to nest this page under (omit for a top-level page; max 6 levels deep)"),
-      content: z.string().optional().describe("Initial page content (markdown). Supports references: use [^N] for inline citations and [^N]: text for definitions"),
+      content: z.string().optional().describe("Initial page content (markdown). Supports references: use [^label] (e.g. [^1] or [^usc102]) for inline citations and [^label]: text for definitions; they are numbered in order of first citation"),
       verbose: z.boolean().optional().describe("Pretty print JSON (default: false)"),
     },
     async ({ project_id, title, parent_id, content, verbose }) => {
@@ -753,10 +753,10 @@ function createServer(client: TaskAIClient, cachedUser?: User, defaultProjectIds
   // --- update_wiki_page_content ---
   server.tool(
     "update_wiki_page_content",
-    "Update the content of an existing wiki page. Content supports markdown with extensions: references ([^1] inline → superscript citation, [^1]: text → reference list), graph links ([[wiki:ID|Label]], [[task:ID|Label]]), drawings ([draw:id]), and Figma embeds ([figma:url]).",
+    "Update the content of an existing wiki page. Content supports markdown with extensions: references ([^1] or [^label] inline → numbered superscript citation, [^label]: text → reference list; labels may use letters, digits, - and _), graph links ([[wiki:ID|Label]], [[task:ID|Label]]), drawings ([draw:id]), and Figma embeds ([figma:url]).",
     {
       page_id: z.string().describe("Wiki page ID"),
-      content: z.string().describe("New page content (markdown). Supports references: use [^N] for inline citations and [^N]: text for definitions"),
+      content: z.string().describe("New page content (markdown). Supports references: use [^label] (e.g. [^1] or [^usc102]) for inline citations and [^label]: text for definitions; they are numbered in order of first citation"),
       verbose: z.boolean().optional().describe("Pretty print JSON (default: false)"),
     },
     async ({ page_id, content, verbose }) => {
