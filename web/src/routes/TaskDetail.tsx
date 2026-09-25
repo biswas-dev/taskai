@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
 import Button from '../components/ui/Button'
-import SearchSelect from '../components/ui/SearchSelect'
+import Select from '../components/ui/Select'
 import MultiSelectDropdown from '../components/ui/MultiSelectDropdown'
 import ImagePickerModal from '../components/ImagePickerModal'
 import { apiClient, Task, type UpdateTaskRequest, type SwimLane, type Sprint, type ProjectMember, type Attachment, type TaskComment, type GitHubPushTaskResponse, type Tag, type GitHubReaction } from '../lib/api'
@@ -1268,7 +1268,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
             <div className="bg-dark-bg-secondary border border-dark-border-subtle rounded-lg divide-y divide-dark-border-subtle">
               {/* Swim Lane */}
               <SidebarField label="Swim Lane">
-                <SearchSelect
+                <Select
                   variant="inline"
                   value={String(task.swim_lane_id ?? '')}
                   onChange={(v) => saveField('swim_lane_id', v)}
@@ -1278,7 +1278,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
 
               {/* Priority */}
               <SidebarField label="Priority">
-                <SearchSelect
+                <Select
                   variant="inline"
                   value={task.priority || 'medium'}
                   onChange={(v) => saveField('priority', v)}
@@ -1293,7 +1293,7 @@ export default function TaskDetail({ isModal, onClose }: TaskDetailProps) {
 
               {/* Sprint */}
               <SidebarField label="Sprint">
-                <SearchSelect
+                <Select
                   variant="inline"
                   value={task.sprint_id?.toString() || ''}
                   onChange={(v) => saveField('sprint_id', v)}

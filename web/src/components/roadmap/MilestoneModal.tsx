@@ -2,6 +2,7 @@ import { useState, FormEvent, useEffect } from 'react'
 import { api, type Milestone, type CreateMilestoneRequest, type UpdateMilestoneRequest } from '../../lib/api'
 import TextInput from '../ui/TextInput'
 import Button from '../ui/Button'
+import Select from '../ui/Select'
 
 const MILESTONE_COLORS = [
   '#5e6ad2', '#6366f1', '#8b5cf6', '#a855f7',
@@ -188,17 +189,18 @@ export default function MilestoneModal({
               {isEditing && (
                 <div className="w-full">
                   <label htmlFor="milestone-status" className="block text-sm font-medium text-dark-text-primary mb-1">Status</label>
-                  <select
+                  <Select<'active' | 'completed' | 'cancelled'>
                     id="milestone-status"
+                    className="w-full"
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as 'active' | 'completed' | 'cancelled')}
+                    onChange={setStatus}
                     disabled={loading}
-                    className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  >
-                    <option value="active">Active</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
+                    options={[
+                      { value: 'active', label: 'Active' },
+                      { value: 'completed', label: 'Completed' },
+                      { value: 'cancelled', label: 'Cancelled' },
+                    ]}
+                  />
                 </div>
               )}
             </div>

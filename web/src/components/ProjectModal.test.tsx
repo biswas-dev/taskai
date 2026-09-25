@@ -13,6 +13,7 @@ vi.mock('../lib/api', () => ({
 
 // Import after mock so we get the mocked version
 import { api } from '../lib/api'
+import { pickOption } from '../test/select'
 
 const mockedCreateProject = vi.mocked(api.createProject)
 
@@ -198,8 +199,8 @@ describe('ProjectModal', () => {
     render(<ProjectModal {...defaultProps} />)
 
     const teamSelect = await screen.findByLabelText('Team')
-    expect(teamSelect).toHaveValue('1')
-    await user.selectOptions(teamSelect, '2')
+    await waitFor(() => expect(teamSelect).toHaveTextContent('Elastio'))
+    await pickOption(user, teamSelect, 'Intelliviz')
     await user.type(screen.getByLabelText(/project name/i), 'Dashboard')
     await user.click(screen.getByRole('button', { name: /create project/i }))
 

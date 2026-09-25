@@ -5,6 +5,7 @@ import { api, type EmailProviderResponse, type AdminInvitation, type BackupStatu
 import { version as frontendVersion } from '../lib/version'
 import AdminAnalytics from '../components/AdminAnalytics'
 import { useDialog } from '../state/DialogContext'
+import Select from '../components/ui/Select'
 
 // API URL with fallback for production (empty string = relative URL)
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -1282,31 +1283,37 @@ export default function Admin() {
               {/* Filters */}
               <div className="flex flex-wrap gap-3 items-center">
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-dark-text-tertiary">Status</label>
-                  <select
+                  <label htmlFor="inv-status-filter" className="text-xs text-dark-text-tertiary">Status</label>
+                  <Select
+                    id="inv-status-filter"
+                    className="w-36"
+                    buttonClassName="py-1.5"
                     value={invStatusFilter}
-                    onChange={(e) => setInvStatusFilter(e.target.value)}
-                    className="text-sm bg-dark-bg-secondary border border-dark-border-subtle rounded-lg px-3 py-1.5 text-dark-text-primary focus:outline-none focus:border-primary-500"
-                  >
-                    <option value="">All</option>
-                    <option value="pending">Pending</option>
-                    <option value="accepted">Accepted</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="cancelled">Cancelled</option>
-                    <option value="withdrawn">Withdrawn</option>
-                  </select>
+                    onChange={setInvStatusFilter}
+                    options={[
+                      { value: '', label: 'All' },
+                      { value: 'pending', label: 'Pending' },
+                      { value: 'accepted', label: 'Accepted' },
+                      { value: 'rejected', label: 'Rejected' },
+                      { value: 'cancelled', label: 'Cancelled' },
+                      { value: 'withdrawn', label: 'Withdrawn' },
+                    ]}
+                  />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-dark-text-tertiary">Type</label>
-                  <select
+                  <label htmlFor="inv-type-filter" className="text-xs text-dark-text-tertiary">Type</label>
+                  <Select
+                    id="inv-type-filter"
+                    className="w-32"
+                    buttonClassName="py-1.5"
                     value={invTypeFilter}
-                    onChange={(e) => setInvTypeFilter(e.target.value)}
-                    className="text-sm bg-dark-bg-secondary border border-dark-border-subtle rounded-lg px-3 py-1.5 text-dark-text-primary focus:outline-none focus:border-primary-500"
-                  >
-                    <option value="">All</option>
-                    <option value="team">Team</option>
-                    <option value="project">Project</option>
-                  </select>
+                    onChange={setInvTypeFilter}
+                    options={[
+                      { value: '', label: 'All' },
+                      { value: 'team', label: 'Team' },
+                      { value: 'project', label: 'Project' },
+                    ]}
+                  />
                 </div>
                 <button
                   onClick={() => loadInvitations(invStatusFilter, invTypeFilter)}
@@ -1819,52 +1826,55 @@ export default function Admin() {
                               <div className="flex flex-wrap gap-3 mb-4">
                                 {schedFreq !== 'hourly' && (
                                   <div>
-                                    <label className="block text-xs text-dark-text-tertiary mb-1">Hour (UTC)</label>
-                                    <select
+                                    <label htmlFor="sched-hour" className="block text-xs text-dark-text-tertiary mb-1">Hour (UTC)</label>
+                                    <Select
+                                      id="sched-hour"
+                                      className="w-24"
+                                      buttonClassName="py-1.5"
+                                      searchable={false}
                                       value={schedHour}
-                                      onChange={e => setSchedHour(Number(e.target.value))}
-                                      className="px-2 py-1.5 bg-dark-bg-primary border border-dark-border-subtle rounded text-sm text-dark-text-primary focus:outline-none focus:border-dark-accent-primary"
-                                    >
-                                      {Array.from({ length: 24 }, (_, i) => (
-                                        <option key={i} value={i}>{String(i).padStart(2, '0')}:00</option>
-                                      ))}
-                                    </select>
+                                      onChange={setSchedHour}
+                                      options={Array.from({ length: 24 }, (_, i) => ({ value: i, label: `${String(i).padStart(2, '0')}:00` }))}
+                                    />
                                   </div>
                                 )}
                                 <div>
-                                  <label className="block text-xs text-dark-text-tertiary mb-1">Minute</label>
-                                  <select
+                                  <label htmlFor="sched-minute" className="block text-xs text-dark-text-tertiary mb-1">Minute</label>
+                                  <Select
+                                    id="sched-minute"
+                                    className="w-20"
+                                    buttonClassName="py-1.5"
+                                    searchable={false}
                                     value={schedMinute}
-                                    onChange={e => setSchedMinute(Number(e.target.value))}
-                                    className="px-2 py-1.5 bg-dark-bg-primary border border-dark-border-subtle rounded text-sm text-dark-text-primary focus:outline-none focus:border-dark-accent-primary"
-                                  >
-                                    {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => (
-                                      <option key={m} value={m}>:{String(m).padStart(2, '0')}</option>
-                                    ))}
-                                  </select>
+                                    onChange={setSchedMinute}
+                                    options={[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => ({ value: m, label: `:${String(m).padStart(2, '0')}` }))}
+                                  />
                                 </div>
                                 {schedFreq === 'weekly' && (
                                   <div>
-                                    <label className="block text-xs text-dark-text-tertiary mb-1">Day of week</label>
-                                    <select
+                                    <label htmlFor="sched-dow" className="block text-xs text-dark-text-tertiary mb-1">Day of week</label>
+                                    <Select
+                                      id="sched-dow"
+                                      className="w-32"
+                                      buttonClassName="py-1.5"
                                       value={schedDayOfWeek}
-                                      onChange={e => setSchedDayOfWeek(Number(e.target.value))}
-                                      className="px-2 py-1.5 bg-dark-bg-primary border border-dark-border-subtle rounded text-sm text-dark-text-primary focus:outline-none focus:border-dark-accent-primary"
-                                    >
-                                      {DOW_LABELS.map((d, i) => <option key={i} value={i}>{d}</option>)}
-                                    </select>
+                                      onChange={setSchedDayOfWeek}
+                                      options={DOW_LABELS.map((d, i) => ({ value: i, label: d }))}
+                                    />
                                   </div>
                                 )}
                                 {schedFreq === 'monthly' && (
                                   <div>
-                                    <label className="block text-xs text-dark-text-tertiary mb-1">Day of month</label>
-                                    <select
+                                    <label htmlFor="sched-dom" className="block text-xs text-dark-text-tertiary mb-1">Day of month</label>
+                                    <Select
+                                      id="sched-dom"
+                                      className="w-20"
+                                      buttonClassName="py-1.5"
+                                      searchable={false}
                                       value={schedDayOfMonth}
-                                      onChange={e => setSchedDayOfMonth(Number(e.target.value))}
-                                      className="px-2 py-1.5 bg-dark-bg-primary border border-dark-border-subtle rounded text-sm text-dark-text-primary focus:outline-none focus:border-dark-accent-primary"
-                                    >
-                                      {Array.from({ length: 28 }, (_, i) => i + 1).map(d => <option key={d} value={d}>{d}</option>)}
-                                    </select>
+                                      onChange={setSchedDayOfMonth}
+                                      options={Array.from({ length: 28 }, (_, i) => i + 1).map(d => ({ value: d, label: String(d) }))}
+                                    />
                                   </div>
                                 )}
                               </div>

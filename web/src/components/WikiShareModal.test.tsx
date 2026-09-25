@@ -6,19 +6,6 @@ import WikiShareModal from './WikiShareModal'
 import { DialogProvider } from '../state/DialogContext'
 import type { WikiPage } from '../lib/api'
 
-vi.mock('./ui/SearchSelect', () => ({
-  default: ({ options, onChange, placeholder }: {
-    options: { value: string; label: string }[]
-    onChange: (value: string) => void
-    placeholder?: string
-  }) => (
-    <select aria-label="Add person" value="" onChange={(e) => onChange(e.target.value)}>
-      <option value="">{placeholder}</option>
-      {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  ),
-}))
-
 const mocks = vi.hoisted(() => ({
   getWikiSharing: vi.fn(),
   updateWikiSharing: vi.fn(),
@@ -71,10 +58,11 @@ describe('WikiShareModal', () => {
     renderModal(<WikiShareModal page={page} projectId={3} onClose={onClose} onChanged={onChanged} />)
 
     await user.click(await screen.findByRole('radio', { name: /Protected/ }))
-    const picker = await screen.findByRole('combobox', { name: 'Add person' })
+    await user.click(await screen.findByRole('button', { name: 'Add person' }))
+    const listbox = await screen.findByRole('listbox')
     // The page author is never offered: they always have access.
-    expect(within(picker).queryByRole('option', { name: 'author@test.com' })).not.toBeInTheDocument()
-    await user.selectOptions(picker, '20')
+    expect(within(listbox).queryByRole('option', { name: /author@test.com/ })).not.toBeInTheDocument()
+    await user.click(within(listbox).getByRole('option', { name: /Bob/ }))
 
     expect(screen.getByRole('list', { name: 'People with access' })).toHaveTextContent('Bob')
     await user.click(screen.getByRole('button', { name: 'Save' }))

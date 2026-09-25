@@ -4,7 +4,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
-import SearchSelect from '../components/ui/SearchSelect'
+import Select from '../components/ui/Select'
 import { apiClient } from '../lib/api'
 import { useDialog } from '../state/DialogContext'
 
@@ -308,7 +308,7 @@ export default function SprintsAndTags() {
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                      <SearchSelect
+                      <Select
                         value={sprintFormData.status}
                         onChange={(v) => setSprintFormData({ ...sprintFormData, status: v as 'planned' | 'active' | 'completed' })}
                         options={[

@@ -11,6 +11,7 @@ import {
   type TeamSummary,
   type UserSearchResult,
 } from '../lib/api'
+import Select from './ui/Select'
 
 const SELECTED_TEAM_KEY = 'taskai.settings.selectedTeamId'
 
@@ -599,21 +600,17 @@ export default function TeamsPanel() {
                                   <label htmlFor={`move-member-${member.id}`} className="sr-only">
                                     Move {member.user_name || member.email} to another team
                                   </label>
-                                  <select
+                                  <Select<number>
                                     id={`move-member-${member.id}`}
-                                    value=""
+                                    className="w-40"
+                                    buttonClassName="py-1.5"
+                                    value={null}
+                                    placeholder="Move to…"
                                     disabled={busyMemberId === member.id}
-                                    onChange={(e) => {
-                                      const target = Number(e.target.value)
-                                      if (target) handleMoveMember(member, target)
-                                    }}
-                                    className="px-2 py-1.5 text-sm bg-dark-bg-primary border border-dark-border-subtle rounded-lg text-dark-text-secondary focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                  >
-                                    <option value="">Move to…</option>
-                                    {moveTargets.map((t) => (
-                                      <option key={t.id} value={t.id}>{t.name}</option>
-                                    ))}
-                                  </select>
+                                    onChange={(target) => handleMoveMember(member, target)}
+                                    searchPlaceholder="Search teams…"
+                                    options={moveTargets.map((t) => ({ value: t.id, label: t.name }))}
+                                  />
                                 </>
                               )}
                               <Button

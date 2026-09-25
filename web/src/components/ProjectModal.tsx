@@ -2,6 +2,7 @@ import { useState, useEffect, FormEvent } from 'react'
 import { api, Project, type TeamSummary } from '../lib/api'
 import TextInput from './ui/TextInput'
 import Button from './ui/Button'
+import Select from './ui/Select'
 
 interface ProjectModalProps {
   isOpen: boolean
@@ -169,17 +170,16 @@ export default function ProjectModal({
                   <label htmlFor="project-team" className="block text-sm font-medium text-dark-text-primary mb-1">
                     Team
                   </label>
-                  <select
+                  <Select
                     id="project-team"
-                    value={teamId ?? ''}
-                    onChange={(e) => setTeamId(Number(e.target.value))}
+                    className="w-full"
+                    value={teamId ?? null}
+                    onChange={setTeamId}
                     disabled={loading}
-                    className="w-full px-3 py-2 border border-dark-border-subtle bg-dark-bg-primary text-dark-text-primary rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
-                  >
-                    {teams.map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
+                    placeholder="Select a team"
+                    searchPlaceholder="Search your teams…"
+                    options={teams.map((t) => ({ value: t.id, label: t.name }))}
+                  />
                   <p className="mt-1 text-xs text-dark-text-tertiary">
                     Members of this team are suggested first when you share the project.
                   </p>

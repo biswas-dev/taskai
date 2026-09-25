@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ProjectSettings from './ProjectSettings'
+import { DialogProvider } from '../state/DialogContext'
+import { pickOption } from '../test/select'
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', () => ({
@@ -76,6 +78,7 @@ describe('ProjectSettings', () => {
       name: 'Test Project',
       description: 'Test project description',
       team_id: 1,
+      owner_id: 10,
       created_by: 1,
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-01T00:00:00Z',
@@ -101,6 +104,8 @@ describe('ProjectSettings', () => {
   })
 
   describe('Teams', () => {
+    const renderWithDialogs = () => render(<DialogProvider><ProjectSettings /></DialogProvider>)
+
     it("only offers members of the project's team, never the user's other teams", async () => {
       const user = userEvent.setup()
       mocks.getCollaborators.mockResolvedValue([
@@ -109,8 +114,9 @@ describe('ProjectSettings', () => {
       ])
       render(<ProjectSettings />)
 
-      const input = await screen.findByPlaceholderText('Select a member of Intelliviz...')
-      await user.type(input, '@')
+      const trigger = await screen.findByLabelText(/Team Member/)
+      await waitFor(() => expect(trigger).toHaveTextContent('Select a member of Intelliviz...'))
+      await user.click(trigger)
 
       const listbox = await screen.findByRole('listbox')
       expect(within(listbox).getAllByRole('option')).toHaveLength(1)
@@ -118,19 +124,113 @@ describe('ProjectSettings', () => {
       expect(within(listbox).queryByText('thiva@tickrapi.test')).not.toBeInTheDocument()
     })
 
-    it('lets the project owner move the project to another team', async () => {
+    it("offers the owner exactly the teams they belong to, owner or member, with the current one marked", async () => {
+      const user = userEvent.setup()
+      mocks.listTeams.mockResolvedValue([
+        ...teams,
+        { id: 3, name: 'TickrAPI', owner_id: 99, role: 'member', is_owner: false, is_home: false, member_count: 4, project_count: 2 },
+      ])
+      renderWithDialogs()
+
+      const trigger = await screen.findByLabelText('Move to')
+      expect(trigger.tagName).toBe('BUTTON')
+      await waitFor(() => expect(trigger).toHaveTextContent('Intelliviz'))
+      await user.click(trigger)
+
+      const listbox = await screen.findByRole('listbox')
+      const options = within(listbox).getAllByRole('option')
+      expect(options.map((o) => o.querySelector('span span')?.textContent)).toEqual(['Intelliviz', 'Elastio', 'TickrAPI'])
+      const current = within(listbox).getByRole('option', { name: /Intelliviz/ })
+      expect(current).toHaveAttribute('aria-selected', 'true')
+      expect(current).toHaveTextContent('Current')
+      expect(within(listbox).getByRole('option', { name: /TickrAPI/ })).toHaveTextContent('You are a member')
+    })
+
+    it('asks for confirmation before moving, and does nothing when cancelled', async () => {
+      const user = userEvent.setup()
+      renderWithDialogs()
+
+      const trigger = await screen.findByLabelText('Move to')
+      await waitFor(() => expect(trigger).toHaveTextContent('Intelliviz'))
+      await pickOption(user, trigger, /Elastio/)
+
+      const dialog = await screen.findByRole('alertdialog')
+      expect(within(dialog).getByText('Move "Test Project" to Elastio?')).toBeInTheDocument()
+      expect(within(dialog).getByText(/Only members of/)).toHaveTextContent('Only members of Elastio can be invited from now on.')
+      expect(within(dialog).getByText(/already a member keeps their access/)).toBeInTheDocument()
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+      expect(mocks.updateProject).not.toHaveBeenCalled()
+    })
+
+    it('moves the project once the owner confirms', async () => {
       const user = userEvent.setup()
       mocks.updateProject.mockResolvedValue({ id: 42, name: 'Test Project', owner_id: 10, team_id: 2, created_at: '', updated_at: '' })
-      render(<ProjectSettings />)
+      renderWithDialogs()
 
-      const select = await screen.findByLabelText('Move to')
-      await waitFor(() => expect(select).toHaveValue('1'))
-      await user.selectOptions(select, '2')
+      const trigger = await screen.findByLabelText('Move to')
+      await waitFor(() => expect(trigger).toHaveTextContent('Intelliviz'))
+      await pickOption(user, trigger, /Elastio/)
+      await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Move project' }))
 
       await waitFor(() => {
         expect(mocks.updateProject).toHaveBeenCalledWith(42, { team_id: 2 })
       })
       expect(await screen.findByText(/Project moved to Elastio/)).toBeInTheDocument()
+    })
+
+    it('lets a co-owner with the Owner role move the project, listing their own teams', async () => {
+      const user = userEvent.setup()
+      mocks.getProject.mockResolvedValue({
+        id: 42, name: 'Test Project', team_id: 1, owner_id: 77, created_at: '', updated_at: '',
+      })
+      mocks.listTeams.mockResolvedValue([
+        teams[0],
+        { id: 3, name: 'TickrAPI', owner_id: 99, role: 'member', is_owner: false, is_home: false, member_count: 4, project_count: 2 },
+      ])
+      mocks.updateProject.mockResolvedValue({ id: 42, name: 'Test Project', owner_id: 77, team_id: 3, created_at: '', updated_at: '' })
+      renderWithDialogs()
+
+      const trigger = await screen.findByLabelText('Move to')
+      await waitFor(() => expect(trigger).toHaveTextContent('Intelliviz'))
+      await user.click(trigger)
+      const listbox = await screen.findByRole('listbox')
+      expect(within(listbox).getAllByRole('option')).toHaveLength(2)
+      await user.click(within(listbox).getByRole('option', { name: /TickrAPI/ }))
+      await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Move project' }))
+
+      await waitFor(() => expect(mocks.updateProject).toHaveBeenCalledWith(42, { team_id: 3 }))
+    })
+
+    it.each(['editor', 'member', 'viewer'])('shows the team read-only to a %s', async (role) => {
+      mocks.getProject.mockResolvedValue({
+        id: 42, name: 'Test Project', team_id: 1, owner_id: 77, created_at: '', updated_at: '',
+      })
+      mocks.getProjectMembers.mockResolvedValue([{ ...members[0], role }])
+      renderWithDialogs()
+
+      expect(await screen.findByText('Intelliviz')).toBeInTheDocument()
+      await waitFor(() => expect(mocks.listTeams).toHaveBeenCalled())
+      // Members have loaded, so the role check has run.
+      expect(await screen.findByText('alice@test.com')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Move to')).not.toBeInTheDocument()
+      expect(screen.queryByText('Move to')).not.toBeInTheDocument()
+    })
+
+    it('uses the modern select for invite role and member roles', async () => {
+      const user = userEvent.setup()
+      mocks.updateProjectMember.mockResolvedValue({})
+      const { container } = render(<ProjectSettings />)
+
+      const role = await screen.findByLabelText(/^Role/)
+      expect(role).toHaveTextContent('Member')
+      const memberRole = await screen.findByRole('button', { name: 'Role for alice@test.com' })
+      expect(memberRole).toHaveTextContent('Owner')
+      await pickOption(user, memberRole, 'Editor')
+
+      await waitFor(() => expect(mocks.updateProjectMember).toHaveBeenCalledWith(42, 1, { role: 'editor' }))
+      expect(container.querySelector('select')).toBeNull()
     })
   })
 
