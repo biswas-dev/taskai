@@ -126,6 +126,18 @@ export default {
         'slide-up': 'slideUp 0.2s ease-out',
         'slide-down': 'slideDown 0.2s ease-out',
       },
+      // @tailwindcss/typography wraps inline code in literal backticks via
+      // code::before/::after. Wiki markdown already renders `x` as <code>x</code>,
+      // so the pseudo-elements put the backticks back on screen. The PDF export
+      // CSS (wiki_download_handler.go) turns them off the same way.
+      typography: {
+        DEFAULT: {
+          css: {
+            'code::before': { content: 'none' },
+            'code::after': { content: 'none' },
+          },
+        },
+      },
       keyframes: {
         fadeIn: {
           '0%': { opacity: '0' },

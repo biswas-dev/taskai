@@ -204,6 +204,11 @@ a[data-graph-type] {
 .figma-embed { display: none; }
 `
 
+// wikiPDFDocument wraps rendered wiki HTML in the standalone page chromedp prints.
+func wikiPDFDocument(title, renderedHTML string) string {
+	return fmt.Sprintf(pdfHTMLTemplate, title, pdfCSS, title, renderedHTML)
+}
+
 const pdfHTMLTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -325,7 +330,7 @@ func (s *Server) generatePDF(jobID, title, slug, content string) {
 	// Inline draw diagrams as SVGs (fast — HTTP call to local server).
 	renderedHTML = s.inlineDrawSVGs(ctx, renderedHTML)
 
-	htmlDoc := fmt.Sprintf(pdfHTMLTemplate, title, pdfCSS, title, renderedHTML)
+	htmlDoc := wikiPDFDocument(title, renderedHTML)
 
 	pdfBytes, err := renderHTMLToPDF(ctx, htmlDoc)
 	if err != nil {

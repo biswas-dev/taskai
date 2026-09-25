@@ -11,7 +11,7 @@ require (
 	github.com/anchoo2kewl/go-blog v0.1.3
 	github.com/anchoo2kewl/go-draw v0.9.22
 	github.com/anchoo2kewl/go-login v0.2.1
-	github.com/anchoo2kewl/go-wiki v0.1.9
+	github.com/anchoo2kewl/go-wiki v0.7.1-0.20260925011126-4fd317a589c1
 	github.com/chromedp/cdproto v0.0.0-20260405000525-47a8ff65b46a
 	github.com/chromedp/chromedp v0.15.1
 	github.com/go-chi/chi/v5 v5.2.5
