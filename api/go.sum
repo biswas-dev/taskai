@@ -61,8 +61,8 @@ github.com/anchoo2kewl/go-draw v0.9.22 h1:ZHGi1KWyZOmclmyRHfw02Wf6JRqjyyNVTKqPs5
 github.com/anchoo2kewl/go-draw v0.9.22/go.mod h1:46A+iuRBWucLLoa9z5U4+agNNQQ/Am0gFJhInW6SOJI=
 github.com/anchoo2kewl/go-login v0.2.1 h1:u7YzEEeCUlAvxBTb19yVVHcAH0LtCaW5/wtqbDTb7RA=
 github.com/anchoo2kewl/go-login v0.2.1/go.mod h1:EyE+DCIMUFTm95JcDtlgqYBOypCBmok/0gO15fCvHvY=
-github.com/anchoo2kewl/go-wiki v0.7.1-0.20260925011126-4fd317a589c1 h1:eEbupXTFGsJbgROjoQpI0VET4cKtxrDbu/uIrGzeo20=
-github.com/anchoo2kewl/go-wiki v0.7.1-0.20260925011126-4fd317a589c1/go.mod h1:SdNfnXOnrAfDdswO14eYvIb12gA5eacOtz+cz3lAnQw=
+github.com/anchoo2kewl/go-wiki v0.7.1 h1:1HF8vl9n7rJnK0lcPDFreyXUO5YwqNdVj7FthfS4l1U=
+github.com/anchoo2kewl/go-wiki v0.7.1/go.mod h1:SdNfnXOnrAfDdswO14eYvIb12gA5eacOtz+cz3lAnQw=
 github.com/apparentlymart/go-textseg/v15 v15.0.0 h1:uYvfpb3DyLSCGWnctWKGj857c6ew1u1fNQOlOtuGxQY=
 github.com/apparentlymart/go-textseg/v15 v15.0.0/go.mod h1:K8XmNZdhEBkdlyDdvbmmsvpAG721bKi0joRfFdHIWJ4=
 github.com/aymerick/douceur v0.2.0 h1:Mv+mAeH1Q+n9Fr+oyamOlAkUNPWPlA8PPGR0QAaYuPk=
