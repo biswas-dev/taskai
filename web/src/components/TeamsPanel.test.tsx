@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TeamsPanel from './TeamsPanel'
 import { DialogProvider } from '../state/DialogContext'
+import { pickOption } from '../test/select'
 
 vi.mock('./ui/FormError', () => ({
   default: ({ message }: { message: string }) => (message ? <div role="alert">{message}</div> : null),
@@ -93,7 +94,7 @@ describe('TeamsPanel', () => {
     renderWithDialogs(<TeamsPanel />)
     await screen.findByText('bob@elastio.test')
 
-    await user.selectOptions(screen.getByLabelText(/Move bob@elastio.test to another team/), '2')
+    await pickOption(user, screen.getByLabelText(/Move bob@elastio.test to another team/), 'Intelliviz')
 
     const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('Move bob@elastio.test from Elastio to Intelliviz? Their project access is not changed.')).toBeInTheDocument()

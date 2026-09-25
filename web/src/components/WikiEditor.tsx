@@ -7,7 +7,7 @@ import FigmaEmbed from './FigmaEmbed'
 import { WikiIcon } from './WikiVisibilityIcon'
 import { useAuth } from '../state/AuthContext'
 import { useSync } from '../state/SyncContext'
-import SearchSelect from './ui/SearchSelect'
+import Select from './ui/Select'
 import ImagePickerModal from './ImagePickerModal'
 import { mediaFilesFrom, mediaMarkdown, uploadMedia } from '../lib/upload'
 import { useDialog } from '../state/DialogContext'
@@ -2415,7 +2415,7 @@ function DrawCard({ drawing, isUsed, onInsert, onRename, onDelete }: Readonly<{
       </div>
       <span className="text-xs text-dark-text-tertiary">{formattedDate}</span>
       <div className="flex gap-1.5 mt-1 items-center" role="toolbar" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
-        <SearchSelect
+        <Select
           variant="inline"
           value={size}
           onChange={setSize}
@@ -2425,7 +2425,7 @@ function DrawCard({ drawing, isUsed, onInsert, onRename, onDelete }: Readonly<{
             { value: 'l', label: 'L' },
           ]}
         />
-        <SearchSelect
+        <Select
           variant="inline"
           value={zoom}
           onChange={setZoom}

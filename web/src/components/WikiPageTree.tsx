@@ -18,6 +18,7 @@ import {
   type WikiTreeNode,
 } from '../lib/wikiTree'
 import { WikiVisibilityBadges } from './WikiVisibilityIcon'
+import Select from './ui/Select'
 
 interface WikiPageTreeProps {
   projectId: number
@@ -873,14 +874,15 @@ function MoveDialog({ pages, pageId, busy, onCancel, onConfirm }: Readonly<MoveD
 
   // Present candidates in tree order with indentation so the choice reads like the sidebar.
   const options = useMemo(() => {
-    const out: { id: number; label: string; disabled: boolean; reason?: string }[] = []
+    const out: { id: number; label: string; depth: number; disabled: boolean; reason?: string }[] = []
     const walk = (nodes: WikiTreeNode[]) => {
       for (const n of nodes) {
         if (!excluded.has(n.page.id)) {
           const check = canMoveWikiPage(pages, pageId, n.page.id)
           out.push({
             id: n.page.id,
-            label: `${'  '.repeat(n.depth - 1)}${n.page.title}`,
+            label: n.page.title,
+            depth: n.depth - 1,
             disabled: !check.ok,
             reason: check.ok ? undefined : check.reason,
           })
@@ -932,20 +934,24 @@ function MoveDialog({ pages, pageId, busy, onCancel, onConfirm }: Readonly<MoveD
           <label htmlFor="wiki-move-target" className="block text-xs text-dark-text-secondary mb-1">
             New parent
           </label>
-          <select
+          <Select
             id="wiki-move-target"
+            className="w-full"
             value={target}
-            onChange={e => setTarget(e.target.value)}
-            className="w-full px-3 py-2 bg-dark-bg-primary border border-dark-border-subtle rounded text-sm text-dark-text-primary focus:outline-none focus:border-primary-500"
-          >
-            <option value="">— Top level —</option>
-            {options.map(o => (
-              <option key={o.id} value={o.id} disabled={o.disabled} title={o.reason}>
-                {o.label}
-                {o.disabled ? ' (not allowed)' : ''}
-              </option>
-            ))}
-          </select>
+            onChange={setTarget}
+            searchPlaceholder="Search pages…"
+            options={[
+              { value: '', label: '— Top level —' },
+              ...options.map(o => ({
+                value: String(o.id),
+                label: o.label,
+                indent: o.depth,
+                disabled: o.disabled,
+                title: o.reason,
+                hint: o.disabled ? 'Not allowed' : undefined,
+              })),
+            ]}
+          />
           {!check.ok && (
             <p className="mt-2 text-xs text-red-400" role="alert">
               {check.reason}

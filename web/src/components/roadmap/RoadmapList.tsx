@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Task, Milestone, Sprint } from '../../lib/api'
+import Select from '../ui/Select'
 
 interface RoadmapListProps {
   milestones: Milestone[]
@@ -104,22 +105,22 @@ export default function RoadmapList({ milestones, tasks, sprints, projectId }: R
     <div className="flex flex-col h-full">
       {/* Filters */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-dark-border-subtle">
-        <select
+        <Select<number | ''>
+          aria-label="Filter by milestone"
+          size="sm"
+          className="w-40"
           value={filterMilestone}
-          onChange={e => setFilterMilestone(e.target.value ? Number(e.target.value) : '')}
-          className="text-xs bg-dark-bg-primary border border-dark-border-subtle text-dark-text-secondary rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-        >
-          <option value="">All milestones</option>
-          {milestones.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-        <select
+          onChange={setFilterMilestone}
+          options={[{ value: '', label: 'All milestones' }, ...milestones.map(m => ({ value: m.id, label: m.name }))]}
+        />
+        <Select<number | ''>
+          aria-label="Filter by sprint"
+          size="sm"
+          className="w-40"
           value={filterSprint}
-          onChange={e => setFilterSprint(e.target.value ? Number(e.target.value) : '')}
-          className="text-xs bg-dark-bg-primary border border-dark-border-subtle text-dark-text-secondary rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-        >
-          <option value="">All sprints</option>
-          {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+          onChange={setFilterSprint}
+          options={[{ value: '', label: 'All sprints' }, ...sprints.map(s => ({ value: s.id, label: s.name }))]}
+        />
         <span className="ml-auto text-xs text-dark-text-quaternary">{sortedTasks.length} tasks</span>
       </div>
 

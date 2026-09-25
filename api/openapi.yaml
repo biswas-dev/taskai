@@ -2970,7 +2970,11 @@ components:
         team_id:
           type: integer
           format: int64
-          description: Move the project to another team (project owner only; must be a member of that team)
+          description: >-
+            Move the project to another team. Any project owner may do this (a member with
+            the Owner role, or the recorded owner_id), and only into a team they are an
+            active member of (any role); anyone else gets 403. After the move, only members of the new team can be
+            invited; existing project members keep their access.
 
     CreateTaskRequest:
       type: object

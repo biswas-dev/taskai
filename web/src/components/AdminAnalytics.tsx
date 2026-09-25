@@ -6,6 +6,7 @@ import {
   type AnalyticsUserDetail,
   type AnalyticsAPIKeyUsage,
 } from '../lib/api'
+import Select from './ui/Select'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -231,22 +232,25 @@ export default function AdminAnalytics({ users }: Props) {
       <div className="bg-dark-bg-secondary rounded-lg border border-dark-border-subtle p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-medium text-dark-text-secondary">User Engagement</h3>
-          <select
-            className="bg-dark-bg-tertiary text-dark-text-primary text-sm rounded-lg border border-dark-border-subtle px-3 py-1.5"
+          <Select<number | ''>
+            aria-label="Filter analytics by user"
+            className="w-56"
+            buttonClassName="py-1.5"
             value={selectedUserId ?? ''}
-            onChange={(e) => {
-              const id = e.target.value ? Number(e.target.value) : null
+            onChange={(id) => {
               if (id) loadUserDetail(id)
               else { setSelectedUserId(null); setUserDetail(null) }
             }}
-          >
-            <option value="">All users</option>
-            {users.map(u => (
-              <option key={u.id} value={u.id}>
-                {u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : u.name || u.email}
-              </option>
-            ))}
-          </select>
+            searchPlaceholder="Search users…"
+            options={[
+              { value: '', label: 'All users' },
+              ...users.map(u => ({
+                value: u.id,
+                label: u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : u.name || u.email,
+                description: u.email,
+              })),
+            ]}
+          />
         </div>
 
         {/* User table */}

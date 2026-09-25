@@ -5,7 +5,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import TextInput from '../components/ui/TextInput'
 import FormError from '../components/ui/FormError'
-import SearchSelect from '../components/ui/SearchSelect'
+import Select, { type SelectOption } from '../components/ui/Select'
 import { apiClient, type SwimLane, type Project, type ProjectInvitation, type GitHubRepo, type GitHubProgressEvent, type Collaborator, type TeamSummary } from '../lib/api'
 import { useDialog } from '../state/DialogContext'
 
@@ -62,9 +62,11 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [myTeams, setMyTeams] = useState<TeamSummary[]>([])
   const [isChangingTeam, setIsChangingTeam] = useState(false)
-  const isProjectOwner = useMemo(
-    () => members.some(m => m.user_id === user?.id && m.role === 'owner'),
-    [members, user]
+  // Any project owner may move the project to another team: anyone with the
+  // Owner role, plus the recorded owner even if their role was lowered.
+  const isProjectOwner = user != null && (
+    project?.owner_id === user.id ||
+    members.some(m => m.user_id === user.id && m.role === 'owner')
   )
   const [selectedUserId, setSelectedUserId] = useState('')
   const [newMemberRole, setNewMemberRole] = useState('member')
@@ -97,7 +99,6 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
   const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([])
   const [isLoadingRepos, setIsLoadingRepos] = useState(false)
   const [selectedRepoFullName, setSelectedRepoFullName] = useState('')
-  const [repoSearchQuery, setRepoSearchQuery] = useState('')
 
   // GitHub sync state
   const [isSyncing, setIsSyncing] = useState(false)
@@ -210,7 +211,23 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
 
   const handleChangeProjectTeam = async (teamId: number) => {
     const target = myTeams.find(t => t.id === teamId)
-    if (!target || teamId === project?.team_id) return
+    if (!target || !project || teamId === project.team_id) return
+    const currentTeam = projectTeamName ?? 'its current team'
+    const confirmed = await dialog.confirm({
+      title: `Move "${project.name}" to ${target.name}?`,
+      message: (
+        <div className="space-y-2">
+          <p>This changes who can be given access to the project.</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Only members of <strong className="text-dark-text-primary">{target.name}</strong> can be invited from now on.</li>
+            <li>People in {currentTeam} who are not already on the project can no longer be invited.</li>
+            <li>Everyone who is already a member keeps their access.</li>
+          </ul>
+        </div>
+      ),
+      confirmLabel: 'Move project',
+    })
+    if (!confirmed) return
     setMemberError('')
     setMemberSuccess('')
     setIsChangingTeam(true)
@@ -595,7 +612,22 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
 
   const projectTeamName = myTeams.find(t => t.id === project?.team_id)?.name ?? project?.team_name ?? undefined
 
-  const collaboratorOptions = availableCollaborators.map(c => ({
+  // Every team the current user belongs to, as owner or member.
+  const teamMoveOptions: SelectOption<number>[] = myTeams.map(t => ({
+    value: t.id,
+    label: t.name,
+    description: t.is_owner ? 'You own this team' : `You are a ${t.role}`,
+    hint: t.id === project?.team_id ? 'Current' : undefined,
+  }))
+
+  const roleOptions: SelectOption[] = [
+    { value: 'viewer', label: 'Viewer' },
+    { value: 'member', label: 'Member' },
+    { value: 'editor', label: 'Editor' },
+    { value: 'owner', label: 'Owner' },
+  ]
+
+  const collaboratorOptions: SelectOption[] = availableCollaborators.map(c => ({
     value: String(c.user_id),
     label: c.user_name || c.email,
     description: c.user_name ? c.email : undefined,
@@ -747,18 +779,16 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                 {isProjectOwner && myTeams.length > 1 && (
                   <div className="flex items-center gap-2">
                     <label htmlFor="project-team-select" className="text-sm text-dark-text-secondary">Move to</label>
-                    <select
+                    <Select
                       id="project-team-select"
-                      value={project?.team_id ?? ''}
+                      className="w-56"
+                      value={project?.team_id ?? null}
                       disabled={isChangingTeam}
-                      onChange={(e) => handleChangeProjectTeam(Number(e.target.value))}
-                      className="px-2 py-1.5 text-sm bg-dark-bg-primary border border-dark-border-subtle rounded-lg text-dark-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      {project?.team_id == null && <option value="">Select a team</option>}
-                      {myTeams.map(t => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
+                      onChange={handleChangeProjectTeam}
+                      placeholder="Select a team"
+                      searchPlaceholder="Search your teams…"
+                      options={teamMoveOptions}
+                    />
                   </div>
                 )}
               </div>
@@ -768,29 +798,29 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                 <h3 className="font-semibold text-dark-text-primary mb-4">Invite to Project</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-dark-text-primary mb-1">
+                    <label htmlFor="invite-member-select" className="block text-sm font-medium text-dark-text-primary mb-1">
                       Team Member <span className="text-danger-400">*</span>
                     </label>
-                    <SearchSelect
+                    <Select
+                      id="invite-member-select"
                       value={selectedUserId}
                       onChange={setSelectedUserId}
                       placeholder={`Select a member of ${projectTeamName ?? "the project's team"}...`}
+                      searchable
+                      searchPlaceholder="Search by name or email…"
+                      emptyText="No one matches"
                       options={collaboratorOptions}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-dark-text-primary mb-1">
+                    <label htmlFor="invite-role-select" className="block text-sm font-medium text-dark-text-primary mb-1">
                       Role <span className="text-danger-400">*</span>
                     </label>
-                    <SearchSelect
+                    <Select
+                      id="invite-role-select"
                       value={newMemberRole}
                       onChange={setNewMemberRole}
-                      options={[
-                        { value: 'viewer', label: 'Viewer' },
-                        { value: 'member', label: 'Member' },
-                        { value: 'editor', label: 'Editor' },
-                        { value: 'owner', label: 'Owner' },
-                      ]}
+                      options={roleOptions}
                     />
                   </div>
                 </div>
@@ -832,16 +862,13 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
-                          <SearchSelect
+                          <Select
                             variant="inline"
+                            className="w-28"
+                            aria-label={`Role for ${member.email}`}
                             value={member.role}
                             onChange={(v) => handleUpdateMemberRole(member.id, v)}
-                            options={[
-                              { value: 'viewer', label: 'Viewer' },
-                              { value: 'member', label: 'Member' },
-                              { value: 'editor', label: 'Editor' },
-                              { value: 'owner', label: 'Owner' },
-                            ]}
+                            options={roleOptions}
                           />
                           <button
                             onClick={() => handleRemoveMember(member.id)}
@@ -982,7 +1009,7 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                     <label className="block text-sm font-medium text-dark-text-primary mb-1">
                       Status Category <span className="text-danger-400">*</span>
                     </label>
-                    <SearchSelect
+                    <Select
                       value={newLaneStatusCategory}
                       onChange={(v) => setNewLaneStatusCategory(v as 'todo' | 'in_progress' | 'done')}
                       options={[
@@ -1267,34 +1294,23 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
 
                   {/* Repository picker */}
                   <div>
-                    <label className="block text-sm font-medium text-dark-text-primary mb-1">Repository</label>
+                    <label htmlFor="github-repo-select" className="block text-sm font-medium text-dark-text-primary mb-1">Repository</label>
                     {isLoadingRepos ? (
                       <div className="text-sm text-dark-text-tertiary py-2">Loading repositories...</div>
                     ) : (
-                      <>
-                        <input
-                          type="text"
-                          value={repoSearchQuery}
-                          onChange={(e) => setRepoSearchQuery(e.target.value)}
-                          placeholder="Search or select a repository..."
-                          className="w-full px-3 py-2 mb-1 bg-dark-bg-secondary border border-dark-border-subtle text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm"
-                        />
-                        <select
-                          value={selectedRepoFullName}
-                          onChange={(e) => handleRepoSelect(e.target.value)}
-                          className="w-full px-3 py-2 bg-dark-bg-secondary border border-dark-border-subtle text-dark-text-primary rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none transition-colors text-sm"
-                          size={Math.min(8, githubRepos.filter(r => !repoSearchQuery || r.full_name.toLowerCase().includes(repoSearchQuery.toLowerCase())).length + 1)}
-                        >
-                          <option value="">— Select a repository —</option>
-                          {githubRepos
-                            .filter(r => !repoSearchQuery || r.full_name.toLowerCase().includes(repoSearchQuery.toLowerCase()))
-                            .map(r => (
-                              <option key={r.id} value={r.full_name}>
-                                {r.full_name}{r.private ? ' 🔒' : ''}
-                              </option>
-                            ))}
-                        </select>
-                      </>
+                      <Select
+                        id="github-repo-select"
+                        value={selectedRepoFullName}
+                        onChange={handleRepoSelect}
+                        placeholder="— Select a repository —"
+                        searchable
+                        searchPlaceholder="Search repositories…"
+                        options={githubRepos.map(r => ({
+                          value: r.full_name,
+                          label: `${r.full_name}${r.private ? ' 🔒' : ''}`,
+                          hint: r.private ? 'Private' : undefined,
+                        }))}
+                      />
                     )}
                   </div>
 
@@ -1336,16 +1352,18 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                         <span className="font-medium text-dark-text-primary">Auto-sync Interval</span>
                         <p className="text-sm text-dark-text-secondary mt-0.5">Automatically run sync on a schedule</p>
                       </div>
-                      <select
+                      <Select
+                        aria-label="Auto-sync interval"
+                        className="w-36"
                         value={githubSettings.github_sync_interval}
-                        onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_interval: e.target.value })}
-                        className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                      >
-                        <option value="">Disabled</option>
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                      </select>
+                        onChange={(v) => setGithubSettings({ ...githubSettings, github_sync_interval: v })}
+                        options={[
+                          { value: '', label: 'Disabled' },
+                          { value: 'daily', label: 'Daily' },
+                          { value: 'weekly', label: 'Weekly' },
+                          { value: 'monthly', label: 'Monthly' },
+                        ]}
+                      />
                     </div>
                   )}
 
@@ -1361,36 +1379,33 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                       </div>
                       <div className="flex items-center gap-2">
                         {githubSettings.github_sync_interval === 'weekly' && (
-                          <select
+                          <Select
+                            aria-label="Sync day of week"
+                            className="w-36"
+                            searchable={false}
                             value={githubSettings.github_sync_day}
-                            onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_day: +e.target.value })}
-                            className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                          >
-                            {['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => (
-                              <option key={i} value={i}>{d}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => setGithubSettings({ ...githubSettings, github_sync_day: v })}
+                            options={['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((d, i) => ({ value: i, label: d }))}
+                          />
                         )}
                         {githubSettings.github_sync_interval === 'monthly' && (
-                          <select
+                          <Select
+                            aria-label="Sync day of month"
+                            className="w-24"
+                            searchable={false}
                             value={githubSettings.github_sync_day}
-                            onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_day: +e.target.value })}
-                            className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                          >
-                            {Array.from({length: 28}, (_, i) => i + 1).map(d => (
-                              <option key={d} value={d}>{d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : `${d}th`}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => setGithubSettings({ ...githubSettings, github_sync_day: v })}
+                            options={Array.from({length: 28}, (_, i) => i + 1).map(d => ({ value: d, label: d === 1 ? '1st' : d === 2 ? '2nd' : d === 3 ? '3rd' : `${d}th` }))}
+                          />
                         )}
-                        <select
+                        <Select
+                          aria-label="Sync hour (UTC)"
+                          className="w-32"
+                          searchable={false}
                           value={githubSettings.github_sync_hour}
-                          onChange={(e) => setGithubSettings({ ...githubSettings, github_sync_hour: +e.target.value })}
-                          className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        >
-                          {Array.from({length: 24}, (_, h) => (
-                            <option key={h} value={h}>{String(h).padStart(2,'0')}:00 UTC</option>
-                          ))}
-                        </select>
+                          onChange={(v) => setGithubSettings({ ...githubSettings, github_sync_hour: v })}
+                          options={Array.from({length: 24}, (_, h) => ({ value: h, label: `${String(h).padStart(2,'0')}:00 UTC` }))}
+                        />
                       </div>
                     </div>
                   )}
@@ -1468,16 +1483,16 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                           {Object.entries(statusAssignments).map(([key, laneId]) => (
                             <div key={key} className="flex items-center gap-3 p-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
                               <span className="flex-1 text-sm text-dark-text-primary font-mono">{key}</span>
-                              <select
+                              <Select
+                                aria-label={`Swim lane for GitHub status ${key}`}
+                                className="w-52"
                                 value={laneId ?? 0}
-                                onChange={(e) => setStatusAssignments(prev => ({ ...prev, [key]: Number(e.target.value) }))}
-                                className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                              >
-                                <option value={0}>Default (by category)</option>
-                                {swimLanes.map(l => (
-                                  <option key={l.id} value={l.id}>{l.name}</option>
-                                ))}
-                              </select>
+                                onChange={(v) => setStatusAssignments(prev => ({ ...prev, [key]: v }))}
+                                options={[
+                                  { value: 0, label: 'Default (by category)' },
+                                  ...swimLanes.map(l => ({ value: l.id, label: l.name })),
+                                ]}
+                              />
                             </div>
                           ))}
                         </div>
@@ -1490,16 +1505,16 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                           {Object.entries(userAssignments).map(([login, userId]) => (
                             <div key={login} className="flex items-center gap-3 p-2 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg">
                               <span className="flex-1 text-sm text-dark-text-primary font-mono">@{login}</span>
-                              <select
+                              <Select
+                                aria-label={`TaskAI user for GitHub user ${login}`}
+                                className="w-52"
                                 value={userId ?? 0}
-                                onChange={(e) => setUserAssignments(prev => ({ ...prev, [login]: Number(e.target.value) }))}
-                                className="text-sm bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                              >
-                                <option value={0}>Unassigned</option>
-                                {members.map(u => (
-                                  <option key={u.user_id} value={u.user_id}>{u.name || u.email}</option>
-                                ))}
-                              </select>
+                                onChange={(v) => setUserAssignments(prev => ({ ...prev, [login]: v }))}
+                                options={[
+                                  { value: 0, label: 'Unassigned' },
+                                  ...members.map(u => ({ value: u.user_id, label: u.name || u.email, description: u.name ? u.email : undefined })),
+                                ]}
+                              />
                             </div>
                           ))}
                         </div>
@@ -1516,17 +1531,20 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
                         </span>
                       )}
                       <div className="flex items-center gap-2 ml-auto">
-                        <label className="text-xs text-dark-text-tertiary">Sync:</label>
-                        <select
+                        <label htmlFor="sync-state-filter" className="text-xs text-dark-text-tertiary">Sync:</label>
+                        <Select<'open' | 'closed' | 'all'>
+                          id="sync-state-filter"
+                          size="sm"
+                          className="w-40"
                           value={syncStateFilter}
-                          onChange={e => setSyncStateFilter(e.target.value as 'open' | 'closed' | 'all')}
+                          onChange={setSyncStateFilter}
                           disabled={isSyncing}
-                          className="text-xs bg-dark-bg-primary border border-dark-border-subtle text-dark-text-primary rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        >
-                          <option value="open">Open issues only</option>
-                          <option value="all">All issues</option>
-                          <option value="closed">Closed issues only</option>
-                        </select>
+                          options={[
+                            { value: 'open', label: 'Open issues only' },
+                            { value: 'all', label: 'All issues' },
+                            { value: 'closed', label: 'Closed issues only' },
+                          ]}
+                        />
                         <Button onClick={handleSyncNow} disabled={isSyncing || isForceFullSyncing} variant="secondary" size="sm">
                           {isSyncing ? 'Syncing...' : 'Sync Now'}
                         </Button>
