@@ -37,7 +37,8 @@ jobs:
   test-api:
     name: "API Tests (Go)"
     runs-on: [self-hosted, Linux, X64]
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    # Every deployable branch is tested: the deploy jobs below need these.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/uat' || github.ref == 'refs/heads/production'
 
     env:
       GOTOOLCHAIN: local
@@ -66,7 +67,8 @@ jobs:
   test-mcp:
     name: "MCP Tests (Go)"
     runs-on: [self-hosted, Linux, X64]
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    # Every deployable branch is tested: the deploy jobs below need these.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/uat' || github.ref == 'refs/heads/production'
 
     env:
       GOTOOLCHAIN: local
@@ -93,7 +95,8 @@ jobs:
   test-web:
     name: "Web Tests"
     runs-on: [self-hosted, Linux, X64]
-    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+    # Every deployable branch is tested: the deploy jobs below need these.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/uat' || github.ref == 'refs/heads/production'
 
     steps:
       - uses: actions/checkout@v7
@@ -125,6 +128,8 @@ jobs:
   deploy-staging:
     name: "Deploy to Staging"
     runs-on: [self-hosted, Linux, ARM64]
+    # A deploy runs only once every test suite has passed for this commit.
+    needs: [test-api, test-mcp, test-web]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: staging
 
@@ -150,6 +155,8 @@ jobs:
   deploy-uat:
     name: "Deploy to UAT"
     runs-on: [self-hosted, Linux, ARM64]
+    # A deploy runs only once every test suite has passed for this commit.
+    needs: [test-api, test-mcp, test-web]
     if: github.ref == 'refs/heads/uat' && github.event_name == 'push'
     environment: uat
 
@@ -175,6 +182,8 @@ jobs:
   deploy-production:
     name: "Deploy to Production"
     runs-on: [self-hosted, Linux, X64, prod]
+    # A deploy runs only once every test suite has passed for this commit.
+    needs: [test-api, test-mcp, test-web]
     if: github.ref == 'refs/heads/production' && github.event_name == 'push'
     environment: production
 

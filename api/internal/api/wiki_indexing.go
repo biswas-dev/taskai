@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -15,6 +17,7 @@ import (
 	"taskai/ent/wikiblock"
 	"taskai/ent/wikipage"
 	"taskai/ent/wikipageversion"
+	"taskai/internal/yjs"
 )
 
 // StartIndexingWorker starts a background worker that periodically indexes wiki content
@@ -40,95 +43,168 @@ func (s *Server) StartIndexingWorker(ctx context.Context) {
 	}
 }
 
-// indexPages finds pages that need indexing and indexes them
+// indexBatch is how many pages one pass of the worker indexes at most.
+const indexBatch = 50
+
+// indexMu keeps the periodic worker and a requested reindex from indexing
+// the same page at once, which could interleave two delete-and-insert
+// transactions and duplicate its blocks.
+var indexMu sync.Mutex
+
+// indexPages indexes every page whose content changed since it was last
+// indexed (or that has never been indexed), batch by batch until none are
+// left or the pass runs out of time.
 func (s *Server) indexPages(parentCtx context.Context) {
+	indexMu.Lock()
+	defer indexMu.Unlock()
 	ctx, cancel := context.WithTimeout(parentCtx, 2*time.Minute)
 	defer cancel()
 
-	// Find pages that have been updated recently (within last 3 minutes)
-	pages, err := s.db.Client.WikiPage.Query().
-		Where(wikipage.UpdatedAtGTE(time.Now().Add(-3 * time.Minute))).
-		All(ctx)
-	if err != nil {
-		s.logger.Error("Failed to fetch pages for indexing",
-			zap.Error(err),
-		)
-		return
-	}
-
-	if len(pages) == 0 {
-		s.logger.Debug("No pages need indexing")
-		return
-	}
-
-	s.logger.Info("Indexing pages",
-		zap.Int("page_count", len(pages)),
-	)
-
-	successCount := 0
-	failCount := 0
-
-	for _, page := range pages {
-		if err := s.indexPage(ctx, page); err != nil {
-			s.logger.Error("Failed to index page",
-				zap.Int64("page_id", page.ID),
-				zap.String("page_title", page.Title),
-				zap.Error(err),
-			)
-			failCount++
-		} else {
-			successCount++
+	successCount, failCount := 0, 0
+	failed := map[int64]bool{}
+	for ctx.Err() == nil {
+		pages, err := s.pagesNeedingIndex(ctx, indexBatch+len(failed))
+		if err != nil {
+			s.logger.Error("Failed to fetch pages for indexing", zap.Error(err))
+			return
+		}
+		progressed := false
+		for _, page := range pages {
+			if failed[page.ID] {
+				continue
+			}
+			progressed = true
+			if err := s.indexPage(ctx, page); err != nil {
+				s.logger.Error("Failed to index page",
+					zap.Int64("page_id", page.ID),
+					zap.String("page_title", page.Title),
+					zap.Error(err),
+				)
+				failed[page.ID] = true
+				failCount++
+			} else {
+				successCount++
+			}
+		}
+		if !progressed {
+			break
 		}
 	}
 
-	s.logger.Info("Indexing completed",
-		zap.Int("success", successCount),
-		zap.Int("failed", failCount),
-	)
-}
-
-// indexPage indexes a single wiki page
-func (s *Server) indexPage(ctx context.Context, page *ent.WikiPage) error {
-	// Try Yjs-based block extraction first (real-time editing pathway)
-	blocks, err := s.extractBlocksFromYjs(ctx, page)
-	if err != nil {
-		s.logger.Debug("Yjs extraction failed, trying markdown fallback",
-			zap.Int64("page_id", page.ID),
-			zap.Error(err),
+	if successCount+failCount > 0 {
+		s.logger.Info("Indexing completed",
+			zap.Int("success", successCount),
+			zap.Int("failed", failCount),
 		)
 	}
+}
 
-	// Fallback: use markdown content from wiki_page_versions
-	if len(blocks) == 0 {
-		blocks, err = s.extractBlocksFromMarkdown(ctx, page)
-		if err != nil {
+// pagesNeedingIndex lists pages edited since they were last indexed,
+// most recently edited first.
+func (s *Server) pagesNeedingIndex(ctx context.Context, limit int) ([]*ent.WikiPage, error) {
+	rows, err := s.db.QueryContext(ctx, s.db.Rebind(`
+		SELECT id FROM wiki_pages
+		 WHERE search_indexed_at IS NULL OR updated_at > search_indexed_at
+		 ORDER BY updated_at DESC
+		 LIMIT ?`), limit)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return s.db.Client.WikiPage.Query().Where(wikipage.IDIn(ids...)).Order(ent.Desc(wikipage.FieldUpdatedAt)).All(ctx)
+}
+
+// indexPage replaces a page's search blocks with ones built from its current
+// content. The page row is read and locked, its blocks swapped, and the
+// edit that was indexed recorded in search_indexed_at, all in one
+// transaction: an edit that commits meanwhile waits for it and then shows
+// as newer, so the next pass picks it up.
+func (s *Server) indexPage(ctx context.Context, page *ent.WikiPage) error {
+	// A page with no content falls back to its Yjs snapshot or saved
+	// versions, which can be slow; work that out before taking the lock.
+	var fallback []yjs.Block
+	if strings.TrimSpace(page.Content) == "" {
+		var err error
+		if fallback, err = s.extractPageBlocks(ctx, page); err != nil {
+			// Keep the blocks already there: stale results beat none.
 			return fmt.Errorf("extract blocks: %w", err)
 		}
 	}
 
-	// Delete existing blocks for this page
-	_, deleteErr := s.db.Client.WikiBlock.Delete().
-		Where(wikiblock.PageID(page.ID)).
-		Exec(ctx)
-	if deleteErr != nil {
-		return deleteErr
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	lock := ""
+	if s.db.Driver == "postgres" {
+		lock = " FOR UPDATE"
+	}
+	var content sql.NullString
+	if err := tx.QueryRowContext(ctx, s.db.Rebind(`SELECT content FROM wiki_pages WHERE id = ?`+lock), page.ID).Scan(&content); err != nil {
+		return err
+	}
+	blocks := fallback
+	if strings.TrimSpace(content.String) != "" {
+		// Parse what is in the row now, which may be newer than page.
+		blocks = markdownBlocks(content.String)
 	}
 
-	// Insert new blocks
-	var savedBlocks []*ent.WikiBlock
-	if len(blocks) > 0 {
-		savedBlocks, err = s.db.Client.WikiBlock.CreateBulk(blocks...).Save(ctx)
-		if err != nil {
+	if _, err := tx.ExecContext(ctx, s.db.Rebind(`DELETE FROM wiki_blocks WHERE page_id = ?`), page.ID); err != nil {
+		return err
+	}
+	insert := s.db.Rebind(`INSERT INTO wiki_blocks (page_id, block_type, level, headings_path, canonical_json, plain_text, position) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	for _, b := range blocks {
+		var level, canonical any
+		if b.Level != nil {
+			level = *b.Level
+		}
+		if b.CanonicalJSON != "" {
+			canonical = b.CanonicalJSON
+		}
+		if _, err := tx.ExecContext(ctx, insert, page.ID, b.Type, level, b.HeadingsPath, canonical, b.PlainText, b.Position); err != nil {
 			return err
 		}
+	}
+	if _, err := tx.ExecContext(ctx, s.db.Rebind(`UPDATE wiki_pages SET search_indexed_at = updated_at WHERE id = ?`), page.ID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 
 	s.logger.Info("Indexed page",
 		zap.Int64("page_id", page.ID),
 		zap.String("page_title", page.Title),
-		zap.Int("block_count", len(savedBlocks)),
+		zap.Int("block_count", len(blocks)),
 	)
 
+	// Select explicitly: the ent schema also knows search_text, a column
+	// only the SQLite schema has.
+	savedBlocks, err := s.db.Client.WikiBlock.Query().
+		Where(wikiblock.PageID(page.ID)).
+		Select(wikiblock.FieldID, wikiblock.FieldHeadingsPath, wikiblock.FieldPlainText).
+		All(ctx)
+	if err != nil {
+		s.logger.Warn("Failed to load blocks for embedding (non-fatal)", zap.Int64("page_id", page.ID), zap.Error(err))
+		return nil
+	}
 	// Generate and store embeddings (skip if embedding client is nil)
 	if s.embeddingClient != nil && len(savedBlocks) > 0 {
 		if err := s.embedBlocks(ctx, savedBlocks); err != nil {
@@ -142,8 +218,40 @@ func (s *Server) indexPage(ctx context.Context, page *ent.WikiPage) error {
 	return nil
 }
 
-// extractBlocksFromYjs attempts to extract blocks via the Yjs processor (binary state).
-func (s *Server) extractBlocksFromYjs(ctx context.Context, page *ent.WikiPage) ([]*ent.WikiBlockCreate, error) {
+// extractPageBlocks splits a page's content into search blocks. The page's
+// own content column is what readers are served, so it comes first; a Yjs
+// snapshot or the latest saved version are used only when it is empty.
+func (s *Server) extractPageBlocks(ctx context.Context, page *ent.WikiPage) ([]yjs.Block, error) {
+	if strings.TrimSpace(page.Content) != "" {
+		return markdownBlocks(page.Content), nil
+	}
+	if s.yjsClient != nil {
+		if blocks, err := s.extractBlocksFromYjs(ctx, page); err == nil && len(blocks) > 0 {
+			return blocks, nil
+		} else if err != nil && !ent.IsNotFound(err) {
+			s.logger.Debug("Yjs extraction failed, trying saved versions", zap.Int64("page_id", page.ID), zap.Error(err))
+		}
+	}
+	version, err := s.db.Client.WikiPageVersion.Query().
+		Where(wikipageversion.WikiPageID(page.ID)).
+		Order(ent.Desc(wikipageversion.FieldVersionNumber)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		return nil, nil // an empty page has no blocks
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Versions are stored compressed; read them through the decoder.
+	content, err := s.getWikiPageVersionContent(ctx, page.ID, version.VersionNumber)
+	if err != nil {
+		return nil, err
+	}
+	return markdownBlocks(content), nil
+}
+
+// extractBlocksFromYjs extracts blocks via the Yjs processor (binary state).
+func (s *Server) extractBlocksFromYjs(ctx context.Context, page *ent.WikiPage) ([]yjs.Block, error) {
 	snapshot, err := s.db.Client.PageVersion.Query().
 		Where(pageversion.PageID(page.ID)).
 		Order(ent.Desc(pageversion.FieldVersionNumber)).
@@ -151,98 +259,72 @@ func (s *Server) extractBlocksFromYjs(ctx context.Context, page *ent.WikiPage) (
 	if err != nil {
 		return nil, err
 	}
-
-	stateBase64 := base64.StdEncoding.EncodeToString(snapshot.YjsState)
-	blocks, err := s.yjsClient.ExtractBlocks(ctx, stateBase64)
-	if err != nil {
-		return nil, err
-	}
-
-	bulk := make([]*ent.WikiBlockCreate, len(blocks))
-	for i, block := range blocks {
-		bulk[i] = s.db.Client.WikiBlock.Create().
-			SetPageID(page.ID).
-			SetBlockType(block.Type).
-			SetHeadingsPath(block.HeadingsPath).
-			SetPlainText(block.PlainText).
-			SetPosition(block.Position)
-		if block.Level != nil {
-			bulk[i].SetLevel(*block.Level)
-		}
-		if block.CanonicalJSON != "" {
-			bulk[i].SetCanonicalJSON(block.CanonicalJSON)
-		}
-	}
-	return bulk, nil
+	return s.yjsClient.ExtractBlocks(ctx, base64.StdEncoding.EncodeToString(snapshot.YjsState))
 }
 
-// extractBlocksFromMarkdown extracts blocks from wiki_page_versions markdown content.
-// Splits content by headings for granular search results.
-func (s *Server) extractBlocksFromMarkdown(ctx context.Context, page *ent.WikiPage) ([]*ent.WikiBlockCreate, error) {
-	version, err := s.db.Client.WikiPageVersion.Query().
-		Where(wikipageversion.WikiPageID(page.ID)).
-		Order(ent.Desc(wikipageversion.FieldVersionNumber)).
-		First(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, nil
+// markdownBlocks splits markdown into one block per section. headings_path
+// is the chain of enclosing headings ("Deploy > Rollback"), and lines inside
+// fenced code are text, never headings.
+func markdownBlocks(content string) []yjs.Block {
+	var (
+		blocks  []yjs.Block
+		path    []string // heading text by level, index 0 = level 1
+		text    strings.Builder
+		inFence bool
+		fence   string
+	)
+	headings := func() string {
+		var parts []string
+		for _, h := range path {
+			if h != "" {
+				parts = append(parts, h)
+			}
 		}
-		return nil, err
+		return strings.Join(parts, " > ")
 	}
-
-	content := version.Content
-	if content == "" {
-		return nil, nil
-	}
-
-	// Split markdown by headings into blocks
-	lines := strings.Split(content, "\n")
-	var bulk []*ent.WikiBlockCreate
-	var currentHeading string
-	var currentText strings.Builder
-	position := 0
-
-	flushBlock := func() {
-		text := strings.TrimSpace(currentText.String())
-		if text == "" {
+	flush := func() {
+		body := strings.TrimSpace(text.String())
+		text.Reset()
+		if body == "" {
 			return
 		}
 		blockType := "paragraph"
-		if currentHeading != "" {
+		if len(path) > 0 {
 			blockType = "section"
 		}
-		b := s.db.Client.WikiBlock.Create().
-			SetPageID(page.ID).
-			SetBlockType(blockType).
-			SetHeadingsPath(currentHeading).
-			SetPlainText(text).
-			SetPosition(position)
-		bulk = append(bulk, b)
-		position++
-		currentText.Reset()
+		blocks = append(blocks, yjs.Block{Type: blockType, HeadingsPath: headings(), PlainText: body, Position: len(blocks)})
 	}
-
-	for _, line := range lines {
+	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "#") {
-			// Flush previous block
-			flushBlock()
-			// Extract heading text (strip # prefix)
-			heading := strings.TrimLeft(trimmed, "# ")
-			currentHeading = heading
-		} else {
-			if trimmed != "" {
-				if currentText.Len() > 0 {
-					currentText.WriteByte('\n')
-				}
-				currentText.WriteString(trimmed)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			marker := trimmed[:3]
+			if !inFence {
+				inFence, fence = true, marker
+			} else if marker == fence {
+				inFence = false
 			}
 		}
+		if !inFence && strings.HasPrefix(trimmed, "#") {
+			level := len(trimmed) - len(strings.TrimLeft(trimmed, "#"))
+			rest := strings.TrimSpace(trimmed[level:])
+			if level <= 6 && (rest == "" || trimmed[level] == ' ') {
+				flush()
+				for len(path) < level {
+					path = append(path, "")
+				}
+				path = append(path[:level-1], rest)
+				continue
+			}
+		}
+		if trimmed != "" {
+			if text.Len() > 0 {
+				text.WriteByte('\n')
+			}
+			text.WriteString(trimmed)
+		}
 	}
-	// Flush last block
-	flushBlock()
-
-	return bulk, nil
+	flush()
+	return blocks
 }
 
 // embedBlocks generates and stores vector embeddings for wiki blocks.
@@ -300,52 +382,35 @@ func (s *Server) embedBlocks(ctx context.Context, blocks []*ent.WikiBlock) error
 	return nil
 }
 
-// HandleReindexWiki triggers re-indexing and embedding of all wiki pages.
-// This is useful after deploying embeddings for the first time or after model upgrades.
+// HandleReindexWiki rebuilds the search index for every wiki page: full-text
+// blocks always, and vector embeddings when an embedding model is set up.
+// Pages are marked for indexing and the work runs in the background.
 func (s *Server) HandleReindexWiki(w http.ResponseWriter, r *http.Request) {
-	if s.embeddingClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "embeddings not configured", "embeddings_disabled")
+	ctx := r.Context()
+	res, err := s.db.ExecContext(ctx, `UPDATE wiki_pages SET search_indexed_at = NULL`)
+	if err != nil {
+		s.logger.Error("Reindex: failed to mark pages", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to start re-indexing", "internal_error")
 		return
 	}
-
-	// Run in background so the HTTP request returns immediately
+	pages, _ := res.RowsAffected()
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		bg, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
-
-		pages, err := s.db.Client.WikiPage.Query().All(ctx)
-		if err != nil {
-			s.logger.Error("Reindex: failed to fetch pages", zap.Error(err))
-			return
-		}
-
-		s.logger.Info("Reindex: starting full wiki re-index",
-			zap.Int("page_count", len(pages)),
-		)
-
-		success, fail := 0, 0
-		for _, page := range pages {
-			if err := s.indexPage(ctx, page); err != nil {
-				s.logger.Error("Reindex: failed to index page",
-					zap.Int64("page_id", page.ID),
-					zap.Error(err),
-				)
-				fail++
-			} else {
-				success++
+		// Each pass is bounded; keep going until every page is indexed.
+		for bg.Err() == nil {
+			remaining, err := s.pagesNeedingIndex(bg, 1)
+			if err != nil || len(remaining) == 0 {
+				return
 			}
+			s.indexPages(bg)
 		}
-
-		s.logger.Info("Reindex: completed",
-			zap.Int("success", success),
-			zap.Int("failed", fail),
-		)
 	}()
-
-	respondJSON(w, http.StatusAccepted, map[string]string{
-		"status":  "accepted",
-		"message": "re-indexing started in background",
-	})
+	msg := "re-indexing started in background"
+	if s.embeddingClient == nil {
+		msg += " (full-text only: no embedding model is configured)"
+	}
+	respondJSON(w, http.StatusAccepted, map[string]any{"status": "accepted", "message": msg, "pages": pages})
 }
 
 // float32SliceToVectorString converts a float32 slice to pgvector string format: "[0.1,0.2,0.3]"
