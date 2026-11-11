@@ -1,5 +1,7 @@
 name: Security report
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   schedule:
@@ -13,7 +15,7 @@ concurrency:
 jobs:
   scan:
     name: Dependencies, secrets and configuration
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted","Linux"]') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -24,15 +26,25 @@ jobs:
       - name: Scan source and dependency manifests
         run: |
           trivy fs --quiet --scanners vuln,secret,misconfig \
-            --format sarif --output /tmp/project-security.sarif \
+            --format sarif --output "$RUNNER_TEMP/project-security.sarif" \
             --skip-dirs .git --skip-dirs graphify-out \
             --skip-dirs frontend/node_modules --skip-dirs docs/node_modules \
             --skip-dirs frontend/dist --skip-dirs docs/build .
       - name: Fetch verified report client
+        if: github.event_name != 'pull_request'
         run: |
-          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o /tmp/project-quality-report.py
-          echo '620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  /tmp/project-quality-report.py' | sha256sum --check --status
+          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o "$RUNNER_TEMP/project-quality-report.py"
+          echo "620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  $RUNNER_TEMP/project-quality-report.py" | sha256sum --check --status
       - name: Publish security baseline
+        if: github.event_name != 'pull_request'
         env:
           COVERAGE_TOKEN: ${{ secrets.COVERAGE_TOKEN }}
-        run: python3 /tmp/project-quality-report.py security /tmp/project-security.sarif
+        run: python3 "$RUNNER_TEMP/project-quality-report.py" security "$RUNNER_TEMP/project-security.sarif"
+      - name: Preserve security report
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-security-trivy
+          path: ${{ runner.temp }}/project-security.sarif
+          if-no-files-found: error
+          retention-days: 7

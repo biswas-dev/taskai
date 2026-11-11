@@ -1,0 +1,39 @@
+name: PR quality report
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline", "Security report"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to refresh
+        required: true
+        type: number
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+concurrency:
+  group: pr-quality-report
+  cancel-in-progress: false
+jobs:
+  report:
+    runs-on: [self-hosted, Linux]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Fetch trusted report publisher
+        run: |
+          curl -fsS https://coverage.biswas.me/ci/pr-report-v1.py -o "$RUNNER_TEMP/project-pr-report.py"
+          echo "94fe1ffa09d30b21dd3941051ff18021af99f0766f64e13befaa734538f3f3ce  $RUNNER_TEMP/project-pr-report.py" | sha256sum --check --status
+      - name: Publish one coverage and security comment per PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALITY_PR_NUMBER: ${{ inputs.pr || '' }}
+          COVERAGE_MCP_TOKEN: ${{ secrets.COVERAGE_MCP_TOKEN }}
+          COVERAGE_TOKEN: ${{ secrets.COVERAGE_TOKEN }}
+          COVERAGE_WEB_TOKEN: ${{ secrets.COVERAGE_WEB_TOKEN }}
+        run: python3 -I "$RUNNER_TEMP/project-pr-report.py"

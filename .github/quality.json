@@ -1,0 +1,35 @@
+{
+  "repo": "taskai",
+  "components": {
+    "application": {
+      "repo": "taskai",
+      "file": "coverage.out",
+      "language": "go",
+      "root": "api",
+      "token": "COVERAGE_TOKEN",
+      "label": "Backend",
+      "module": "taskai"
+    },
+    "mcp": {
+      "repo": "taskai-mcp",
+      "file": "coverage.out",
+      "language": "go",
+      "root": "mcp",
+      "token": "COVERAGE_MCP_TOKEN",
+      "label": "mcp",
+      "module": "taskai-mcp"
+    },
+    "web": {
+      "repo": "taskai-web",
+      "file": "lcov.info",
+      "language": "node",
+      "root": "web",
+      "token": "COVERAGE_WEB_TOKEN",
+      "label": "web"
+    }
+  },
+  "workflows": [
+    ".github/workflows/security.yml",
+    ".github/workflows/ci-cd.yml"
+  ]
+}

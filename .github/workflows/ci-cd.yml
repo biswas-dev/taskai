@@ -41,8 +41,10 @@ concurrency:
 jobs:
   # ── API Tests (Go) ─────────────────────────────────────────────────────
   test-api:
+    permissions:
+      contents: read
     name: "API Tests (Go)"
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted", "Linux", "X64"]') }}
     # Every deployable branch is tested: the deploy jobs below need these.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/uat' || github.ref == 'refs/heads/production'
 
@@ -72,8 +74,8 @@ jobs:
       - name: Fetch verified report client
         if: github.ref == 'refs/heads/main'
         run: |
-          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o /tmp/project-quality-report.py
-          echo '620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  /tmp/project-quality-report.py' | sha256sum --check --status
+          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o "$RUNNER_TEMP/project-quality-report.py"
+          echo "620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  $RUNNER_TEMP/project-quality-report.py" | sha256sum --check --status
       - name: Publish application coverage
         if: github.ref == 'refs/heads/main'
         continue-on-error: true
@@ -85,14 +87,26 @@ jobs:
           COVERAGE_SOURCE_ROOT: 'api'
         run: |
           export COVERAGE_GO_MODULE=$(sed -n "s/^module //p" api/go.mod)
-          python3 /tmp/project-quality-report.py coverage api/coverage.out
+          python3 "$RUNNER_TEMP/project-quality-report.py" coverage api/coverage.out
 
 
 
   # ── MCP Tests (Go) ─────────────────────────────────────────────────────
+
+      - name: Preserve application quality report
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-coverage-application
+          path: api/coverage.out
+          if-no-files-found: error
+          retention-days: 7
+
   test-mcp:
+    permissions:
+      contents: read
     name: "MCP Tests (Go)"
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted", "Linux", "X64"]') }}
     # Every deployable branch is tested: the deploy jobs below need these.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/uat' || github.ref == 'refs/heads/production'
 
@@ -120,8 +134,8 @@ jobs:
       - name: Fetch verified report client
         if: github.ref == 'refs/heads/main'
         run: |
-          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o /tmp/project-quality-report.py
-          echo '620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  /tmp/project-quality-report.py' | sha256sum --check --status
+          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o "$RUNNER_TEMP/project-quality-report.py"
+          echo "620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  $RUNNER_TEMP/project-quality-report.py" | sha256sum --check --status
       - name: Publish mcp coverage
         if: github.ref == 'refs/heads/main'
         continue-on-error: true
@@ -133,14 +147,26 @@ jobs:
           COVERAGE_SOURCE_ROOT: 'mcp'
         run: |
           export COVERAGE_GO_MODULE=$(sed -n "s/^module //p" mcp/go.mod)
-          python3 /tmp/project-quality-report.py coverage mcp/coverage.out
+          python3 "$RUNNER_TEMP/project-quality-report.py" coverage mcp/coverage.out
 
 
 
   # ── Web Tests (Node) ───────────────────────────────────────────────────
+
+      - name: Preserve mcp quality report
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-coverage-mcp
+          path: mcp/coverage.out
+          if-no-files-found: error
+          retention-days: 7
+
   test-web:
+    permissions:
+      contents: read
     name: "Web Tests"
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON('["self-hosted", "Linux", "X64"]') }}
     # Every deployable branch is tested: the deploy jobs below need these.
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/uat' || github.ref == 'refs/heads/production'
 
@@ -173,8 +199,8 @@ jobs:
       - name: Fetch verified report client
         if: github.ref == 'refs/heads/main'
         run: |
-          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o /tmp/project-quality-report.py
-          echo '620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  /tmp/project-quality-report.py' | sha256sum --check --status
+          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o "$RUNNER_TEMP/project-quality-report.py"
+          echo "620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  $RUNNER_TEMP/project-quality-report.py" | sha256sum --check --status
       - name: Publish web coverage
         if: github.ref == 'refs/heads/main'
         continue-on-error: true
@@ -185,18 +211,28 @@ jobs:
           COVERAGE_LANGUAGE: node
           COVERAGE_SOURCE_ROOT: 'web'
         run: |
-          python3 /tmp/project-quality-report.py coverage web/coverage/lcov.info
+          python3 "$RUNNER_TEMP/project-quality-report.py" coverage web/coverage/lcov.info
 
 
 
   # ── Deploy Staging (builds on server via SSH, native ARM64) ────────────
+
+      - name: Preserve web quality report
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-coverage-web
+          path: web/coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 7
+
   deploy-staging:
     name: "Deploy to Staging"
     runs-on: [self-hosted, Linux, ARM64]
     # A deploy runs only once every test suite has passed for this commit.
     needs: [test-api, test-mcp, test-web]
     if: >-
-      (github.ref == 'refs/heads/main' && github.event_name == 'push') && inputs.quality_only != true
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') && inputs.quality_only != true && !contains(github.event.head_commit.message, '[quality only]')
     environment: staging
 
     env:
@@ -225,7 +261,7 @@ jobs:
     # A deploy runs only once every test suite has passed for this commit.
     needs: [test-api, test-mcp, test-web]
     if: >-
-      (github.ref == 'refs/heads/uat' && github.event_name == 'push') && inputs.quality_only != true
+      (github.ref == 'refs/heads/uat' && github.event_name == 'push') && inputs.quality_only != true && !contains(github.event.head_commit.message, '[quality only]')
     environment: uat
 
     env:
@@ -254,7 +290,7 @@ jobs:
     # A deploy runs only once every test suite has passed for this commit.
     needs: [test-api, test-mcp, test-web]
     if: >-
-      (github.ref == 'refs/heads/production' && github.event_name == 'push') && inputs.quality_only != true
+      (github.ref == 'refs/heads/production' && github.event_name == 'push') && inputs.quality_only != true && !contains(github.event.head_commit.message, '[quality only]')
     environment: production
 
     env:
