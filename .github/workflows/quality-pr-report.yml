@@ -28,7 +28,7 @@ jobs:
       - name: Fetch trusted report publisher
         run: |
           curl -fsS https://coverage.biswas.me/ci/pr-report-v1.py -o "$RUNNER_TEMP/project-pr-report.py"
-          echo "94fe1ffa09d30b21dd3941051ff18021af99f0766f64e13befaa734538f3f3ce  $RUNNER_TEMP/project-pr-report.py" | sha256sum --check --status
+          echo "844a589383c1bf8468a2c299ea799132c3b8e9c6bcd776ff0024de97f90795ab  $RUNNER_TEMP/project-pr-report.py" | sha256sum --check --status
       - name: Publish one coverage and security comment per PR
         env:
           GH_TOKEN: ${{ github.token }}
