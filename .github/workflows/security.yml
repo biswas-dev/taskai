@@ -1,0 +1,38 @@
+name: Security report
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '20 9 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-report-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  scan:
+    name: Dependencies, secrets and configuration
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.76.2
+          cache: false
+      - name: Scan source and dependency manifests
+        run: |
+          trivy fs --quiet --scanners vuln,secret,misconfig \
+            --format sarif --output /tmp/project-security.sarif \
+            --skip-dirs .git --skip-dirs graphify-out \
+            --skip-dirs frontend/node_modules --skip-dirs docs/node_modules \
+            --skip-dirs frontend/dist --skip-dirs docs/build .
+      - name: Fetch verified report client
+        run: |
+          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o /tmp/project-quality-report.py
+          echo '620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  /tmp/project-quality-report.py' | sha256sum --check --status
+      - name: Publish security baseline
+        env:
+          COVERAGE_TOKEN: ${{ secrets.COVERAGE_TOKEN }}
+        run: python3 /tmp/project-quality-report.py security /tmp/project-security.sarif

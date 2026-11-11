@@ -23,6 +23,12 @@
 name: CI/CD Pipeline
 
 on:
+  workflow_dispatch:
+    inputs:
+      quality_only:
+        description: Run tests and publish reports without deploying applications
+        type: boolean
+        default: false
   push:
     branches: [main, uat, production]
   pull_request:
@@ -63,6 +69,26 @@ jobs:
           go tool cover -func=coverage.out | tail -1
         timeout-minutes: 10
 
+      - name: Fetch verified report client
+        if: github.ref == 'refs/heads/main'
+        run: |
+          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o /tmp/project-quality-report.py
+          echo '620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  /tmp/project-quality-report.py' | sha256sum --check --status
+      - name: Publish application coverage
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          COVERAGE_TOKEN: ${{ secrets.COVERAGE_TOKEN }}
+          COVERAGE_REPO: taskai
+          COVERAGE_GROUP: taskai
+          COVERAGE_LANGUAGE: go
+          COVERAGE_SOURCE_ROOT: 'api'
+        run: |
+          export COVERAGE_GO_MODULE=$(sed -n "s/^module //p" api/go.mod)
+          python3 /tmp/project-quality-report.py coverage api/coverage.out
+
+
+
   # ── MCP Tests (Go) ─────────────────────────────────────────────────────
   test-mcp:
     name: "MCP Tests (Go)"
@@ -88,8 +114,28 @@ jobs:
 
       - name: Run tests
         working-directory: mcp
-        run: go test -race ./...
+        run: go test -coverprofile=coverage.out -covermode=atomic -race ./...
         timeout-minutes: 5
+
+      - name: Fetch verified report client
+        if: github.ref == 'refs/heads/main'
+        run: |
+          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o /tmp/project-quality-report.py
+          echo '620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  /tmp/project-quality-report.py' | sha256sum --check --status
+      - name: Publish mcp coverage
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          COVERAGE_TOKEN: ${{ secrets.COVERAGE_MCP_TOKEN }}
+          COVERAGE_REPO: taskai-mcp
+          COVERAGE_GROUP: taskai
+          COVERAGE_LANGUAGE: go
+          COVERAGE_SOURCE_ROOT: 'mcp'
+        run: |
+          export COVERAGE_GO_MODULE=$(sed -n "s/^module //p" mcp/go.mod)
+          python3 /tmp/project-quality-report.py coverage mcp/coverage.out
+
+
 
   # ── Web Tests (Node) ───────────────────────────────────────────────────
   test-web:
@@ -121,8 +167,27 @@ jobs:
 
       - name: Run tests
         working-directory: web
-        run: npx vitest run
+        run: npx vitest run --coverage --coverage.reporter=lcov
         timeout-minutes: 10
+
+      - name: Fetch verified report client
+        if: github.ref == 'refs/heads/main'
+        run: |
+          curl -fsS https://coverage.biswas.me/ci/report-v1.py -o /tmp/project-quality-report.py
+          echo '620701586b18553b55b6eb0bc964a7a0dcef82f04f989b9f010b18947ebc746a  /tmp/project-quality-report.py' | sha256sum --check --status
+      - name: Publish web coverage
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          COVERAGE_TOKEN: ${{ secrets.COVERAGE_WEB_TOKEN }}
+          COVERAGE_REPO: taskai-web
+          COVERAGE_GROUP: taskai
+          COVERAGE_LANGUAGE: node
+          COVERAGE_SOURCE_ROOT: 'web'
+        run: |
+          python3 /tmp/project-quality-report.py coverage web/coverage/lcov.info
+
+
 
   # ── Deploy Staging (builds on server via SSH, native ARM64) ────────────
   deploy-staging:
@@ -130,7 +195,8 @@ jobs:
     runs-on: [self-hosted, Linux, ARM64]
     # A deploy runs only once every test suite has passed for this commit.
     needs: [test-api, test-mcp, test-web]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: >-
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') && inputs.quality_only != true
     environment: staging
 
     env:
@@ -151,13 +217,15 @@ jobs:
       - name: Deploy to staging
         run: bash deployment/scripts/travis-deploy-fast.sh staging
 
+
   # ── Deploy UAT ─────────────────────────────────────────────────────────
   deploy-uat:
     name: "Deploy to UAT"
     runs-on: [self-hosted, Linux, ARM64]
     # A deploy runs only once every test suite has passed for this commit.
     needs: [test-api, test-mcp, test-web]
-    if: github.ref == 'refs/heads/uat' && github.event_name == 'push'
+    if: >-
+      (github.ref == 'refs/heads/uat' && github.event_name == 'push') && inputs.quality_only != true
     environment: uat
 
     env:
@@ -178,13 +246,15 @@ jobs:
       - name: Deploy to UAT
         run: bash deployment/scripts/travis-deploy-fast.sh uat
 
+
   # ── Deploy Production ──────────────────────────────────────────────────
   deploy-production:
     name: "Deploy to Production"
     runs-on: [self-hosted, Linux, X64, prod]
     # A deploy runs only once every test suite has passed for this commit.
     needs: [test-api, test-mcp, test-web]
-    if: github.ref == 'refs/heads/production' && github.event_name == 'push'
+    if: >-
+      (github.ref == 'refs/heads/production' && github.event_name == 'push') && inputs.quality_only != true
     environment: production
 
     env:
