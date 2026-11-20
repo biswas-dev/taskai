@@ -1,0 +1,25 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "d8d693345065",
+  "strategy": "manual-commit",
+  "branch": "feat/meeting-minutes",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "web/src/components/Meetings.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/d8/d693345065/0/metadata.json",
+      "transcript": "/d8/d693345065/0/full.jsonl",
+      "content_hash": "/d8/d693345065/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 32723,
+    "cache_read_tokens": 3438043,
+    "output_tokens": 15435,
+    "api_call_count": 22
+  }
+}
