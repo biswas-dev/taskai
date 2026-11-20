@@ -55,6 +55,22 @@ describe('Sidebar', () => {
     expect(pulseDivs.length).toBeGreaterThan(0)
   })
 
+  it('groups projects under their company (team)', async () => {
+    mockedGetProjects.mockResolvedValue([
+      { id: 12, name: 'Engineering', owner_id: 1, team_name: 'AIAgentLens', created_at: '2024-01-01T00:00:00Z' },
+      { id: 2, name: 'BlueStack', owner_id: 1, team_name: 'Elastio', created_at: '2024-01-01T00:00:00Z' },
+      { id: 28, name: 'Sales', owner_id: 1, team_name: 'AIAgentLens', created_at: '2024-01-01T00:00:00Z' },
+    ])
+
+    render(<Sidebar {...defaultProps} />)
+
+    const company = await screen.findByRole('region', { name: 'AIAgentLens' })
+    expect(company).toHaveTextContent('Engineering')
+    expect(company).toHaveTextContent('Sales')
+    expect(company).not.toHaveTextContent('BlueStack')
+    expect(screen.getByRole('region', { name: 'Elastio' })).toHaveTextContent('BlueStack')
+  })
+
   it('renders project list after loading', async () => {
     const projects = [
       { id: 1, name: 'Project Alpha', description: 'First project', owner_id: 1, created_at: '2024-01-01T00:00:00Z' },

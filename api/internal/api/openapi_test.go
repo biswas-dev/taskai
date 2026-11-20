@@ -105,6 +105,11 @@ func buildTestRouter(server *Server) chi.Router {
 			r.Post("/projects/{id}/members", server.HandleAddProjectMember)
 			r.Patch("/projects/{id}/members/{memberId}", server.HandleUpdateProjectMember)
 			r.Delete("/projects/{id}/members/{memberId}", server.HandleRemoveProjectMember)
+			r.Get("/projects/{id}/meetings", server.HandleListMeetings)
+			r.Post("/projects/{id}/meetings", server.HandleCreateMeeting)
+			r.Get("/meetings/{id}", server.HandleGetMeeting)
+			r.Patch("/meetings/{id}", server.HandleUpdateMeeting)
+			r.Delete("/meetings/{id}", server.HandleDeleteMeeting)
 			r.Get("/projects/{id}/github", server.HandleGetProjectGitHubSettings)
 			r.Patch("/projects/{id}/github", server.HandleUpdateProjectGitHubSettings)
 

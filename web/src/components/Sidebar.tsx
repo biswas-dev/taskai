@@ -12,6 +12,16 @@ interface SidebarProps {
   onTogglePin?: () => void
 }
 
+// A team is the company; its projects (Engineering, Sales, ...) are listed under it in API order.
+function groupByCompany(projects: Project[]): [string, Project[]][] {
+  const groups = new Map<string, Project[]>()
+  for (const p of projects) {
+    const company = p.team_name || 'Projects'
+    groups.set(company, [...(groups.get(company) ?? []), p])
+  }
+  return [...groups]
+}
+
 export default function Sidebar({ onCreateProject, onLogout, isOpen, onClose, isPinned, onTogglePin }: SidebarProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -82,7 +92,8 @@ export default function Sidebar({ onCreateProject, onLogout, isOpen, onClose, is
   }
 
   const addProject = (project: Project) => {
-    setProjects([project, ...projects])
+    // Create responses omit team_name; borrow it from a sibling so the project lands under its company.
+    setProjects(prev => [{ ...project, team_name: project.team_name ?? prev.find(p => p.team_id === project.team_id)?.team_name }, ...prev])
   }
 
   // Expose addProject method to parent via window callback
@@ -92,7 +103,7 @@ export default function Sidebar({ onCreateProject, onLogout, isOpen, onClose, is
     return () => {
       delete w.__addProject
     }
-  }, [projects]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projects])
 
   const sprintsPath = selectedProjectId ? `/app/projects/${selectedProjectId}/sprints` : null
   const tagsPath = selectedProjectId ? `/app/projects/${selectedProjectId}/tags` : null
@@ -224,7 +235,9 @@ export default function Sidebar({ onCreateProject, onLogout, isOpen, onClose, is
 
       {/* Projects List */}
       <div className="flex-1 overflow-y-auto p-4">
-        <p className="text-[10px] uppercase tracking-wider text-dark-text-quaternary mb-2 px-3 font-medium">Projects</p>
+        {(loading || projects.length === 0) && (
+          <p className="text-[10px] uppercase tracking-wider text-dark-text-quaternary mb-2 px-3 font-medium">Projects</p>
+        )}
 
         {loading && (
           <div className="animate-pulse space-y-2 px-1">
@@ -263,34 +276,39 @@ export default function Sidebar({ onCreateProject, onLogout, isOpen, onClose, is
         )}
 
         {!loading && (
-          <div className="space-y-0.5">
-            {projects.map((project) => {
-              const isSelected = selectedProjectId === String(project.id)
-              return (
-                <button
-                  key={project.id}
-                  onClick={() => handleProjectClick(project.id)}
-                  className={`w-full text-left py-2 px-3 rounded-md transition-all duration-150 ${
-                    isSelected
-                      ? 'bg-dark-bg-tertiary text-dark-text-primary'
-                      : 'text-dark-text-tertiary hover:bg-dark-bg-secondary hover:text-dark-text-primary'
-                  }`}
-                >
-                  <h3
-                    className={`font-medium text-xs truncate ${
-                      isSelected ? 'text-dark-text-primary' : ''
-                    }`}
-                  >
-                    {project.name}
-                  </h3>
-                  {project.description && (
-                    <p className="text-xs text-dark-text-quaternary truncate mt-0.5">
-                      {project.description}
-                    </p>
-                  )}
-                </button>
-              )
-            })}
+          <div className="space-y-4">
+            {groupByCompany(projects).map(([company, companyProjects]) => (
+              <section key={company} aria-label={company} className="space-y-0.5">
+                <h2 className="text-[10px] uppercase tracking-wider text-dark-text-quaternary mb-2 px-3 font-medium truncate">{company}</h2>
+                {companyProjects.map((project) => {
+                  const isSelected = selectedProjectId === String(project.id)
+                  return (
+                    <button
+                      key={project.id}
+                      onClick={() => handleProjectClick(project.id)}
+                      className={`w-full text-left py-2 px-3 rounded-md transition-all duration-150 ${
+                        isSelected
+                          ? 'bg-dark-bg-tertiary text-dark-text-primary'
+                          : 'text-dark-text-tertiary hover:bg-dark-bg-secondary hover:text-dark-text-primary'
+                      }`}
+                    >
+                      <h3
+                        className={`font-medium text-xs truncate ${
+                          isSelected ? 'text-dark-text-primary' : ''
+                        }`}
+                      >
+                        {project.name}
+                      </h3>
+                      {project.description && (
+                        <p className="text-xs text-dark-text-quaternary truncate mt-0.5">
+                          {project.description}
+                        </p>
+                      )}
+                    </button>
+                  )
+                })}
+              </section>
+            ))}
           </div>
         )}
       </div>
