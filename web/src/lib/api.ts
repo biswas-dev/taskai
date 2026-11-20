@@ -647,6 +647,36 @@ export interface UpdateSwimLaneRequest {
   status_category?: 'todo' | 'in_progress' | 'done'
 }
 
+// Meeting minutes (project-scoped)
+export interface MeetingAttendee {
+  user_id: number
+  name: string
+  email: string
+}
+
+export interface Meeting {
+  id: number
+  project_id: number
+  title: string
+  starts_at: string
+  ends_at: string
+  agenda: string
+  minutes: string
+  created_by?: number
+  attendees: MeetingAttendee[]
+  created_at: string
+  updated_at: string
+}
+
+export interface MeetingInput {
+  title?: string
+  starts_at?: string
+  ends_at?: string
+  agenda?: string
+  minutes?: string
+  attendee_ids?: number[]
+}
+
 // Milestone types
 export interface Milestone {
   id: number
@@ -1501,6 +1531,29 @@ class ApiClient {
     return this.request<void>(`/api/tags/${tagId}/share/${projectId}`, {
       method: 'DELETE',
     })
+  }
+
+  // Meeting minutes endpoints
+  async getMeetings(projectId: number): Promise<Meeting[]> {
+    return this.request<Meeting[]>(`/api/projects/${projectId}/meetings`)
+  }
+
+  async createMeeting(projectId: number, data: MeetingInput): Promise<Meeting> {
+    return this.request<Meeting>(`/api/projects/${projectId}/meetings`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateMeeting(id: number, data: MeetingInput): Promise<Meeting> {
+    return this.request<Meeting>(`/api/meetings/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteMeeting(id: number): Promise<void> {
+    return this.request<void>(`/api/meetings/${id}`, { method: 'DELETE' })
   }
 
   // Milestone endpoints (project-scoped)
