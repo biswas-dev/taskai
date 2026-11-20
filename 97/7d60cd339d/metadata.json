@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "977d60cd339d",
+  "strategy": "manual-commit",
+  "branch": "feat/meeting-minutes",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "api/internal/api/meeting_handlers.go",
+    "api/internal/api/meeting_handlers_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/97/7d60cd339d/0/metadata.json",
+      "transcript": "/97/7d60cd339d/0/full.jsonl",
+      "content_hash": "/97/7d60cd339d/0/content_hash.txt",
+      "prompt": "/97/7d60cd339d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 114,
+    "cache_creation_tokens": 113594,
+    "cache_read_tokens": 5813810,
+    "output_tokens": 30689,
+    "api_call_count": 55
+  }
+}
