@@ -5,7 +5,13 @@
   "branch": "feat/meeting-minutes",
   "checkpoints_count": 0,
   "files_touched": [
-    "web/src/components/Meetings.tsx"
+    "web/src/components/Meetings.test.tsx",
+    "web/src/components/Meetings.tsx",
+    "web/src/components/Sidebar.test.tsx",
+    "web/src/components/Sidebar.tsx",
+    "web/src/lib/api.ts",
+    "web/src/lib/api.types.ts",
+    "web/src/routes/ProjectDetail.tsx"
   ],
   "sessions": [
     {
@@ -16,10 +22,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 44,
-    "cache_creation_tokens": 32723,
-    "cache_read_tokens": 3438043,
-    "output_tokens": 15435,
-    "api_call_count": 22
+    "input_tokens": 4,
+    "cache_creation_tokens": 1077,
+    "cache_read_tokens": 348333,
+    "output_tokens": 504,
+    "api_call_count": 2
   }
 }
