@@ -1,0 +1,17 @@
+<task-notification>
+<task-id>b9mxx5x53</task-id>
+<tool-use-id>toolu_01JrwYJNsY4WEJGtP4tQRrBU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/62404199-9199-4ead-b975-54dc5b287372/tasks/b9mxx5x53.output</output-file>
+<status>completed</status>
+<summary>Background command "/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/62404199-9199-4ead-b975-54dc5b287372/scratchpad/run-api.sh &gt; /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/62404199-9199-4ead-b975-54dc5b287372/scratchpad/api.log 2&gt;&amp;1" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bbyivz1xt</task-id>
+<tool-use-id>toolu_01Terkn29JfjKVz25JLYzLLw</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/62404199-9199-4ead-b975-54dc5b287372/tasks/bbyivz1xt.output</output-file>
+<status>failed</status>
+<summary>Background command "cd /Users/anshumanbiswas/play/taskai/web &amp;&amp; npx vite --port 5179 --strictPort &gt; /private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/62404199-9199-4ead-b975-54dc5b287372/scratchpad/vite.log 2&gt;&amp;1" failed with exit code 144</summary>
+</task-notification>
