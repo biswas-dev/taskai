@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "8c03f7899629",
+  "strategy": "manual-commit",
+  "branch": "feat/meeting-minutes",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "mcp/mcp_test.go",
+    "mcp/tools.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8c/03f7899629/0/metadata.json",
+      "transcript": "/8c/03f7899629/0/full.jsonl",
+      "content_hash": "/8c/03f7899629/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 12,
+    "cache_creation_tokens": 9511,
+    "cache_read_tokens": 1075243,
+    "output_tokens": 3515,
+    "api_call_count": 6
+  }
+}
