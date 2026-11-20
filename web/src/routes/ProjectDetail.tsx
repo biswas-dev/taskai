@@ -12,6 +12,7 @@ import { useDialog } from '../state/DialogContext'
 const WikiContent = lazy(() => import('../components/WikiContent'))
 const ProjectSettings = lazy(() => import('./ProjectSettings'))
 const Roadmap = lazy(() => import('./Roadmap'))
+const Meetings = lazy(() => import('../components/Meetings'))
 
 
 export default function ProjectDetail() {
@@ -379,6 +380,18 @@ export default function ProjectDetail() {
                 </svg>
                 {activeTab === 'roadmap' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-500" />}
               </button>
+              {/* Meetings icon tab */}
+              <button
+                onClick={() => setSearchParams({ tab: 'meetings' })}
+                title="Meetings"
+                aria-label="Meetings"
+                className={`relative p-3 transition-colors ${activeTab === 'meetings' ? 'text-primary-400' : 'text-dark-text-secondary hover:text-dark-text-primary'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                {activeTab === 'meetings' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-500" />}
+              </button>
             </div>
 
             {/* Filter bar + Task Stats (visible on board, invisible but space-reserving on other tabs) */}
@@ -529,6 +542,12 @@ export default function ProjectDetail() {
         {activeTab === 'roadmap' && (
           <Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" /></div>}>
             <Roadmap projectId={Number(projectId)} tasks={tasks} />
+          </Suspense>
+        )}
+
+        {activeTab === 'meetings' && (
+          <Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" /></div>}>
+            <Meetings projectId={Number(projectId)} />
           </Suspense>
         )}
 

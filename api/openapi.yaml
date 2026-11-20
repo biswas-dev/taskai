@@ -1113,6 +1113,182 @@ paths:
 
   # ── Project Members ─────────────────────────────────────────────────
 
+  /api/projects/{id}/meetings:
+    get:
+      summary: List Meetings
+      description: List a project's minutes of meetings, newest first
+      tags: [Meetings]
+      operationId: listMeetings
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: List of meetings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Meeting"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      summary: Create Meeting
+      description: Record a meeting. Omitting attendee_ids adds every project member as an attendee.
+      tags: [Meetings]
+      operationId: createMeeting
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMeetingRequest"
+      responses:
+        "201":
+          description: Meeting created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/meetings/{id}:
+    get:
+      summary: Get Meeting
+      tags: [Meetings]
+      operationId: getMeeting
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Meeting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      summary: Update Meeting
+      description: Update title, time, agenda, minutes or attendees (attendee_ids replaces the list)
+      tags: [Meetings]
+      operationId: updateMeeting
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeetingRequest"
+      responses:
+        "200":
+          description: Meeting updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Meeting"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Delete Meeting
+      tags: [Meetings]
+      operationId: deleteMeeting
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: Meeting deleted
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/projects/{id}/members:
     get:
       summary: List Project Members
@@ -3904,6 +4080,55 @@ components:
           type: string
           example: "Operation successful"
 
+    MeetingAttendee:
+      type: object
+      required: [user_id, name, email]
+      properties:
+        user_id: { type: integer, format: int64 }
+        name: { type: string }
+        email: { type: string }
+    Meeting:
+      type: object
+      required: [id, project_id, title, starts_at, ends_at, agenda, minutes, attendees, created_at, updated_at]
+      properties:
+        id: { type: integer, format: int64 }
+        project_id: { type: integer, format: int64 }
+        title: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        agenda: { type: string, description: Markdown }
+        minutes: { type: string, description: Markdown }
+        created_by: { type: integer, format: int64 }
+        attendees:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeetingAttendee"
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CreateMeetingRequest:
+      type: object
+      required: [title, starts_at, ends_at]
+      properties:
+        title: { type: string, maxLength: 200 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        agenda: { type: string }
+        minutes: { type: string }
+        attendee_ids:
+          type: array
+          description: Project member user IDs. Omit to add every project member.
+          items: { type: integer, format: int64 }
+    UpdateMeetingRequest:
+      type: object
+      properties:
+        title: { type: string, maxLength: 200 }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        agenda: { type: string }
+        minutes: { type: string }
+        attendee_ids:
+          type: array
+          items: { type: integer, format: int64 }
     Error:
       type: object
       required: [error]

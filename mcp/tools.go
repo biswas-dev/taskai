@@ -121,6 +121,7 @@ var (
 	wikiPageFields   = []string{"id", "title", "slug", "parent_id", "updated_at"}
 	wikiBlockFields  = []string{"page_id", "page_title", "headings_path", "snippet"}
 	milestoneFields  = []string{"id", "name", "status", "task_count", "target_date"}
+	meetingFields    = []string{"id", "title", "starts_at", "ends_at"}
 	annotationFields = []string{"id", "page_id", "selected_text", "color", "resolved"}
 )
 
@@ -432,6 +433,30 @@ type updateMilestoneIn struct {
 type milestoneIDIn struct {
 	MilestoneID string `json:"milestone_id" jsonschema:"Milestone ID"`
 	Verbose     bool   `json:"verbose,omitempty"`
+}
+
+type meetingIDIn struct {
+	MeetingID string `json:"meeting_id" jsonschema:"Meeting ID (use list_meetings)"`
+}
+
+type createMeetingIn struct {
+	ProjectID   string   `json:"project_id" jsonschema:"Project ID"`
+	Title       string   `json:"title" jsonschema:"Meeting title"`
+	StartsAt    string   `json:"starts_at" jsonschema:"Start time, RFC 3339 with offset (e.g. 2026-11-20T13:30:00-05:00)"`
+	EndsAt      string   `json:"ends_at" jsonschema:"End time, RFC 3339 with offset"`
+	Agenda      *string  `json:"agenda,omitempty" jsonschema:"Agenda (Markdown)"`
+	Minutes     *string  `json:"minutes,omitempty" jsonschema:"Minutes / notes (Markdown)"`
+	AttendeeIDs *[]int64 `json:"attendee_ids,omitempty" jsonschema:"Project member user IDs; omit to add every project member"`
+}
+
+type updateMeetingIn struct {
+	MeetingID   string   `json:"meeting_id" jsonschema:"Meeting ID"`
+	Title       *string  `json:"title,omitempty"`
+	StartsAt    *string  `json:"starts_at,omitempty" jsonschema:"RFC 3339 with offset"`
+	EndsAt      *string  `json:"ends_at,omitempty" jsonschema:"RFC 3339 with offset"`
+	Agenda      *string  `json:"agenda,omitempty" jsonschema:"Replaces the agenda (Markdown)"`
+	Minutes     *string  `json:"minutes,omitempty" jsonschema:"Replaces the minutes (Markdown)"`
+	AttendeeIDs *[]int64 `json:"attendee_ids,omitempty" jsonschema:"Replaces the attendee list (project member user IDs)"`
 }
 
 type addDependencyIn struct {
@@ -1015,6 +1040,47 @@ func registerTools(srv *gomcp.Server) {
 				SortOrder   *int    `json:"sort_order,omitempty"`
 			}{in.Name, in.Description, in.Color, in.TargetDate, in.Status, in.SortOrder}
 			return c.send(ctx, http.MethodPatch, "/api/milestones/"+esc(in.MilestoneID), body)
+		})
+
+	gomcp.Register(srv, read("list_meetings", "List a project's minutes of meetings, newest first (id, title, times; verbose adds agenda, minutes and attendees)."),
+		func(ctx context.Context, in projectIn) (any, error) {
+			_, c := sess(ctx)
+			res, err := c.get(ctx, "/api/projects/"+esc(in.ProjectID)+"/meetings")
+			return shaped(in.Verbose, res, func(v any) any { return pickEach(v, meetingFields...) }), err
+		})
+
+	gomcp.Register(srv, read("get_meeting", "Get a meeting with its agenda, minutes and attendees."),
+		func(ctx context.Context, in meetingIDIn) (any, error) {
+			_, c := sess(ctx)
+			return c.get(ctx, "/api/meetings/"+esc(in.MeetingID))
+		})
+
+	gomcp.Register(srv, write("create_meeting", "Record a meeting (minutes of meeting) in a project. Attendees must be project members; omitting attendee_ids adds the whole project."),
+		func(ctx context.Context, in createMeetingIn) (any, error) {
+			_, c := sess(ctx)
+			body := struct {
+				Title       string   `json:"title"`
+				StartsAt    string   `json:"starts_at"`
+				EndsAt      string   `json:"ends_at"`
+				Agenda      *string  `json:"agenda,omitempty"`
+				Minutes     *string  `json:"minutes,omitempty"`
+				AttendeeIDs *[]int64 `json:"attendee_ids,omitempty"`
+			}{in.Title, in.StartsAt, in.EndsAt, in.Agenda, in.Minutes, in.AttendeeIDs}
+			return c.send(ctx, http.MethodPost, "/api/projects/"+esc(in.ProjectID)+"/meetings", body)
+		})
+
+	gomcp.Register(srv, update("update_meeting", "Update a meeting's title, times, agenda, minutes or attendees. Only fields you pass change."),
+		func(ctx context.Context, in updateMeetingIn) (any, error) {
+			_, c := sess(ctx)
+			body := struct {
+				Title       *string  `json:"title,omitempty"`
+				StartsAt    *string  `json:"starts_at,omitempty"`
+				EndsAt      *string  `json:"ends_at,omitempty"`
+				Agenda      *string  `json:"agenda,omitempty"`
+				Minutes     *string  `json:"minutes,omitempty"`
+				AttendeeIDs *[]int64 `json:"attendee_ids,omitempty"`
+			}{in.Title, in.StartsAt, in.EndsAt, in.Agenda, in.Minutes, in.AttendeeIDs}
+			return c.send(ctx, http.MethodPatch, "/api/meetings/"+esc(in.MeetingID), body)
 		})
 
 	gomcp.Register(srv, read("get_milestone_progress", "Get computed progress for a milestone: total/completed tasks, percentage, hours, by-assignee breakdown."),

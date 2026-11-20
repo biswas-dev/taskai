@@ -81,6 +81,8 @@ func (f *fakeAPI) handler(t *testing.T) http.Handler {
 			reply(map[string]any{"total": 1, "results": []any{map[string]any{"page_id": 5, "page_title": "Arch", "headings_path": "Intro", "snippet": "…", "rank": 0.9}}})
 		case r.URL.Path == "/draw/api/new":
 			reply(map[string]any{"id": "abc", "edit_url": "/draw/abc/edit", "view_url": "/draw/abc"})
+		case r.URL.Path == "/api/projects/3/meetings" && r.Method == "POST":
+			reply(map[string]any{"id": 1, "title": body["title"]})
 		case r.URL.Path == "/api/projects/3/drawings" && r.Method == "POST":
 			reply(map[string]any{"id": 1})
 		case r.URL.Path == "/api/wiki/pages/5/annotations":
@@ -190,7 +192,8 @@ func TestToolListMatchesTheNodeServer(t *testing.T) {
 		create_wiki_annotation_comment update_wiki_annotation_comment delete_wiki_annotation_comment create_wiki_page
 		update_wiki_page_content update_wiki_page_title move_wiki_page download_wiki_pdf download_wiki_markdown
 		autocomplete_wiki_pages get_version list_milestones create_milestone update_milestone get_milestone_progress
-		add_dependency remove_dependency health_check list_project_members add_project_member get_wiki_sharing update_wiki_sharing`)
+		add_dependency remove_dependency health_check list_project_members add_project_member get_wiki_sharing update_wiki_sharing
+		list_meetings get_meeting create_meeting update_meeting`)
 	have := map[string]bool{}
 	for _, n := range names {
 		have[n] = true
@@ -318,5 +321,18 @@ func TestDownloads(t *testing.T) {
 	r = call(t, h, key, "download_wiki_markdown", map[string]any{"page_id": "5"})
 	if text(r) != "Markdown file: arch.md\n\n# Arch" {
 		t.Fatalf("markdown: %q", text(r))
+	}
+}
+
+func TestCreateMeetingOmitsAttendeesForWholeProject(t *testing.T) {
+	api, h := setup(t)
+	call(t, h, key, "create_meeting", map[string]any{"project_id": "3", "title": "Sync",
+		"starts_at": "2026-11-20T13:30:00-05:00", "ends_at": "2026-11-20T14:00:00-05:00"})
+	req := api.last("/api/projects/3/meetings")
+	if req.Method != http.MethodPost || req.Body["title"] != "Sync" || req.Body["starts_at"] != "2026-11-20T13:30:00-05:00" {
+		t.Fatalf("unexpected request: %+v", req)
+	}
+	if _, ok := req.Body["attendee_ids"]; ok {
+		t.Fatalf("attendee_ids must be omitted so the API adds every member: %+v", req.Body)
 	}
 }
