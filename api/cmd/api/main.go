@@ -554,6 +554,11 @@ func main() {
 			r.Patch("/milestones/{id}", server.HandleUpdateMilestone)
 			r.Delete("/milestones/{id}", server.HandleDeleteMilestone)
 			r.Get("/milestones/{id}/progress", server.HandleGetMilestoneProgress)
+			r.Get("/projects/{id}/meetings", server.HandleListMeetings)
+			r.Post("/projects/{id}/meetings", server.HandleCreateMeeting)
+			r.Get("/meetings/{id}", server.HandleGetMeeting)
+			r.Patch("/meetings/{id}", server.HandleUpdateMeeting)
+			r.Delete("/meetings/{id}", server.HandleDeleteMeeting)
 
 			// Task dependency routes
 			r.Get("/tasks/{taskId}/dependencies", server.HandleListDependencies)
