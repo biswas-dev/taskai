@@ -103,7 +103,7 @@ export default function Sidebar({ onCreateProject, onLogout, isOpen, onClose, is
     return () => {
       delete w.__addProject
     }
-  }, [projects]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projects])
 
   const sprintsPath = selectedProjectId ? `/app/projects/${selectedProjectId}/sprints` : null
   const tagsPath = selectedProjectId ? `/app/projects/${selectedProjectId}/tags` : null
