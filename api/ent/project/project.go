@@ -20,6 +20,8 @@ const (
 	FieldTeamID = "team_id"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
+	// FieldSharedWithTeam holds the string denoting the shared_with_team field in the database.
+	FieldSharedWithTeam = "shared_with_team"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
 	// FieldGithubRepoURL holds the string denoting the github_repo_url field in the database.
@@ -120,6 +122,7 @@ var Columns = []string{
 	FieldOwnerID,
 	FieldTeamID,
 	FieldName,
+	FieldSharedWithTeam,
 	FieldDescription,
 	FieldGithubRepoURL,
 	FieldGithubOwner,
@@ -144,6 +147,8 @@ func ValidColumn(column string) bool {
 var (
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// DefaultSharedWithTeam holds the default value on creation for the "shared_with_team" field.
+	DefaultSharedWithTeam bool
 	// DefaultGithubBranch holds the default value on creation for the "github_branch" field.
 	DefaultGithubBranch string
 	// DefaultGithubSyncEnabled holds the default value on creation for the "github_sync_enabled" field.
@@ -177,6 +182,11 @@ func ByTeamID(opts ...sql.OrderTermOption) OrderOption {
 // ByName orders the results by the name field.
 func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
+}
+
+// BySharedWithTeam orders the results by the shared_with_team field.
+func BySharedWithTeam(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSharedWithTeam, opts...).ToFunc()
 }
 
 // ByDescription orders the results by the description field.

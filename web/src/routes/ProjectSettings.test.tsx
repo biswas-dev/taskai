@@ -180,6 +180,22 @@ describe('ProjectSettings', () => {
       expect(await screen.findByText(/Project moved to Elastio/)).toBeInTheDocument()
     })
 
+    it('opens the project to the whole company and refreshes members', async () => {
+      const user = userEvent.setup()
+      mocks.updateProject.mockResolvedValue({ id: 42, name: 'Test Project', owner_id: 10, team_id: 1, shared_with_team: true, created_at: '', updated_at: '' })
+      renderWithDialogs()
+
+      const toggle = await screen.findByRole('checkbox', { name: /Everyone in Intelliviz has access/ })
+      expect(toggle).not.toBeChecked()
+      const loadsBefore = mocks.getProjectMembers.mock.calls.length
+      await user.click(toggle)
+
+      await waitFor(() => expect(mocks.updateProject).toHaveBeenCalledWith(42, { shared_with_team: true }))
+      expect(await screen.findByText(/Everyone in Intelliviz now has access/)).toBeInTheDocument()
+      expect(toggle).toBeChecked()
+      expect(mocks.getProjectMembers.mock.calls.length).toBeGreaterThan(loadsBefore)
+    })
+
     it('lets a co-owner with the Owner role move the project, listing their own teams', async () => {
       const user = userEvent.setup()
       mocks.getProject.mockResolvedValue({

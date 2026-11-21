@@ -5060,6 +5060,7 @@ type ProjectMutation struct {
 	typ                 string
 	id                  *int64
 	name                *string
+	shared_with_team    *bool
 	description         *string
 	github_repo_url     *string
 	github_owner        *string
@@ -5320,6 +5321,42 @@ func (m *ProjectMutation) OldName(ctx context.Context) (v string, err error) {
 // ResetName resets all changes to the "name" field.
 func (m *ProjectMutation) ResetName() {
 	m.name = nil
+}
+
+// SetSharedWithTeam sets the "shared_with_team" field.
+func (m *ProjectMutation) SetSharedWithTeam(b bool) {
+	m.shared_with_team = &b
+}
+
+// SharedWithTeam returns the value of the "shared_with_team" field in the mutation.
+func (m *ProjectMutation) SharedWithTeam() (r bool, exists bool) {
+	v := m.shared_with_team
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSharedWithTeam returns the old "shared_with_team" field's value of the Project entity.
+// If the Project object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProjectMutation) OldSharedWithTeam(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSharedWithTeam is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSharedWithTeam requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSharedWithTeam: %w", err)
+	}
+	return oldValue.SharedWithTeam, nil
+}
+
+// ResetSharedWithTeam resets all changes to the "shared_with_team" field.
+func (m *ProjectMutation) ResetSharedWithTeam() {
+	m.shared_with_team = nil
 }
 
 // SetDescription sets the "description" field.
@@ -6123,7 +6160,7 @@ func (m *ProjectMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ProjectMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.owner != nil {
 		fields = append(fields, project.FieldOwnerID)
 	}
@@ -6132,6 +6169,9 @@ func (m *ProjectMutation) Fields() []string {
 	}
 	if m.name != nil {
 		fields = append(fields, project.FieldName)
+	}
+	if m.shared_with_team != nil {
+		fields = append(fields, project.FieldSharedWithTeam)
 	}
 	if m.description != nil {
 		fields = append(fields, project.FieldDescription)
@@ -6174,6 +6214,8 @@ func (m *ProjectMutation) Field(name string) (ent.Value, bool) {
 		return m.TeamID()
 	case project.FieldName:
 		return m.Name()
+	case project.FieldSharedWithTeam:
+		return m.SharedWithTeam()
 	case project.FieldDescription:
 		return m.Description()
 	case project.FieldGithubRepoURL:
@@ -6207,6 +6249,8 @@ func (m *ProjectMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldTeamID(ctx)
 	case project.FieldName:
 		return m.OldName(ctx)
+	case project.FieldSharedWithTeam:
+		return m.OldSharedWithTeam(ctx)
 	case project.FieldDescription:
 		return m.OldDescription(ctx)
 	case project.FieldGithubRepoURL:
@@ -6254,6 +6298,13 @@ func (m *ProjectMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetName(v)
+		return nil
+	case project.FieldSharedWithTeam:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSharedWithTeam(v)
 		return nil
 	case project.FieldDescription:
 		v, ok := value.(string)
@@ -6417,6 +6468,9 @@ func (m *ProjectMutation) ResetField(name string) error {
 		return nil
 	case project.FieldName:
 		m.ResetName()
+		return nil
+	case project.FieldSharedWithTeam:
+		m.ResetSharedWithTeam()
 		return nil
 	case project.FieldDescription:
 		m.ResetDescription()

@@ -70,6 +70,11 @@ func Name(v string) predicate.Project {
 	return predicate.Project(sql.FieldEQ(FieldName, v))
 }
 
+// SharedWithTeam applies equality check predicate on the "shared_with_team" field. It's identical to SharedWithTeamEQ.
+func SharedWithTeam(v bool) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldSharedWithTeam, v))
+}
+
 // Description applies equality check predicate on the "description" field. It's identical to DescriptionEQ.
 func Description(v string) predicate.Project {
 	return predicate.Project(sql.FieldEQ(FieldDescription, v))
@@ -228,6 +233,16 @@ func NameEqualFold(v string) predicate.Project {
 // NameContainsFold applies the ContainsFold predicate on the "name" field.
 func NameContainsFold(v string) predicate.Project {
 	return predicate.Project(sql.FieldContainsFold(FieldName, v))
+}
+
+// SharedWithTeamEQ applies the EQ predicate on the "shared_with_team" field.
+func SharedWithTeamEQ(v bool) predicate.Project {
+	return predicate.Project(sql.FieldEQ(FieldSharedWithTeam, v))
+}
+
+// SharedWithTeamNEQ applies the NEQ predicate on the "shared_with_team" field.
+func SharedWithTeamNEQ(v bool) predicate.Project {
+	return predicate.Project(sql.FieldNEQ(FieldSharedWithTeam, v))
 }
 
 // DescriptionEQ applies the EQ predicate on the "description" field.

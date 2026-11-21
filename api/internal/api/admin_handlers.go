@@ -821,6 +821,8 @@ func (s *Server) HandleAdminResolveTeamInvitation(w http.ResponseWriter, r *http
 		return
 	}
 
+	s.syncCompanyAccess(ctx, entInv.TeamID)
+
 	s.logger.Info("Admin force-accepted team invitation", zap.Int64("admin_id", adminID), zap.Int64("inv_id", invID), zap.Int64("invitee_id", inviteeID))
 	respondJSON(w, http.StatusOK, map[string]string{"message": "Invitation accepted"})
 }

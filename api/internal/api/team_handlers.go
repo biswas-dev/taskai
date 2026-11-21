@@ -284,6 +284,8 @@ func (s *Server) HandleInviteTeamMember(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		s.syncCompanyAccess(ctx, teamID)
+
 		s.logger.Info("Team member auto-added",
 			zap.Int64("invitation_id", newInv.ID),
 			zap.Int64("team_id", teamID),
@@ -520,6 +522,8 @@ func (s *Server) HandleAcceptInvitation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	s.syncCompanyAccess(ctx, entInv.TeamID)
+
 	s.logger.Info("Invitation accepted",
 		zap.Int64("invitation_id", invitationID),
 		zap.Int64("user_id", userID),
@@ -645,6 +649,8 @@ func (s *Server) HandleRemoveTeamMember(w http.ResponseWriter, r *http.Request) 
 		respondError(w, http.StatusInternalServerError, "failed to remove member", "internal_error")
 		return
 	}
+
+	s.revokeCompanyAccess(ctx, teamID, memberUserID)
 
 	s.logger.Info("Team member removed",
 		zap.Int64("member_id", memberID),
@@ -963,6 +969,8 @@ func (s *Server) HandleAddTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.syncCompanyAccess(ctx, teamID)
+
 	s.logger.Info("Team member added directly",
 		zap.Int64("team_id", teamID),
 		zap.Int64("added_user_id", req.UserID),
@@ -1217,6 +1225,8 @@ func (s *Server) HandleAcceptInvitationByToken(w http.ResponseWriter, r *http.Re
 		respondError(w, http.StatusInternalServerError, "failed to process invitation", "internal_error")
 		return
 	}
+
+	s.syncCompanyAccess(ctx, entInv.TeamID)
 
 	s.logger.Info("Invitation accepted via token",
 		zap.Int64("invitation_id", entInv.ID),
