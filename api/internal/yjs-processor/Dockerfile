@@ -11,6 +11,8 @@ RUN npm install --production
 # Copy application code
 COPY index.js ./
 
+USER node
+
 # Expose port
 EXPOSE 3001
 
