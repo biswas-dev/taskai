@@ -1,0 +1,11 @@
+<task-notification>
+<task-id>bzcfi5imk</task-id>
+<tool-use-id>toolu_016crDb1gH2q3y2LSs33Wae6</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-anshumanbiswas-play-taskai/62404199-9199-4ead-b975-54dc5b287372/tasks/bzcfi5imk.output</output-file>
+<status>failed</status>
+<summary>Background command "until curl -s https://staging.taskai.cc/api/version | grep -q d552184; do sleep 20; done; curl -s https://staging.taskai.cc/api/version | head -c 300; echo; curl -s -o /dev/null -w "meetings unauth: %{http_code}\n" https://staging.taskai.cc/api/projects/1/meetings; curl -s https://staging.taskai.cc/api/openapi | grep -c meetings" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+Btw, Elastio should just have Elastui BlueStack, Elastio General and UIv3, Also shouldn't the team and all settings be per company and not per project?
