@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -46,6 +47,8 @@ func TestCompanyAccess(t *testing.T) {
 
 	// A guest outside the company is an explicit exception on the private project.
 	ts.AddProjectMember(t, private.ID, guest, owner, "viewer")
+	// A hand-granted role that predates joining the company is kept as is.
+	ts.AddProjectMember(t, shared.ID, joiner, owner, "viewer")
 
 	// Joining the company grants the shared project only.
 	rec, req = ts.MakeAuthRequest(t, http.MethodPost, "/api/teams/"+tid+"/members", map[string]interface{}{"user_id": joiner}, owner, map[string]string{"teamId": tid})
@@ -59,7 +62,7 @@ func TestCompanyAccess(t *testing.T) {
 		want    string
 	}{
 		{"admin gets editor on shared project", shared.ID, admin, "editor"},
-		{"joiner gets member on shared project", shared.ID, joiner, "member"},
+		{"joiner keeps the hand-granted role", shared.ID, joiner, "viewer"},
 		{"private project stays closed to admin", private.ID, admin, ""},
 		{"private project stays closed to joiner", private.ID, joiner, ""},
 		{"guest keeps explicit access", private.ID, guest, "viewer"},
@@ -87,6 +90,9 @@ func TestCompanyAccess(t *testing.T) {
 		if got := projectRole(t, ts, private.ID, joiner); got != "member" {
 			t.Errorf("joiner role = %q, want member", got)
 		}
+		if got := projectRole(t, ts, private.ID, guest); got != "viewer" {
+			t.Errorf("guest role = %q, want viewer", got)
+		}
 	})
 
 	t.Run("leaving the company removes shared access", func(t *testing.T) {
@@ -98,11 +104,37 @@ func TestCompanyAccess(t *testing.T) {
 		rec, req := ts.MakeAuthRequest(t, http.MethodDelete, "/api/teams/"+tid+"/members/"+mid, nil, owner, map[string]string{"teamId": tid, "memberId": mid})
 		ts.HandleRemoveTeamMember(rec, req)
 		AssertStatusCode(t, rec.Code, http.StatusOK)
-		if got := projectRole(t, ts, shared.ID, joiner); got != "" {
-			t.Errorf("joiner still has %q on shared project", got)
+		if got := projectRole(t, ts, private.ID, joiner); got != "" {
+			t.Errorf("joiner still has company access %q", got)
+		}
+		if got := projectRole(t, ts, shared.ID, joiner); got != "viewer" {
+			t.Errorf("hand-granted role = %q, want viewer kept", got)
 		}
 		if got := projectRole(t, ts, shared.ID, owner); got != "owner" {
 			t.Errorf("owner lost access: %q", got)
 		}
 	})
+}
+
+func TestCompanyAccessOnInviteSignup(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	owner := ts.CreateTestUser(t, "ceo@example.com", "password123")
+	team := createTestTeamForUser(t, ts, owner)
+	rec, req := ts.MakeAuthRequest(t, http.MethodPost, "/api/projects", map[string]interface{}{"name": "Engineering", "team_id": team}, owner, nil)
+	ts.HandleCreateProject(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusCreated)
+	var p Project
+	DecodeJSON(t, rec, &p)
+
+	if _, err := ts.DB.Exec(`INSERT INTO team_invitations (team_id, inviter_id, invitee_email, invite_code) VALUES (?, ?, 'new@example.com', 'code-1')`, team, owner); err != nil {
+		t.Fatal(err)
+	}
+	newUser := ts.CreateTestUser(t, "new@example.com", "password123")
+	ts.acceptPendingTeamInvitation(context.Background(), "code-1", newUser)
+
+	if got := projectRole(t, ts, p.ID, newUser); got != "member" {
+		t.Errorf("role after invite signup = %q, want member", got)
+	}
 }

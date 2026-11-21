@@ -584,6 +584,7 @@ export interface CreateProjectRequest {
   name: string
   description?: string
   team_id?: number
+  shared_with_team?: boolean
 }
 
 export interface UpdateProjectRequest {

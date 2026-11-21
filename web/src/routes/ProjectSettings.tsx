@@ -219,7 +219,9 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
         <div className="space-y-2">
           <p>This changes who can be given access to the project.</p>
           <ul className="list-disc pl-5 space-y-1">
-            <li>Only members of <strong className="text-dark-text-primary">{target.name}</strong> can be invited from now on.</li>
+            {project.shared_with_team
+              ? <li>Everyone in <strong className="text-dark-text-primary">{target.name}</strong> gets access, because the project is open to its company.</li>
+              : <li>Only members of <strong className="text-dark-text-primary">{target.name}</strong> can be invited from now on.</li>}
             <li>People in {currentTeam} who are not already on the project can no longer be invited.</li>
             <li>Everyone who is already a member keeps their access.</li>
           </ul>
@@ -234,7 +236,10 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     try {
       const updated = await apiClient.updateProject(projectId, { team_id: teamId })
       setProject(updated)
-      setMemberSuccess(`Project moved to ${target.name}. Existing members keep their access; new invites are limited to ${target.name}.`)
+      await loadMembers()
+      setMemberSuccess(updated.shared_with_team
+        ? `Project moved to ${target.name}. Everyone in ${target.name} now has access; existing members keep theirs.`
+        : `Project moved to ${target.name}. Existing members keep their access; new invites are limited to ${target.name}.`)
     } catch (error: unknown) {
       setMemberError(error instanceof Error ? error.message : 'Failed to change the project team')
     } finally {

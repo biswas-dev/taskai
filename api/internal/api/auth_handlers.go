@@ -544,6 +544,8 @@ func (s *Server) acceptPendingTeamInvitation(ctx context.Context, inviteCode str
 		return
 	}
 
+	s.syncCompanyAccess(ctx, entInv.TeamID)
+
 	s.logger.Info("Team invitation auto-accepted on signup",
 		zap.Int64("invitation_id", entInv.ID),
 		zap.Int64("team_id", entInv.TeamID),
