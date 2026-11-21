@@ -16,27 +16,30 @@ import (
 )
 
 type Project struct {
-	ID          int64     `json:"id"`
-	OwnerID     int64     `json:"owner_id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description,omitempty"`
-	TeamID      *int64    `json:"team_id,omitempty"`
-	TeamName    *string   `json:"team_name,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int64   `json:"id"`
+	OwnerID     int64   `json:"owner_id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	TeamID      *int64  `json:"team_id,omitempty"`
+	TeamName    *string `json:"team_name,omitempty"`
+	// SharedWithTeam opens the project to every active member of its team.
+	SharedWithTeam bool      `json:"shared_with_team"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // toAPIProject converts an ent project to its API representation. The team
 // name is only populated when the team edge was eagerly loaded.
 func toAPIProject(ep *ent.Project) Project {
 	p := Project{
-		ID:          ep.ID,
-		OwnerID:     ep.OwnerID,
-		Name:        ep.Name,
-		Description: ep.Description,
-		TeamID:      ep.TeamID,
-		CreatedAt:   ep.CreatedAt,
-		UpdatedAt:   ep.UpdatedAt,
+		ID:             ep.ID,
+		OwnerID:        ep.OwnerID,
+		Name:           ep.Name,
+		Description:    ep.Description,
+		TeamID:         ep.TeamID,
+		SharedWithTeam: ep.SharedWithTeam,
+		CreatedAt:      ep.CreatedAt,
+		UpdatedAt:      ep.UpdatedAt,
 	}
 	if ep.Edges.Team != nil {
 		name := ep.Edges.Team.Name
@@ -49,12 +52,15 @@ type CreateProjectRequest struct {
 	Name        string  `json:"name"`
 	Description *string `json:"description,omitempty"`
 	TeamID      *int64  `json:"team_id,omitempty"`
+	// SharedWithTeam defaults to true: new projects are open to the whole company.
+	SharedWithTeam *bool `json:"shared_with_team,omitempty"`
 }
 
 type UpdateProjectRequest struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-	TeamID      *int64  `json:"team_id,omitempty"`
+	Name           *string `json:"name,omitempty"`
+	Description    *string `json:"description,omitempty"`
+	TeamID         *int64  `json:"team_id,omitempty"`
+	SharedWithTeam *bool   `json:"shared_with_team,omitempty"`
 }
 
 // HandleListProjects returns all projects the authenticated user has access to
@@ -174,6 +180,7 @@ func (s *Server) HandleCreateProject(w http.ResponseWriter, r *http.Request) {
 		SetTeamID(teamID).
 		SetName(req.Name).
 		SetNillableDescription(req.Description).
+		SetSharedWithTeam(req.SharedWithTeam == nil || *req.SharedWithTeam).
 		Save(ctx)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to create project", "internal_error")
@@ -223,6 +230,8 @@ func (s *Server) HandleCreateProject(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to create project", "internal_error")
 		return
 	}
+
+	s.syncCompanyAccess(ctx, teamID)
 
 	// Convert to API project
 	p := toAPIProject(newProject)
@@ -279,6 +288,10 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	// is reserved for the project's owners: anyone with the Owner role, plus
 	// the recorded owner (projects.owner_id) even if their role was lowered.
 	// They may only move it into a team they belong to (any role, active).
+	if req.SharedWithTeam != nil && !isProjectOwner && projectMember.Role != "owner" {
+		respondError(w, http.StatusForbidden, "only a project owner can change who the project is shared with", "forbidden")
+		return
+	}
 	if req.TeamID != nil {
 		if !isProjectOwner && projectMember.Role != "owner" {
 			respondError(w, http.StatusForbidden, "only a project owner can move this project to another team", "forbidden")
@@ -321,6 +334,10 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		updateBuilder.SetTeamID(*req.TeamID)
 	}
 
+	if req.SharedWithTeam != nil {
+		updateBuilder.SetSharedWithTeam(*req.SharedWithTeam)
+	}
+
 	if req.Name != nil {
 		updateBuilder.SetName(*req.Name)
 	}
@@ -337,6 +354,11 @@ func (s *Server) HandleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		}
 		respondError(w, http.StatusInternalServerError, "failed to update project", "internal_error")
 		return
+	}
+
+	// Sharing it or moving it to another company opens it to that company's members.
+	if (req.TeamID != nil || req.SharedWithTeam != nil) && updatedProject.TeamID != nil {
+		s.syncCompanyAccess(ctx, *updatedProject.TeamID)
 	}
 
 	// Convert to API project

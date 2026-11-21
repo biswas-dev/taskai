@@ -21,6 +21,8 @@ export default function ProjectModal({
   const [error, setError] = useState<string | null>(null)
   const [teams, setTeams] = useState<TeamSummary[]>([])
   const [teamId, setTeamId] = useState<number | null>(null)
+  const [shared, setShared] = useState(true)
+  const teamName = teams.find((t) => t.id === teamId)?.name
 
   // People in several teams choose where the project lives; everyone else
   // gets their primary team without seeing a picker.
@@ -58,11 +60,13 @@ export default function ProjectModal({
         name: name.trim(),
         description: description.trim() || undefined,
         ...(teams.length > 1 && teamId ? { team_id: teamId } : {}),
+        shared_with_team: shared,
       })
       onProjectCreated(project)
       // Reset form
       setName('')
       setDescription('')
+      setShared(true)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create project')
@@ -168,7 +172,7 @@ export default function ProjectModal({
               {teams.length > 1 && (
                 <div className="w-full">
                   <label htmlFor="project-team" className="block text-sm font-medium text-dark-text-primary mb-1">
-                    Team
+                    Company
                   </label>
                   <Select
                     id="project-team"
@@ -176,15 +180,28 @@ export default function ProjectModal({
                     value={teamId ?? null}
                     onChange={setTeamId}
                     disabled={loading}
-                    placeholder="Select a team"
-                    searchPlaceholder="Search your teams…"
+                    placeholder="Select a company"
+                    searchPlaceholder="Search your companies…"
                     options={teams.map((t) => ({ value: t.id, label: t.name }))}
                   />
-                  <p className="mt-1 text-xs text-dark-text-tertiary">
-                    Members of this team are suggested first when you share the project.
-                  </p>
                 </div>
               )}
+
+              <label className="flex items-start gap-2 text-sm text-dark-text-secondary">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={shared}
+                  onChange={(e) => setShared(e.target.checked)}
+                  disabled={loading}
+                />
+                <span>
+                  Everyone in {teamName ?? 'your company'} has access
+                  <span className="block text-xs text-dark-text-tertiary">
+                    Untick to keep it private and invite people one by one.
+                  </span>
+                </span>
+              </label>
             </div>
 
             {/* Footer */}

@@ -374,6 +374,9 @@ func (s *Server) HandleMoveTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.revokeCompanyAccess(ctx, teamID, member.UserID)
+	s.syncCompanyAccess(ctx, req.TargetTeamID)
+
 	s.logger.Info("Team member moved",
 		zap.Int64("user_id", member.UserID),
 		zap.Int64("from_team_id", teamID),
@@ -427,6 +430,8 @@ func (s *Server) HandleLeaveTeam(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to leave team", "internal_error")
 		return
 	}
+
+	s.revokeCompanyAccess(ctx, teamID, userID)
 
 	s.logger.Info("User left team", zap.Int64("team_id", teamID), zap.Int64("user_id", userID))
 	respondJSON(w, http.StatusOK, map[string]string{"message": "left team"})

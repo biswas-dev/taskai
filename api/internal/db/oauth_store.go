@@ -272,6 +272,10 @@ func (s *OAuthStore) acceptPendingTeamInvitation(ctx context.Context, inviteCode
 		return
 	}
 
+	if err := s.db.SyncCompanyAccess(ctx, entInv.TeamID); err != nil {
+		s.logger.Error("oauth_store: acceptPendingTeamInvitation: sync company access failed", zap.Error(err))
+	}
+
 	s.logger.Info("OAuth signup: team invitation auto-accepted",
 		zap.Int64("invitation_id", entInv.ID),
 		zap.Int64("team_id", entInv.TeamID),

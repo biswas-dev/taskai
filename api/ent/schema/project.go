@@ -21,6 +21,8 @@ func (Project) Fields() []ent.Field {
 		field.Int64("owner_id"),
 		field.Int64("team_id").Optional().Nillable(),
 		field.String("name").NotEmpty(),
+		// Shared projects are open to every active member of their team.
+		field.Bool("shared_with_team").Default(false),
 		field.String("description").Optional().Nillable(),
 		field.String("github_repo_url").Optional().Nillable(),
 		field.String("github_owner").Optional().Nillable(),

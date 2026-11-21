@@ -75,6 +75,7 @@ describe('ProjectModal', () => {
       expect(mockedCreateProject).toHaveBeenCalledWith({
         name: 'Test Project',
         description: 'A test description',
+        shared_with_team: true,
       })
     })
   })
@@ -184,11 +185,12 @@ describe('ProjectModal', () => {
       expect(mockedCreateProject).toHaveBeenCalledWith({
         name: 'No Desc',
         description: undefined,
+        shared_with_team: true,
       })
     })
   })
 
-  it('lets people in several teams pick the project team', async () => {
+  it('lets people in several companies pick one and keep the project private', async () => {
     const user = userEvent.setup()
     vi.mocked(api.listTeams).mockResolvedValueOnce([
       { id: 1, name: 'Elastio', owner_id: 1, role: 'owner', is_owner: true, is_home: true, member_count: 5, project_count: 3 },
@@ -198,20 +200,21 @@ describe('ProjectModal', () => {
 
     render(<ProjectModal {...defaultProps} />)
 
-    const teamSelect = await screen.findByLabelText('Team')
+    const teamSelect = await screen.findByLabelText('Company')
     await waitFor(() => expect(teamSelect).toHaveTextContent('Elastio'))
     await pickOption(user, teamSelect, 'Intelliviz')
+    await user.click(screen.getByRole('checkbox', { name: /Everyone in Intelliviz has access/ }))
     await user.type(screen.getByLabelText(/project name/i), 'Dashboard')
     await user.click(screen.getByRole('button', { name: /create project/i }))
 
     await waitFor(() => {
-      expect(mockedCreateProject).toHaveBeenCalledWith({ name: 'Dashboard', description: undefined, team_id: 2 })
+      expect(mockedCreateProject).toHaveBeenCalledWith({ name: 'Dashboard', description: undefined, team_id: 2, shared_with_team: false })
     })
   })
 
   it('hides the team picker for single-team users', async () => {
     render(<ProjectModal {...defaultProps} />)
     await waitFor(() => expect(api.listTeams).toHaveBeenCalled())
-    expect(screen.queryByLabelText('Team')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Company')).not.toBeInTheDocument()
   })
 })

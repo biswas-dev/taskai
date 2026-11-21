@@ -3132,6 +3132,10 @@ components:
           type: integer
           format: int64
           description: Team to create the project in (caller must be a member). Defaults to the caller's primary team.
+        shared_with_team:
+          type: boolean
+          default: true
+          description: Open the project to every active member of its team. Defaults to true.
 
     UpdateProjectRequest:
       type: object
@@ -3150,7 +3154,13 @@ components:
             Move the project to another team. Any project owner may do this (a member with
             the Owner role, or the recorded owner_id), and only into a team they are an
             active member of (any role); anyone else gets 403. After the move, only members of the new team can be
-            invited; existing project members keep their access.
+            invited; existing project members keep their access. If the project is shared, every member of the
+            new team gains access.
+        shared_with_team:
+          type: boolean
+          description: >-
+            Open the project to every active member of its team (project owners only). Turning it off keeps
+            existing member rows; remove people individually.
 
     CreateTaskRequest:
       type: object
@@ -3499,6 +3509,9 @@ components:
           description: Team the project belongs to; decides which team's members are offered first when sharing
         team_name:
           type: ["string", "null"]
+        shared_with_team:
+          type: boolean
+          description: Every active member of the project's team (company) has access. Project member rows remain the per-project exceptions.
         created_at:
           type: string
           format: date-time
