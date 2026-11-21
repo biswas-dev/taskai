@@ -242,6 +242,23 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
     }
   }
 
+  const handleToggleShared = async (shared: boolean) => {
+    setMemberError('')
+    setMemberSuccess('')
+    setIsChangingTeam(true)
+    try {
+      setProject(await apiClient.updateProject(projectId, { shared_with_team: shared }))
+      await loadMembers()
+      setMemberSuccess(shared
+        ? `Everyone in ${projectTeamName ?? 'the company'} now has access.`
+        : 'New company members will no longer be added. Current members keep their access.')
+    } catch (error: unknown) {
+      setMemberError(error instanceof Error ? error.message : 'Failed to change sharing')
+    } finally {
+      setIsChangingTeam(false)
+    }
+  }
+
   const loadGitHubSettings = async () => {
     try {
       const data = await apiClient.getProjectGitHub(projectId)
@@ -773,8 +790,17 @@ export default function ProjectSettings({ embedded, projectIdOverride }: Project
               {/* Project team */}
               <div className="mb-4 p-4 bg-dark-bg-secondary border border-dark-border-subtle rounded-lg flex items-center justify-between gap-3 flex-wrap">
                 <div>
-                  <p className="text-sm text-dark-text-secondary">Team</p>
+                  <p className="text-sm text-dark-text-secondary">Company</p>
                   <p className="font-medium text-dark-text-primary">{projectTeamName ?? 'Not assigned'}</p>
+                  <label className="mt-2 flex items-center gap-2 text-sm text-dark-text-secondary">
+                    <input
+                      type="checkbox"
+                      checked={project?.shared_with_team ?? false}
+                      disabled={!isProjectOwner || isChangingTeam}
+                      onChange={e => void handleToggleShared(e.target.checked)}
+                    />
+                    Everyone in {projectTeamName ?? 'the company'} has access
+                  </label>
                 </div>
                 {isProjectOwner && myTeams.length > 1 && (
                   <div className="flex items-center gap-2">

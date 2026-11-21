@@ -189,20 +189,24 @@ func init() {
 	projectDescName := projectFields[3].Descriptor()
 	// project.NameValidator is a validator for the "name" field. It is called by the builders before save.
 	project.NameValidator = projectDescName.Validators[0].(func(string) error)
+	// projectDescSharedWithTeam is the schema descriptor for shared_with_team field.
+	projectDescSharedWithTeam := projectFields[4].Descriptor()
+	// project.DefaultSharedWithTeam holds the default value on creation for the shared_with_team field.
+	project.DefaultSharedWithTeam = projectDescSharedWithTeam.Default.(bool)
 	// projectDescGithubBranch is the schema descriptor for github_branch field.
-	projectDescGithubBranch := projectFields[8].Descriptor()
+	projectDescGithubBranch := projectFields[9].Descriptor()
 	// project.DefaultGithubBranch holds the default value on creation for the github_branch field.
 	project.DefaultGithubBranch = projectDescGithubBranch.Default.(string)
 	// projectDescGithubSyncEnabled is the schema descriptor for github_sync_enabled field.
-	projectDescGithubSyncEnabled := projectFields[9].Descriptor()
+	projectDescGithubSyncEnabled := projectFields[10].Descriptor()
 	// project.DefaultGithubSyncEnabled holds the default value on creation for the github_sync_enabled field.
 	project.DefaultGithubSyncEnabled = projectDescGithubSyncEnabled.Default.(bool)
 	// projectDescCreatedAt is the schema descriptor for created_at field.
-	projectDescCreatedAt := projectFields[11].Descriptor()
+	projectDescCreatedAt := projectFields[12].Descriptor()
 	// project.DefaultCreatedAt holds the default value on creation for the created_at field.
 	project.DefaultCreatedAt = projectDescCreatedAt.Default.(func() time.Time)
 	// projectDescUpdatedAt is the schema descriptor for updated_at field.
-	projectDescUpdatedAt := projectFields[12].Descriptor()
+	projectDescUpdatedAt := projectFields[13].Descriptor()
 	// project.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	project.DefaultUpdatedAt = projectDescUpdatedAt.Default.(func() time.Time)
 	// project.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

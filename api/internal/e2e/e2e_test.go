@@ -889,7 +889,7 @@ func TestTeamProjectAccess(t *testing.T) {
 		t.Errorf("Expected 0 pending invitations (user was auto-accepted), got %d", len(invitations))
 	}
 
-	// User2 should NOT see the project yet — team membership alone grants no project access
+	// Joining the company opens its shared projects, including ones created earlier
 	listProjectsResp, err := ts.DoRequest("GET", "/api/projects", nil, user2Token)
 	if err != nil {
 		t.Fatalf("List projects failed: %v", err)
@@ -899,14 +899,11 @@ func TestTeamProjectAccess(t *testing.T) {
 		t.Fatalf("Decode projects failed: %v", err)
 	}
 
-	for _, p := range projects {
-		if int64(p["id"].(float64)) == projectID {
-			t.Errorf("User2 should NOT see the project before being explicitly added (found project ID %d)", projectID)
-			break
-		}
+	if !containsProject(projects, projectID) {
+		t.Errorf("User2 should see shared project %d after joining the team", projectID)
 	}
 
-	// User1 creates a new project after user2 joined — user2 should NOT see this either
+	// A project created after user2 joined is shared with them too
 	newProject, err := ts.CreateProject(user1Token, "New Project After Join", "Created after user2 joined team")
 	if err != nil {
 		t.Fatalf("Create new project failed: %v", err)
@@ -922,10 +919,16 @@ func TestTeamProjectAccess(t *testing.T) {
 		t.Fatalf("Decode projects failed: %v", err)
 	}
 
-	for _, p := range projects2 {
-		if int64(p["id"].(float64)) == newProjectID {
-			t.Errorf("User2 should NOT see the new project before being explicitly added (found project ID %d)", newProjectID)
-			break
+	if !containsProject(projects2, newProjectID) {
+		t.Errorf("User2 should see new shared project %d", newProjectID)
+	}
+}
+
+func containsProject(projects []map[string]interface{}, id int64) bool {
+	for _, p := range projects {
+		if int64(p["id"].(float64)) == id {
+			return true
 		}
 	}
+	return false
 }

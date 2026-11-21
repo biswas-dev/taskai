@@ -84,6 +84,20 @@ func (_u *ProjectUpdate) SetNillableName(v *string) *ProjectUpdate {
 	return _u
 }
 
+// SetSharedWithTeam sets the "shared_with_team" field.
+func (_u *ProjectUpdate) SetSharedWithTeam(v bool) *ProjectUpdate {
+	_u.mutation.SetSharedWithTeam(v)
+	return _u
+}
+
+// SetNillableSharedWithTeam sets the "shared_with_team" field if the given value is not nil.
+func (_u *ProjectUpdate) SetNillableSharedWithTeam(v *bool) *ProjectUpdate {
+	if v != nil {
+		_u.SetSharedWithTeam(*v)
+	}
+	return _u
+}
+
 // SetDescription sets the "description" field.
 func (_u *ProjectUpdate) SetDescription(v string) *ProjectUpdate {
 	_u.mutation.SetDescription(v)
@@ -525,6 +539,9 @@ func (_u *ProjectUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(project.FieldName, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.SharedWithTeam(); ok {
+		_spec.SetField(project.FieldSharedWithTeam, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(project.FieldDescription, field.TypeString, value)
 	}
@@ -956,6 +973,20 @@ func (_u *ProjectUpdateOne) SetName(v string) *ProjectUpdateOne {
 func (_u *ProjectUpdateOne) SetNillableName(v *string) *ProjectUpdateOne {
 	if v != nil {
 		_u.SetName(*v)
+	}
+	return _u
+}
+
+// SetSharedWithTeam sets the "shared_with_team" field.
+func (_u *ProjectUpdateOne) SetSharedWithTeam(v bool) *ProjectUpdateOne {
+	_u.mutation.SetSharedWithTeam(v)
+	return _u
+}
+
+// SetNillableSharedWithTeam sets the "shared_with_team" field if the given value is not nil.
+func (_u *ProjectUpdateOne) SetNillableSharedWithTeam(v *bool) *ProjectUpdateOne {
+	if v != nil {
+		_u.SetSharedWithTeam(*v)
 	}
 	return _u
 }
@@ -1430,6 +1461,9 @@ func (_u *ProjectUpdateOne) sqlSave(ctx context.Context) (_node *Project, err er
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(project.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SharedWithTeam(); ok {
+		_spec.SetField(project.FieldSharedWithTeam, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(project.FieldDescription, field.TypeString, value)

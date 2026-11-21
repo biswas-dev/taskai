@@ -25,6 +25,8 @@ type Project struct {
 	TeamID *int64 `json:"team_id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
+	// SharedWithTeam holds the value of the "shared_with_team" field.
+	SharedWithTeam bool `json:"shared_with_team,omitempty"`
 	// Description holds the value of the "description" field.
 	Description *string `json:"description,omitempty"`
 	// GithubRepoURL holds the value of the "github_repo_url" field.
@@ -153,7 +155,7 @@ func (*Project) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case project.FieldGithubSyncEnabled:
+		case project.FieldSharedWithTeam, project.FieldGithubSyncEnabled:
 			values[i] = new(sql.NullBool)
 		case project.FieldID, project.FieldOwnerID, project.FieldTeamID:
 			values[i] = new(sql.NullInt64)
@@ -200,6 +202,12 @@ func (_m *Project) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
 				_m.Name = value.String
+			}
+		case project.FieldSharedWithTeam:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field shared_with_team", values[i])
+			} else if value.Valid {
+				_m.SharedWithTeam = value.Bool
 			}
 		case project.FieldDescription:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -346,6 +354,9 @@ func (_m *Project) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)
+	builder.WriteString(", ")
+	builder.WriteString("shared_with_team=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SharedWithTeam))
 	builder.WriteString(", ")
 	if v := _m.Description; v != nil {
 		builder.WriteString("description=")

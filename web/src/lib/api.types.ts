@@ -1267,6 +1267,11 @@ export interface components {
              * @description Team to create the project in (caller must be a member). Defaults to the caller's primary team.
              */
             team_id?: number;
+            /**
+             * @description Open the project to every active member of its team. Defaults to true.
+             * @default true
+             */
+            shared_with_team: boolean;
         };
         UpdateProjectRequest: {
             /** @example Updated Project Name */
@@ -1275,9 +1280,11 @@ export interface components {
             description?: string;
             /**
              * Format: int64
-             * @description Move the project to another team. Any project owner may do this (a member with the Owner role, or the recorded owner_id), and only into a team they are an active member of (any role); anyone else gets 403. After the move, only members of the new team can be invited; existing project members keep their access.
+             * @description Move the project to another team. Any project owner may do this (a member with the Owner role, or the recorded owner_id), and only into a team they are an active member of (any role); anyone else gets 403. After the move, only members of the new team can be invited; existing project members keep their access. If the project is shared, every member of the new team gains access.
              */
             team_id?: number;
+            /** @description Open the project to every active member of its team (project owners only). Turning it off keeps existing member rows; remove people individually. */
+            shared_with_team?: boolean;
         };
         CreateTaskRequest: {
             /** @example Implement feature */
@@ -1511,6 +1518,8 @@ export interface components {
              */
             team_id?: number | null;
             team_name?: string | null;
+            /** @description Every active member of the project's team (company) has access. Project member rows remain the per-project exceptions. */
+            shared_with_team?: boolean;
             /** Format: date-time */
             created_at?: string;
             /** Format: date-time */

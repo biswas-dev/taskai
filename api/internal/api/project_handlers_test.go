@@ -720,7 +720,8 @@ func TestHandleCreateProject_NoTeam(t *testing.T) {
 	AssertError(t, rec, http.StatusInternalServerError, "failed to get user team", "internal_error")
 }
 
-func TestHandleCreateProject_DoesNotAddTeamMembers(t *testing.T) {
+// A private project (shared_with_team=false) keeps explicit-only access.
+func TestHandleCreateProject_PrivateDoesNotAddTeamMembers(t *testing.T) {
 	ts := NewTestServer(t)
 	defer ts.Close()
 
@@ -738,7 +739,8 @@ func TestHandleCreateProject_DoesNotAddTeamMembers(t *testing.T) {
 		t.Fatalf("Failed to add team member: %v", err)
 	}
 
-	body := CreateProjectRequest{Name: "Team Project"}
+	private := false
+	body := CreateProjectRequest{Name: "Team Project", SharedWithTeam: &private}
 	rec, req := ts.MakeAuthRequest(t, http.MethodPost, "/api/projects", body, ownerID, nil)
 	ts.HandleCreateProject(rec, req)
 

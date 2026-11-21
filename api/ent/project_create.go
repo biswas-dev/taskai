@@ -54,6 +54,20 @@ func (_c *ProjectCreate) SetName(v string) *ProjectCreate {
 	return _c
 }
 
+// SetSharedWithTeam sets the "shared_with_team" field.
+func (_c *ProjectCreate) SetSharedWithTeam(v bool) *ProjectCreate {
+	_c.mutation.SetSharedWithTeam(v)
+	return _c
+}
+
+// SetNillableSharedWithTeam sets the "shared_with_team" field if the given value is not nil.
+func (_c *ProjectCreate) SetNillableSharedWithTeam(v *bool) *ProjectCreate {
+	if v != nil {
+		_c.SetSharedWithTeam(*v)
+	}
+	return _c
+}
+
 // SetDescription sets the "description" field.
 func (_c *ProjectCreate) SetDescription(v string) *ProjectCreate {
 	_c.mutation.SetDescription(v)
@@ -321,6 +335,10 @@ func (_c *ProjectCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *ProjectCreate) defaults() {
+	if _, ok := _c.mutation.SharedWithTeam(); !ok {
+		v := project.DefaultSharedWithTeam
+		_c.mutation.SetSharedWithTeam(v)
+	}
 	if _, ok := _c.mutation.GithubBranch(); !ok {
 		v := project.DefaultGithubBranch
 		_c.mutation.SetGithubBranch(v)
@@ -351,6 +369,9 @@ func (_c *ProjectCreate) check() error {
 		if err := project.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "Project.name": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.SharedWithTeam(); !ok {
+		return &ValidationError{Name: "shared_with_team", err: errors.New(`ent: missing required field "Project.shared_with_team"`)}
 	}
 	if _, ok := _c.mutation.GithubBranch(); !ok {
 		return &ValidationError{Name: "github_branch", err: errors.New(`ent: missing required field "Project.github_branch"`)}
@@ -402,6 +423,10 @@ func (_c *ProjectCreate) createSpec() (*Project, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(project.FieldName, field.TypeString, value)
 		_node.Name = value
+	}
+	if value, ok := _c.mutation.SharedWithTeam(); ok {
+		_spec.SetField(project.FieldSharedWithTeam, field.TypeBool, value)
+		_node.SharedWithTeam = value
 	}
 	if value, ok := _c.mutation.Description(); ok {
 		_spec.SetField(project.FieldDescription, field.TypeString, value)

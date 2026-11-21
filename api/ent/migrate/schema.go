@@ -221,6 +221,7 @@ var (
 	ProjectsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "name", Type: field.TypeString},
+		{Name: "shared_with_team", Type: field.TypeBool, Default: false},
 		{Name: "description", Type: field.TypeString, Nullable: true},
 		{Name: "github_repo_url", Type: field.TypeString, Nullable: true},
 		{Name: "github_owner", Type: field.TypeString, Nullable: true},
@@ -241,13 +242,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "projects_teams_projects",
-				Columns:    []*schema.Column{ProjectsColumns[11]},
+				Columns:    []*schema.Column{ProjectsColumns[12]},
 				RefColumns: []*schema.Column{TeamsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "projects_users_owned_projects",
-				Columns:    []*schema.Column{ProjectsColumns[12]},
+				Columns:    []*schema.Column{ProjectsColumns[13]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -256,12 +257,12 @@ var (
 			{
 				Name:    "project_owner_id",
 				Unique:  false,
-				Columns: []*schema.Column{ProjectsColumns[12]},
+				Columns: []*schema.Column{ProjectsColumns[13]},
 			},
 			{
 				Name:    "project_team_id",
 				Unique:  false,
-				Columns: []*schema.Column{ProjectsColumns[11]},
+				Columns: []*schema.Column{ProjectsColumns[12]},
 			},
 		},
 	}
