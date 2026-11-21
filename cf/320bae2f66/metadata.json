@@ -1,0 +1,35 @@
+{
+  "cli_version": "0.5.3",
+  "checkpoint_id": "cf320bae2f66",
+  "strategy": "manual-commit",
+  "branch": "feat/company-access",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "api/internal/api/auth_handlers.go",
+    "api/internal/api/company_access.go",
+    "api/internal/api/company_access_test.go",
+    "api/internal/db/company_access.go",
+    "api/internal/db/migrations/072_shared_with_team.sql",
+    "api/internal/db/migrations/postgres/072_shared_with_team.sql",
+    "api/internal/db/oauth_store.go",
+    "web/src/components/ProjectModal.test.tsx",
+    "web/src/components/ProjectModal.tsx",
+    "web/src/lib/api.ts",
+    "web/src/routes/ProjectSettings.tsx"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cf/320bae2f66/0/metadata.json",
+      "transcript": "/cf/320bae2f66/0/full.jsonl",
+      "content_hash": "/cf/320bae2f66/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 22961,
+    "cache_read_tokens": 2963888,
+    "output_tokens": 10698,
+    "api_call_count": 15
+  }
+}
