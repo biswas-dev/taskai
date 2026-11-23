@@ -428,6 +428,19 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			if res := search(owner, MemorySearchRequest{Query: "rollbac"}); res.Total == 0 || !strings.Contains(res.Results[0].Title, "Rollback") {
 				t.Fatalf("partial word: %+v", res)
 			}
+			// A fresh memory has no embedding yet; the keyword leg of the hybrid merge must still find its partial word,
+			// even though the vector leg returns other memories.
+			if code, _, body := write(owner, mem("fresh", "Zebrafish tanks need a heater check")); code != http.StatusCreated {
+				t.Fatalf("fresh write: %d %s", code, body)
+			}
+			res := search(owner, MemorySearchRequest{Query: "zebraf"})
+			found := false
+			for _, m := range res.Results {
+				found = found || strings.Contains(m.Body, "Zebrafish")
+			}
+			if res.Mode != "hybrid" || !found {
+				t.Fatalf("unembedded partial word in hybrid: %+v", res)
+			}
 		}
 	})
 

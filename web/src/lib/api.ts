@@ -1585,18 +1585,19 @@ class ApiClient {
   }
 
   // Agent memory endpoints: search when there is a query, else list newest first
-  async getMemories({ query, repo, kind }: MemoryFilter): Promise<Memory[]> {
+  async getMemories({ query, repo, kind }: MemoryFilter, signal?: AbortSignal): Promise<Memory[]> {
     if (query?.trim()) {
       const res = await this.request<{ results: Memory[] }>('/api/memories/search', {
         method: 'POST',
         body: JSON.stringify({ query, repo: repo || undefined, kind: kind || undefined, limit: 50 }),
+        signal,
       })
       return res.results
     }
     const params = new URLSearchParams({ limit: '100' })
     if (repo) params.set('repo', repo)
     if (kind) params.set('kind', kind)
-    const res = await this.request<{ memories: Memory[] }>(`/api/memories?${params}`)
+    const res = await this.request<{ memories: Memory[] }>(`/api/memories?${params}`, { signal })
     return res.memories
   }
 

@@ -122,8 +122,6 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 		results, err = s.searchMemoriesHybrid(ctx, f, req.Query, words, req.Limit)
 		if errors.Is(err, errNoQueryVector) {
 			mode = "fts"
-		} else if err == nil && len(results) == 0 {
-			mode = "keyword" // partial words; new memories not embedded yet
 		}
 	}
 	if mode == "fts" {
@@ -173,10 +171,12 @@ func (s *Server) searchMemoriesHybrid(ctx context.Context, f memoryFilter, query
 		return nil, errNoQueryVector
 	}
 	where, args := f.sql("m", time.Now().UTC(), nil)
+	match, score, args := memoryKeywordMatch("m", words, args)
 	args = append(args, memoryTSQuery(words), float32SliceToVectorString(vec))
 	tsq, vq := "$"+strconv.Itoa(len(args)-1), "$"+strconv.Itoa(len(args))
 	pool := strconv.Itoa(limit * 3)
-	// Reciprocal Rank Fusion: 1/(60+fts_rank) + 1/(60+vector_rank), as wiki search does.
+	// Reciprocal Rank Fusion of full text, vectors and keywords: the keyword leg finds partial words,
+	// including in fresh memories the worker has not embedded yet.
 	rows, err := s.db.QueryContext(ctx, `
 		WITH fts AS (
 			SELECT id, ROW_NUMBER() OVER (ORDER BY r DESC, id DESC) AS rn FROM (
@@ -192,10 +192,17 @@ func (s *Server) searchMemoriesHybrid(ctx context.Context, f memoryFilter, query
 				WHERE m.embedding IS NOT NULL AND `+where+`
 				ORDER BY d LIMIT `+pool+`) y
 		),
+		kw AS (
+			SELECT id, ROW_NUMBER() OVER (ORDER BY k DESC, u DESC, id DESC) AS rn FROM (
+				SELECT m.id, `+score+` AS k, m.updated_at AS u
+				FROM agent_memories m
+				WHERE `+match+` AND `+where+`
+				ORDER BY k DESC, m.updated_at DESC, m.id DESC LIMIT `+pool+`) z
+		),
 		combined AS (
-			SELECT COALESCE(fts.id, vec.id) AS id,
-			       COALESCE(1.0/(60+fts.rn), 0) + COALESCE(1.0/(60+vec.rn), 0) AS score
-			FROM fts FULL OUTER JOIN vec ON fts.id = vec.id
+			SELECT id, SUM(1.0/(60+rn)) AS score FROM (
+				SELECT id, rn FROM fts UNION ALL SELECT id, rn FROM vec UNION ALL SELECT id, rn FROM kw) legs
+			GROUP BY id
 		)
 		SELECT `+prefixCols("m")+`, c.score FROM combined c JOIN agent_memories m ON m.id = c.id
 		ORDER BY c.score DESC, m.id DESC LIMIT `+strconv.Itoa(limit), args...)
@@ -205,18 +212,26 @@ func (s *Server) searchMemoriesHybrid(ctx context.Context, f memoryFilter, query
 	return scanMemories(rows, true)
 }
 
-// searchMemoriesKeyword ranks by how many query words appear in the title or body (SQLite, and partial words).
-func (s *Server) searchMemoriesKeyword(ctx context.Context, f memoryFilter, words []string, limit int) ([]Memory, error) {
-	where, args := f.sql("m", time.Now().UTC(), nil)
+// memoryKeywordMatch matches memories whose title or body contains any query word (served by the trigram index on
+// Postgres) and scores them by how many of the words they contain.
+func memoryKeywordMatch(alias string, words []string, args []any) (match, score string, out []any) {
+	text := "LOWER(" + alias + ".title || ' ' || " + alias + ".body)"
+	ors := make([]string, len(words))
 	hits := make([]string, len(words))
 	for i, w := range words {
 		args = append(args, "%"+likeEscaper.Replace(w)+"%")
-		n := "$" + strconv.Itoa(len(args))
-		hits[i] = `(CASE WHEN LOWER(m.title) LIKE ` + n + ` ESCAPE '\' OR LOWER(m.body) LIKE ` + n + ` ESCAPE '\' THEN 1 ELSE 0 END)`
+		ors[i] = text + " LIKE $" + strconv.Itoa(len(args)) + ` ESCAPE '\'`
+		hits[i] = "(CASE WHEN " + ors[i] + " THEN 1 ELSE 0 END)"
 	}
-	score := strings.Join(hits, " + ")
+	return "(" + strings.Join(ors, " OR ") + ")", strings.Join(hits, " + "), args
+}
+
+// searchMemoriesKeyword ranks by how many query words appear in the title or body (SQLite, and partial words).
+func (s *Server) searchMemoriesKeyword(ctx context.Context, f memoryFilter, words []string, limit int) ([]Memory, error) {
+	where, args := f.sql("m", time.Now().UTC(), nil)
+	match, score, args := memoryKeywordMatch("m", words, args)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("m")+`, CAST(`+score+` AS REAL) AS rank
-		FROM agent_memories m WHERE `+where+` AND (`+score+`) > 0
+		FROM agent_memories m WHERE `+where+` AND `+match+`
 		ORDER BY rank DESC, m.updated_at DESC, m.id DESC LIMIT `+strconv.Itoa(limit), args...)
 	if err != nil {
 		return nil, err

@@ -112,6 +112,15 @@ export default function Sidebar({ onCreateProject, onLogout, isOpen, onClose, is
 
   const navItems = [
     {
+      label: 'Memories',
+      path: '/app/memories',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        </svg>
+      ),
+    },
+    {
       label: 'Sprints',
       path: sprintsPath,
       icon: (
@@ -319,20 +328,6 @@ export default function Sidebar({ onCreateProject, onLogout, isOpen, onClose, is
         {profileMenuOpen && (
           <div className="absolute bottom-full left-2 right-2 mb-1 bg-dark-bg-elevated border border-dark-border-subtle rounded-lg shadow-linear-lg overflow-hidden">
             <div className="py-1">
-              <button
-                onClick={() => { navigate('/app/memories'); setProfileMenuOpen(false); onClose?.() }}
-                className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 ${
-                  location.pathname === '/app/memories'
-                    ? 'bg-dark-bg-tertiary text-dark-text-primary'
-                    : 'text-dark-text-secondary hover:bg-dark-bg-tertiary hover:text-dark-text-primary'
-                } transition-colors`}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                Memories
-              </button>
-
               <button
                 onClick={() => { navigate('/app/settings'); setProfileMenuOpen(false); onClose?.() }}
                 className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 ${
