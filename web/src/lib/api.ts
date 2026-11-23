@@ -649,6 +649,55 @@ export interface UpdateSwimLaneRequest {
   status_category?: 'todo' | 'in_progress' | 'done'
 }
 
+// Agent memories (per user, not per project)
+export type MemoryKind = 'fact' | 'decision' | 'gotcha' | 'runbook' | 'handoff'
+
+export interface Memory {
+  id: number
+  owner_id: number
+  kind: MemoryKind
+  title: string
+  body: string
+  scope: { repo?: string; issue?: number; pr?: number; folder?: string; files?: string[] }
+  author: { agent?: string; provider?: string; host?: string; session?: string }
+  confidence: 'low' | 'medium' | 'high'
+  supersedes?: number
+  superseded_by?: number
+  status: 'active' | 'superseded' | 'compacted'
+  expires_at?: string
+  size_bytes: number
+  created_at: string
+  updated_at: string
+  rank?: number
+}
+
+export interface MemoryUsage {
+  used_bytes: number
+  quota_bytes: number
+  percent: number
+  count: number
+  active_count: number
+  high_water_percent: number
+  warning?: string
+}
+
+export interface MemoryFilter {
+  query?: string
+  repo?: string
+  kind?: MemoryKind | ''
+}
+
+export interface MemoryCompactReport {
+  superseded_removed: number
+  expired_removed: number
+  duplicates_merged: number
+  low_confidence_summarised: number
+  summaries_created: number
+  bytes_before: number
+  bytes_after: number
+  freed_bytes: number
+}
+
 // Meeting minutes (project-scoped)
 export interface MeetingAttendee {
   user_id: number
@@ -1533,6 +1582,34 @@ class ApiClient {
     return this.request<void>(`/api/tags/${tagId}/share/${projectId}`, {
       method: 'DELETE',
     })
+  }
+
+  // Agent memory endpoints: search when there is a query, else list newest first
+  async getMemories({ query, repo, kind }: MemoryFilter): Promise<Memory[]> {
+    if (query?.trim()) {
+      const res = await this.request<{ results: Memory[] }>('/api/memories/search', {
+        method: 'POST',
+        body: JSON.stringify({ query, repo: repo || undefined, kind: kind || undefined, limit: 50 }),
+      })
+      return res.results
+    }
+    const params = new URLSearchParams({ limit: '100' })
+    if (repo) params.set('repo', repo)
+    if (kind) params.set('kind', kind)
+    const res = await this.request<{ memories: Memory[] }>(`/api/memories?${params}`)
+    return res.memories
+  }
+
+  async getMemoryUsage(): Promise<MemoryUsage> {
+    return this.request<MemoryUsage>('/api/memories/usage')
+  }
+
+  async deleteMemory(id: number): Promise<void> {
+    return this.request<void>(`/api/memories/${id}`, { method: 'DELETE' })
+  }
+
+  async compactMemories(): Promise<MemoryCompactReport> {
+    return this.request<MemoryCompactReport>('/api/memories/compact', { method: 'POST' })
   }
 
   // Meeting minutes endpoints

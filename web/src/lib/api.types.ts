@@ -522,6 +522,175 @@ export interface paths {
         patch: operations["updateMeeting"];
         trace?: never;
     };
+    "/api/memories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memories
+         * @description Memories the caller can read (their own and those shared with them), newest first. Active and unexpired only unless status=all.
+         */
+        get: operations["listMemories"];
+        put?: never;
+        /**
+         * Write Memory
+         * @description Create a memory, or upsert it by (origin_host, origin_id). An exact repeat (same content and scope) returns the memory already kept (outcome duplicate); a compacted origin is ignored. 201 when created, 200 otherwise. usage.warning is set at 80% of the quota.
+         */
+        post: operations["writeMemory"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memories/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Memories
+         * @description Hybrid search (Postgres full text + pgvector, merged with Reciprocal Rank Fusion) over the memories the caller can read. Falls back to full text when the query cannot be embedded within 1.5 s, and to keyword matching on SQLite. Answers within 4 s.
+         */
+        post: operations["searchMemories"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memories/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Usage
+         * @description Bytes stored (text, metadata and embeddings) against the caller's quota.
+         */
+        get: operations["getMemoryUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memories/compact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compact Memories
+         * @description Drop superseded and expired memories, merge near-duplicates in the same scope (newest kept), and merge old low-confidence memories of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
+         */
+        post: operations["compactMemories"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memories/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Memory Shares
+         * @description Who can read the caller's memories, and whose memories the caller can read.
+         */
+        get: operations["getMemoryShares"];
+        /**
+         * Set Memory Shares
+         * @description Replace the list of users who can read and search (never change) the caller's memories.
+         */
+        put: operations["setMemoryShares"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memories/import-wiki": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Wiki Memories
+         * @description Copy llm-brain memory pages (one wiki page per memory) from a project into the caller's memories. The page footer's 'llm-brain memory N' becomes origin_id N under origin_host, so a second run, or the hub's later upserts, add nothing. Superseded pages are skipped. Pages are not deleted.
+         */
+        post: operations["importWikiMemories"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memories/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Memory */
+        get: operations["getMemory"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Memory
+         * @description Owner only. A memory with an origin leaves a tombstone so its hub does not re-create it.
+         */
+        delete: operations["deleteMemory"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/users/{id}/memory-quota": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Memory Quota
+         * @description Admin only. quota_bytes null restores the default (1 GiB).
+         */
+        put: operations["setMemoryQuota"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{id}/members": {
         parameters: {
             query?: never;
@@ -2016,6 +2185,179 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        /** @description What a memory is about. Needs repo or folder; issue and pr need repo. */
+        MemoryScope: {
+            /** @example biswas-dev/taskai */
+            repo?: string;
+            issue?: number;
+            pr?: number;
+            /** @description Absolute path on the author's host */
+            folder?: string;
+            files?: string[];
+        };
+        MemoryAuthor: {
+            agent?: string;
+            /** @description claude | codex | gemini | human */
+            provider?: string;
+            host?: string;
+            session?: string;
+        };
+        Memory: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: int64 */
+            owner_id?: number;
+            /** @enum {string} */
+            kind?: "fact" | "decision" | "gotcha" | "runbook" | "handoff";
+            title?: string;
+            body?: string;
+            scope?: components["schemas"]["MemoryScope"];
+            author?: components["schemas"]["MemoryAuthor"];
+            /** @enum {string} */
+            confidence?: "low" | "medium" | "high";
+            /** Format: int64 */
+            supersedes?: number;
+            /** Format: int64 */
+            superseded_by?: number;
+            /** @enum {string} */
+            status?: "active" | "superseded" | "compacted";
+            /** Format: date-time */
+            expires_at?: string;
+            origin_host?: string;
+            origin_id?: string;
+            /** Format: int64 */
+            size_bytes?: number;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+            /** @description Search results only */
+            rank?: number;
+        };
+        MemoryList: {
+            memories?: components["schemas"]["Memory"][];
+            limit?: number;
+            offset?: number;
+        };
+        MemoryWriteRequest: {
+            /** @enum {string} */
+            kind: "fact" | "decision" | "gotcha" | "runbook" | "handoff";
+            /** @description One line; defaults to the body's first line */
+            title?: string;
+            body: string;
+            scope: components["schemas"]["MemoryScope"];
+            author?: components["schemas"]["MemoryAuthor"];
+            /**
+             * @default medium
+             * @enum {string}
+             */
+            confidence: "low" | "medium" | "high";
+            /**
+             * @description superseded replicates a memory a hub already replaced
+             * @default active
+             * @enum {string}
+             */
+            status: "active" | "superseded";
+            /** Format: date-time */
+            expires_at?: string;
+            /**
+             * Format: int64
+             * @description A TaskAI memory id this one replaces
+             */
+            supersedes?: number;
+            /** @description The origin_id (same origin_host) this one replaces; may arrive before it */
+            supersedes_origin_id?: string;
+            /** @description The hub that holds the original */
+            origin_host?: string;
+            /** @description Its id on that hub; (origin_host */
+            origin_id?: string;
+            /**
+             * Format: date-time
+             * @description Original creation time when replicating
+             */
+            created_at?: string;
+        };
+        MemoryUsage: {
+            /** Format: int64 */
+            used_bytes?: number;
+            /** Format: int64 */
+            quota_bytes?: number;
+            percent?: number;
+            count?: number;
+            active_count?: number;
+            high_water_percent?: number;
+            warning?: string;
+        };
+        MemoryWriteResponse: {
+            memory?: components["schemas"]["Memory"];
+            /** @enum {string} */
+            outcome?: "created" | "updated" | "duplicate" | "ignored";
+            usage?: components["schemas"]["MemoryUsage"];
+        };
+        MemorySearchRequest: {
+            query: string;
+            /** Format: int64 */
+            owner_id?: number;
+            repo?: string;
+            kind?: string;
+            issue?: number;
+            pr?: number;
+            files?: string[];
+            include_inactive?: boolean;
+            /** @default 10 */
+            limit: number;
+            /** @enum {string} */
+            mode?: "hybrid" | "fts" | "keyword";
+        };
+        MemorySearchResponse: {
+            results?: components["schemas"]["Memory"][];
+            total?: number;
+            mode?: string;
+        };
+        MemoryCompactReport: {
+            superseded_removed?: number;
+            expired_removed?: number;
+            duplicates_merged?: number;
+            low_confidence_summarised?: number;
+            summaries_created?: number;
+            /** Format: int64 */
+            bytes_before?: number;
+            /** Format: int64 */
+            bytes_after?: number;
+            /** Format: int64 */
+            freed_bytes?: number;
+        };
+        MemoryShareUser: {
+            /** Format: int64 */
+            user_id?: number;
+            email?: string;
+        };
+        MemoryShares: {
+            shared_with?: components["schemas"]["MemoryShareUser"][];
+            shared_with_me?: components["schemas"]["MemoryShareUser"][];
+        };
+        MemorySharesRequest: {
+            user_ids: number[];
+        };
+        MemoryImportRequest: {
+            /** Format: int64 */
+            project_id: number;
+            /** @description Name of the hub that wrote the pages */
+            origin_host: string;
+        };
+        MemoryImportReport: {
+            pages?: number;
+            imported?: number;
+            duplicates?: number;
+            skipped_superseded?: number;
+            failed?: number;
+            errors?: string[];
+            quota_exceeded?: boolean;
+        };
+        MemoryQuotaRequest: {
+            /** Format: int64 */
+            quota_bytes?: number | null;
+        };
         CreateMeetingRequest: {
             title: string;
             /** Format: date-time */
@@ -3436,6 +3778,404 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Meeting"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listMemories: {
+        parameters: {
+            query?: {
+                /** @description Only this owner's memories (must be the caller or have shared with them) */
+                owner_id?: number;
+                /** @description owner/name, case-insensitive */
+                repo?: string;
+                /** @description fact, decision, gotcha, runbook or handoff */
+                kind?: string;
+                issue?: number;
+                pr?: number;
+                /** @description Repeatable; matches a memory naming any of them */
+                file?: string[];
+                /** @description all includes superseded */
+                status?: string;
+                /** @description Default 20, max 100 */
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Memories */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryList"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    writeMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Created (200 for updated, duplicate or ignored) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryWriteResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Memory quota exceeded (code: memory_quota_exceeded). Terminal: retrying will not help until memories are compacted or deleted, or the quota is raised. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    searchMemories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Ranked memories */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySearchResponse"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getMemoryUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryUsage"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    compactMemories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What was freed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryCompactReport"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getMemoryShares: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shares */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryShares"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    setMemoryShares: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySharesRequest"];
+            };
+        };
+        responses: {
+            /** @description Shares */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryShares"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    importWikiMemories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Import report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryImportReport"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Memory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Memory"];
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deleteMemory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    setMemoryQuota: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryQuotaRequest"];
+            };
+        };
+        responses: {
+            /** @description The user's usage under the new quota */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryUsage"];
                 };
             };
             /** @description Invalid request */
