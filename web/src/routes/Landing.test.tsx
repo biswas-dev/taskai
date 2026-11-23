@@ -15,6 +15,15 @@ describe('Landing', () => {
     expect(screen.getByText('built for AI agents')).toBeInTheDocument()
   })
 
+  it('leads with Memories: one heading, a quick start for REST and MCP, and a link to the protocol', () => {
+    render(<Landing />)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('One memory for every AI you use')
+    expect(screen.getByText('REST (curl)')).toBeInTheDocument()
+    expect(screen.getByText(/claude mcp add --transport http taskai/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Read the protocol' })).toHaveAttribute('href', expect.stringContaining('docs/memory-protocol.md'))
+    expect(screen.getByRole('link', { name: 'Memories' })).toHaveAttribute('href', '#memories')
+  })
+
   it('renders "Sign in" and "Get started free" navigation links', () => {
     render(<Landing />)
     const signInLinks = screen.getAllByText('Sign in')

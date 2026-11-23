@@ -33,7 +33,8 @@ func TestNormalizeMemory(t *testing.T) {
 		{"bad kind", with(func(r *MemoryWriteRequest) { r.Kind = "note" }), "kind must be"},
 		{"no body", with(func(r *MemoryWriteRequest) { r.Body = " " }), "body is required"},
 		{"body too long", with(func(r *MemoryWriteRequest) { r.Body = strings.Repeat("x", memoryMaxBody+1) }), "keep it under"},
-		{"no scope", with(func(r *MemoryWriteRequest) { r.Scope = MemoryScope{} }), "repo or a folder"},
+		{"no scope (a memory for the whole user)", with(func(r *MemoryWriteRequest) { r.Scope = MemoryScope{} }), ""},
+		{"no author", with(func(r *MemoryWriteRequest) { r.Author = MemoryAuthor{} }), ""},
 		{"bad repo", with(func(r *MemoryWriteRequest) { r.Scope.Repo = "taskai" }), "owner/name"},
 		{"relative folder", with(func(r *MemoryWriteRequest) { r.Scope = MemoryScope{Folder: "src"} }), "absolute path"},
 		{"issue without repo", with(func(r *MemoryWriteRequest) { r.Scope = MemoryScope{Folder: "/x", Issue: 3} }), "need scope.repo"},
@@ -836,5 +837,19 @@ func TestChunkMemories(t *testing.T) {
 		if size > memoryMaxBody {
 			t.Fatalf("chunk of %d bytes exceeds %d", size, memoryMaxBody)
 		}
+	}
+}
+
+func TestMemoryProtocolHeader(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+	u := ts.CreateTestUser(t, "proto@example.com", "password123")
+	req := httptest.NewRequest(http.MethodGet, "/api/memories/usage", nil)
+	req.Header.Set("Authorization", "Bearer "+ts.GenerateTestToken(t, u, "proto@example.com"))
+	rec := httptest.NewRecorder()
+	buildTestRouter(ts.Server).ServeHTTP(rec, req)
+	AssertStatusCode(t, rec.Code, http.StatusOK)
+	if got := rec.Header().Get("TaskAI-Memory-Protocol"); got != memoryProtocolVersion {
+		t.Fatalf("protocol header = %q", got)
 	}
 }

@@ -13,6 +13,17 @@ import (
 	"go.uber.org/zap"
 )
 
+// memoryProtocolVersion is the memory protocol this server speaks; bump it on an incompatible change.
+const memoryProtocolVersion = "1"
+
+// MemoryProtocol tags every memory response with the protocol version, so clients can detect what they talk to.
+func MemoryProtocol(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("TaskAI-Memory-Protocol", memoryProtocolVersion)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // HandleWriteMemory creates or upserts a memory for the caller (POST /api/memories).
 func (s *Server) HandleWriteMemory(w http.ResponseWriter, r *http.Request) {
 	userID, ok := GetUserID(r)

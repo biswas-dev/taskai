@@ -36,7 +36,7 @@ tags:
   - name: Users
     description: User profile management
   - name: Memories
-    description: Agent memories owned by a user, with hybrid search, sharing, quota and compaction
+    description: "Memory protocol v1 (docs/memory-protocol.md): a per-user store of short lessons that any application or LLM writes and searches, with hybrid search, sharing, quota and compaction. Every memory response carries the header TaskAI-Memory-Protocol: 1."
   - name: Projects
     description: Project CRUD operations
   - name: Tasks
@@ -1554,7 +1554,7 @@ paths:
   /api/memories/import-wiki:
     post:
       summary: Import Wiki Memories
-      description: Copy llm-brain memory pages (one wiki page per memory) from a project into the caller's memories. The page footer's 'llm-brain memory N' becomes origin_id N under origin_host, so a second run, or the hub's later upserts, add nothing. Superseded pages are skipped. Pages are not deleted.
+      description: "Migration helper: copy llm-brain memory pages (one wiki page per memory) from a project into the caller's memories. The page footer's 'llm-brain memory N' becomes origin_id N under origin_host, so a second run, or the hub's later upserts, add nothing. Superseded pages are skipped. Pages are not deleted."
       tags: [Memories]
       operationId: importWikiMemories
       security:
@@ -1621,7 +1621,7 @@ paths:
           $ref: "#/components/responses/InternalError"
     delete:
       summary: Delete Memory
-      description: Owner only. A memory with an origin leaves a tombstone so its hub does not re-create it.
+      description: Owner only. A memory with an origin leaves a tombstone so the client that wrote it does not re-create it.
       tags: [Memories]
       operationId: deleteMemory
       security:
@@ -4525,7 +4525,7 @@ components:
         updated_at: { type: string, format: date-time }
     MemoryScope:
       type: object
-      description: What a memory is about. Needs repo or folder; issue and pr need repo.
+      description: "What a memory is about; every field is optional and filterable (issue and pr need repo). A memory without scope belongs to the user as a whole."
       properties:
         repo: {type: string, example: biswas-dev/taskai}
         issue: {type: integer}
@@ -4536,7 +4536,7 @@ components:
       type: object
       properties:
         agent: {type: string}
-        provider: {type: string, description: "claude | codex | gemini | human"}
+        provider: {type: string, description: "Optional, e.g. claude, codex, gemini, openai, human"}
         host: {type: string}
         session: {type: string}
     Memory:
@@ -4576,12 +4576,12 @@ components:
         scope: {$ref: "#/components/schemas/MemoryScope"}
         author: {$ref: "#/components/schemas/MemoryAuthor"}
         confidence: {type: string, enum: [low, medium, high], description: "Default medium"}
-        status: {type: string, enum: [active, superseded], description: "Default active; superseded replicates a memory a hub already replaced"}
+        status: {type: string, enum: [active, superseded], description: "Default active; superseded copies a memory the client already replaced"}
         expires_at: {type: string, format: date-time}
         supersedes: {type: integer, format: int64, description: A TaskAI memory id this one replaces}
         supersedes_origin_id: {type: string, description: "The origin_id (same origin_host) this one replaces; may arrive before it"}
-        origin_host: {type: string, description: The hub that holds the original}
-        origin_id: {type: string, description: "Its id on that hub; (origin_host, origin_id) is the upsert key"}
+        origin_host: {type: string, description: "The writing client's name (an app, a device, a hub); with origin_id the idempotency key"}
+        origin_id: {type: string, description: "The client's own id for the memory; (origin_host, origin_id) is the upsert key"}
         created_at: {type: string, format: date-time, description: Original creation time when replicating}
     MemoryUsage:
       type: object
@@ -4650,7 +4650,7 @@ components:
       required: [project_id, origin_host]
       properties:
         project_id: {type: integer, format: int64}
-        origin_host: {type: string, description: Name of the hub that wrote the pages}
+        origin_host: {type: string, description: Name of the client (hub) that wrote the pages}
     MemoryImportReport:
       type: object
       properties:

@@ -13,7 +13,8 @@ import (
 	"time"
 )
 
-// Agent memories: short lessons (fact, decision, gotcha, runbook, handoff) that belong to a user. Repo, issue,
+// Memories (protocol version memoryProtocolVersion, docs/memory-protocol.md): short lessons (fact, decision,
+// gotcha, runbook, handoff) that belong to a user, written and searched by any application or LLM. Repo, issue,
 // PR, folder and files are filterable scope, not a container. The owner and their API keys write; people the
 // owner shares with read and search. Writes from llm-brain hubs carry origin_host + origin_id and are
 // idempotent upserts. Compaction leaves a 'compacted' tombstone for rows with an origin, so a hub re-sending
@@ -205,8 +206,6 @@ func normalizeMemory(req MemoryWriteRequest, now time.Time) (memoryRow, string) 
 		return m, "scope.repo must be owner/name"
 	case sc.Folder != "" && !strings.HasPrefix(sc.Folder, "/"):
 		return m, "scope.folder must be an absolute path"
-	case sc.Repo == "" && sc.Folder == "":
-		return m, "scope needs a repo or a folder"
 	case (sc.Issue != 0 || sc.PR != 0) && sc.Repo == "":
 		return m, "scope.issue and scope.pr need scope.repo"
 	case sc.Issue < 0 || sc.PR < 0:

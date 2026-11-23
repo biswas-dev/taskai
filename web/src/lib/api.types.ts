@@ -641,7 +641,7 @@ export interface paths {
         put?: never;
         /**
          * Import Wiki Memories
-         * @description Copy llm-brain memory pages (one wiki page per memory) from a project into the caller's memories. The page footer's 'llm-brain memory N' becomes origin_id N under origin_host, so a second run, or the hub's later upserts, add nothing. Superseded pages are skipped. Pages are not deleted.
+         * @description Migration helper: copy llm-brain memory pages (one wiki page per memory) from a project into the caller's memories. The page footer's 'llm-brain memory N' becomes origin_id N under origin_host, so a second run, or the hub's later upserts, add nothing. Superseded pages are skipped. Pages are not deleted.
          */
         post: operations["importWikiMemories"];
         delete?: never;
@@ -663,7 +663,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Memory
-         * @description Owner only. A memory with an origin leaves a tombstone so its hub does not re-create it.
+         * @description Owner only. A memory with an origin leaves a tombstone so the client that wrote it does not re-create it.
          */
         delete: operations["deleteMemory"];
         options?: never;
@@ -2185,7 +2185,7 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
-        /** @description What a memory is about. Needs repo or folder; issue and pr need repo. */
+        /** @description What a memory is about; every field is optional and filterable (issue and pr need repo). A memory without scope belongs to the user as a whole. */
         MemoryScope: {
             /** @example biswas-dev/taskai */
             repo?: string;
@@ -2197,7 +2197,7 @@ export interface components {
         };
         MemoryAuthor: {
             agent?: string;
-            /** @description claude | codex | gemini | human */
+            /** @description Optional, e.g. claude, codex, gemini, openai, human */
             provider?: string;
             host?: string;
             session?: string;
@@ -2253,7 +2253,7 @@ export interface components {
              */
             confidence?: "low" | "medium" | "high";
             /**
-             * @description Default active; superseded replicates a memory a hub already replaced
+             * @description Default active; superseded copies a memory the client already replaced
              * @enum {string}
              */
             status?: "active" | "superseded";
@@ -2266,9 +2266,9 @@ export interface components {
             supersedes?: number;
             /** @description The origin_id (same origin_host) this one replaces; may arrive before it */
             supersedes_origin_id?: string;
-            /** @description The hub that holds the original */
+            /** @description The writing client's name (an app, a device, a hub); with origin_id the idempotency key */
             origin_host?: string;
-            /** @description Its id on that hub; (origin_host, origin_id) is the upsert key */
+            /** @description The client's own id for the memory; (origin_host, origin_id) is the upsert key */
             origin_id?: string;
             /**
              * Format: date-time
@@ -2341,7 +2341,7 @@ export interface components {
         MemoryImportRequest: {
             /** Format: int64 */
             project_id: number;
-            /** @description Name of the hub that wrote the pages */
+            /** @description Name of the client (hub) that wrote the pages */
             origin_host: string;
         };
         MemoryImportReport: {

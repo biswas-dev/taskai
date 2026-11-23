@@ -1,6 +1,7 @@
 package main
 
-// Agent memories: a user's own store of short lessons, searched by every agent before it works.
+// Memories (TaskAI memory protocol v1, docs/memory-protocol.md): a user's own store of short lessons that any app or
+// LLM writes and searches; the same operations as the REST API.
 // Results are trimmed to what an agent needs (id, kind, title, body, scope, rank) unless verbose is set.
 
 import (
@@ -42,18 +43,18 @@ type writeMemoryIn struct {
 	Kind       string   `json:"kind" jsonschema:"fact, decision, gotcha, runbook or handoff"`
 	Title      string   `json:"title,omitempty" jsonschema:"One line; defaults to the body's first line"`
 	Body       string   `json:"body" jsonschema:"The lesson, verbatim and short (max 8000 bytes). Never a secret."`
-	Repo       string   `json:"repo,omitempty" jsonschema:"owner/name (repo or folder is required)"`
-	Folder     string   `json:"folder,omitempty" jsonschema:"Absolute path, when there is no repo"`
+	Repo       string   `json:"repo,omitempty" jsonschema:"owner/name (optional scope)"`
+	Folder     string   `json:"folder,omitempty" jsonschema:"Absolute path (optional scope)"`
 	Issue      int      `json:"issue,omitempty"`
 	PR         int      `json:"pr,omitempty"`
 	Files      []string `json:"files,omitempty" jsonschema:"Repo-relative paths it is about"`
-	Agent      string   `json:"agent,omitempty" jsonschema:"Who writes it, e.g. claude-code"`
-	Provider   string   `json:"provider,omitempty" jsonschema:"claude, codex, gemini or human"`
+	Agent      string   `json:"agent,omitempty" jsonschema:"Optional: who writes it, e.g. claude-code or an app name"`
+	Provider   string   `json:"provider,omitempty" jsonschema:"Optional: e.g. claude, codex, gemini, openai, human"`
 	Host       string   `json:"host,omitempty"`
 	Session    string   `json:"session,omitempty"`
 	Confidence string   `json:"confidence,omitempty" jsonschema:"low, medium (default) or high"`
 	ExpiresAt  string   `json:"expires_at,omitempty" jsonschema:"RFC 3339; after it the memory is dropped from search"`
-	OriginHost string   `json:"origin_host,omitempty" jsonschema:"With origin_id: the upsert key when copying from another store"`
+	OriginHost string   `json:"origin_host,omitempty" jsonschema:"Optional: your client's name; with origin_id it makes the write an idempotent upsert"`
 	OriginID   string   `json:"origin_id,omitempty"`
 }
 
@@ -64,6 +65,10 @@ type supersedeMemoryIn struct {
 
 type memoryIDIn struct {
 	MemoryID string `json:"memory_id" jsonschema:"Memory ID"`
+}
+
+type setMemorySharesIn struct {
+	UserIDs []int64 `json:"user_ids" jsonschema:"Everyone who may read and search your memories (people in a team or project with you); [] removes every share"`
 }
 
 func (in writeMemoryIn) body() map[string]any {
@@ -88,7 +93,7 @@ func registerMemoryTools(srv *gomcp.Server) {
 		return shaped(verbose, res, func(v any) any { return pickEach(items(v, key), memoryFields...) })
 	}
 
-	gomcp.Register(srv, read("search_memories", "Search your agent memories (and those shared with you): lessons, decisions, gotchas, runbooks and handoffs. Filter by repo, kind, files, issue or PR. Check before you work."),
+	gomcp.Register(srv, read("search_memories", "Search your memories (and those shared with you): facts, decisions, gotchas, runbooks and handoffs. Filter by repo, kind, files, issue or PR. Check before you work."),
 		func(ctx context.Context, in searchMemoriesIn) (any, error) {
 			_, c := sess(ctx)
 			res, err := c.send(ctx, http.MethodPost, "/api/memories/search", map[string]any{"query": in.Query, "repo": in.Repo,
@@ -131,6 +136,24 @@ func registerMemoryTools(srv *gomcp.Server) {
 			b := in.body()
 			b["supersedes"] = id
 			return c.send(ctx, http.MethodPost, "/api/memories", b)
+		})
+
+	gomcp.Register(srv, read("get_memory", "Get one memory (yours or shared with you) in full."),
+		func(ctx context.Context, in memoryIDIn) (any, error) {
+			_, c := sess(ctx)
+			return c.get(ctx, "/api/memories/"+esc(in.MemoryID))
+		})
+
+	gomcp.Register(srv, read("get_memory_shares", "Who can read your memories, and whose memories you can read."),
+		func(ctx context.Context, _ verboseIn) (any, error) {
+			_, c := sess(ctx)
+			return c.get(ctx, "/api/memories/shares")
+		})
+
+	gomcp.Register(srv, destroy("set_memory_shares", "Replace the list of people who can read and search (never change) your memories."),
+		func(ctx context.Context, in setMemorySharesIn) (any, error) {
+			_, c := sess(ctx)
+			return c.send(ctx, http.MethodPut, "/api/memories/shares", map[string]any{"user_ids": in.UserIDs})
 		})
 
 	gomcp.Register(srv, destroy("delete_memory", "Delete one of your memories."),
