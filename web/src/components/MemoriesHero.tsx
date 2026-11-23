@@ -26,6 +26,15 @@ const points = [
   { title: 'Fast, bounded, tidy', text: 'Hybrid search answers in milliseconds. A quota keeps it bounded, and compaction drops what was replaced or expired without losing a lesson.' },
 ]
 
+// Each line is something the code does today; keep it that way.
+const connections = [
+  { title: 'Tasks, issues and PRs', text: 'Scope a memory to a repo, issue or PR. An agent picking up that work searches with the same filters and gets its lessons first.' },
+  { title: 'GitHub sync', text: 'Scope uses the owner/repo names and GitHub issue and PR numbers that GitHub sync imports your tasks from.' },
+  { title: 'Wiki and knowledge graph', text: 'Long docs and linked tasks stay in the wiki and graph; memories keep the short lessons. Search runs on the same full-text and vector engine as the wiki, and old "Agent memory" wiki pages import in one call.' },
+  { title: 'One MCP server, one API key', text: 'The MCP server and API keys that drive your tasks and wiki also write and search memories.' },
+  { title: 'Teams and projects', text: 'Memories are private by default. Share them, read-only, with people on your teams and projects.' },
+]
+
 function CodeBlock({ label, code }: { label: string; code: string }) {
   return (
     <figure className="rounded-xl border border-dark-border-subtle bg-dark-bg-primary overflow-hidden text-left">
@@ -97,6 +106,20 @@ export default function MemoriesHero() {
             Make an API key under Settings → API Keys. Works with Claude, Codex, Gemini, ChatGPT and anything that speaks HTTP or MCP.
           </p>
         </div>
+
+        <section aria-labelledby="memories-connect-heading" className="mt-16">
+          <h2 id="memories-connect-heading" className="text-center text-xs font-medium uppercase tracking-wider text-dark-text-quaternary mb-4">
+            Works with everything in TaskAI
+          </h2>
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {connections.map(c => (
+              <li key={c.title} className="rounded-lg border border-dark-border-subtle bg-dark-bg-primary/60 p-4">
+                <h3 className="text-sm font-semibold text-dark-text-primary">{c.title}</h3>
+                <p className="mt-1.5 text-xs text-dark-text-tertiary leading-relaxed">{c.text}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
     </section>
   )

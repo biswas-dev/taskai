@@ -228,6 +228,25 @@ export default function Landing() {
           {/* Feature grid: 2-column alternating large feature + detail */}
           <div className="space-y-6">
 
+            {/* Memories, the lead feature */}
+            <a
+              href="#memories"
+              className="group relative block p-8 rounded-2xl bg-dark-bg-primary border border-primary-500/30 hover:border-primary-500/60 transition-all duration-300 overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-primary-500/[0.06] to-transparent" />
+              <div className="relative md:flex md:items-center md:justify-between md:gap-8">
+                <div>
+                  <h3 className="text-xl font-semibold mb-3 tracking-tight">Memories</h3>
+                  <p className="text-sm text-dark-text-tertiary leading-relaxed max-w-2xl">
+                    One store of lessons for every AI you use. Agents write facts, decisions, gotchas, runbooks and handoffs over REST or MCP, and every model and app finds them with hybrid search, scoped to your repos, issues and PRs.
+                  </p>
+                </div>
+                <span className="mt-4 md:mt-0 inline-flex shrink-0 items-center text-sm font-medium text-primary-400 group-hover:text-primary-300">
+                  See how it works →
+                </span>
+              </div>
+            </a>
+
             {/* Row 1: Tasks + Roadmap + Wiki */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Tasks */}
