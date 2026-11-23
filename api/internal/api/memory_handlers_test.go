@@ -84,6 +84,9 @@ func TestParseMemoryPage(t *testing.T) {
 	if _, sup, err := parseMemoryPage("[superseded] [fact] /x: t", "> Superseded by memory 3.\n\n**fact** · folder `/x` · confidence medium\n\nb\n\n---\n\n_2026-01-01 on h · llm-brain memory 2_"); err != nil || !sup {
 		t.Fatalf("superseded page: %v %v", sup, err)
 	}
+	if req, _, err := parseMemoryPage("[fact] o/r: t", "**fact** · repo `o/r` · issue # · PR #x\n\nb\n\n---\n\n_2026-01-01_"); err != nil || req.Scope.Issue != 0 || req.Scope.PR != 0 {
+		t.Fatalf("malformed issue/PR must not panic or parse: %+v %v", req.Scope, err)
+	}
 	if _, _, err := parseMemoryPage("Meeting notes", "hello"); err == nil {
 		t.Fatal("a non-memory page should not parse")
 	}

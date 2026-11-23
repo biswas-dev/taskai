@@ -38,7 +38,6 @@ type MemoryImportReport struct {
 var (
 	memoryPageTitleRe = regexp.MustCompile(`^(\[superseded\] )?\[(fact|decision|gotcha|runbook|handoff)\] (.+?): (.+)$`)
 	memoryBacktickRe  = regexp.MustCompile("^`(.*)`$")
-	memoryNumberRe    = regexp.MustCompile(`#(\d+)$`)
 )
 
 // parseMemoryPage reads a page written by llm-brain's PageTitle and PageMarkdown back into a write.
@@ -74,9 +73,9 @@ func parseMemoryPage(title, content string) (req MemoryWriteRequest, superseded 
 		case v != nil:
 			req.Scope.Files = append(req.Scope.Files, v[1])
 		case strings.HasPrefix(part, "issue #"):
-			req.Scope.Issue, _ = strconv.Atoi(memoryNumberRe.FindStringSubmatch(part)[1])
+			req.Scope.Issue, _ = strconv.Atoi(strings.TrimPrefix(part, "issue #"))
 		case strings.HasPrefix(part, "PR #"):
-			req.Scope.PR, _ = strconv.Atoi(memoryNumberRe.FindStringSubmatch(part)[1])
+			req.Scope.PR, _ = strconv.Atoi(strings.TrimPrefix(part, "PR #"))
 		case strings.HasPrefix(part, "confidence "):
 			req.Confidence = strings.TrimPrefix(part, "confidence ")
 		case strings.HasPrefix(part, "expires "):
