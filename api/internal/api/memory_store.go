@@ -162,7 +162,10 @@ func normalizeMemory(req MemoryWriteRequest, now time.Time) (memoryRow, string) 
 	}
 	if m.Title == "" {
 		m.Title, _, _ = strings.Cut(m.Body, "\n")
-		m.Title = strings.TrimSpace(m.Title)
+		m.Title = strings.TrimSpace(memorySpaceRe.ReplaceAllString(strings.ReplaceAll(m.Title, "\r", ""), " "))
+		if len(m.Title) > memoryMaxTitle {
+			m.Title = strings.ToValidUTF8(m.Title[:memoryMaxTitle], "")
+		}
 	}
 	switch {
 	case m.Body == "":
@@ -387,7 +390,7 @@ func (s *Server) lockMemoryOwner(ctx context.Context, tx *sql.Tx, ownerID int64)
 	if s.db.Driver != "postgres" {
 		return nil
 	}
-	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('agent_memories'), $1::int)`, ownerID)
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('agent_memories'), hashtext($1::text))`, strconv.FormatInt(ownerID, 10))
 	return err
 }
 
@@ -486,22 +489,25 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 	if found && target == existingID {
 		return Memory{}, "", memoryInputError("a memory cannot supersede itself")
 	}
+	if found && oldStatus == "superseded" && target > 0 {
+		return Memory{}, "", memoryInputError("a superseded memory cannot supersede another")
+	}
 
-	if !found {
-		// The same content and scope, still active: keep one. A different origin is not recorded; hubs keep the
-		// writer's (origin_host, origin_id) when they replicate, so one memory arrives under one key.
+	if m.OriginID == "" {
+		// A write without an origin (MCP, UI) that repeats an active memory's content and scope keeps the one we
+		// have. Writes with an origin always land on their own key; compaction later folds copies from other keys.
 		var dupID int64
-		var dupOrigin string
-		err := tx.QueryRowContext(ctx, `SELECT id, origin_id FROM agent_memories WHERE owner_id = $1 AND content_hash = $2
+		var dupExpires *time.Time
+		err := tx.QueryRowContext(ctx, `SELECT id, expires_at FROM agent_memories WHERE owner_id = $1 AND content_hash = $2
 			AND status = 'active' AND (expires_at IS NULL OR expires_at > $3) ORDER BY id LIMIT 1`, ownerID, m.hash, m.UpdatedAt).
-			Scan(&dupID, &dupOrigin)
+			Scan(&dupID, &dupExpires)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return Memory{}, "", err
 		}
 		if err == nil {
-			if dupOrigin == "" && m.OriginID != "" { // adopt the origin so later updates from that hub land here
-				if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET origin_host = $1, origin_id = $2, size_bytes = size_bytes + $3 WHERE id = $4`,
-					m.OriginHost, m.OriginID, len(m.OriginHost)+len(m.OriginID), dupID); err != nil {
+			if !outlives(dupExpires, m.ExpiresAt) { // the repeat should last longer: extend the one we keep
+				if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET expires_at = $1, updated_at = $2 WHERE id = $3`,
+					m.ExpiresAt, m.UpdatedAt, dupID); err != nil {
 					return Memory{}, "", err
 				}
 			}

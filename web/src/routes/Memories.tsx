@@ -76,8 +76,9 @@ export default function Memories() {
       setError(err instanceof Error ? err.message : 'Failed to delete memory')
       return
     }
-    // A failed usage refresh leaves the bar stale; the delete itself succeeded.
-    api.getMemoryUsage().then(setUsage, () => undefined)
+    // A failed usage refresh leaves the bar stale; the delete itself succeeded. A newer load wins.
+    const request = latest.current
+    api.getMemoryUsage().then(u => { if (request === latest.current) setUsage(u) }, () => undefined)
   }
 
   const compact = async () => {

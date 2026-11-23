@@ -279,6 +279,23 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		rec, r := ts.MakeAuthRequest(t, http.MethodPut, "/api/memories/shares", map[string]any{}, owner, nil)
 		ts.HandleSetMemoryShares(rec, r)
 		AssertStatusCode(t, rec.Code, http.StatusBadRequest)
+		if code := share(make([]int64, memoryMaxShares+1)...); code != http.StatusBadRequest {
+			t.Fatalf("too many shares: %d", code)
+		}
+		// A teammate (same company) can be added too.
+		mate := user("mate")
+		var team int64
+		if err := ts.DB.QueryRowContext(ctx, `INSERT INTO teams (name, owner_id) VALUES ('Co', $1) RETURNING id`, owner).Scan(&team); err != nil {
+			t.Fatal(err)
+		}
+		for _, u := range []int64{owner, mate} {
+			if _, err := ts.DB.ExecContext(ctx, `INSERT INTO team_members (team_id, user_id, role, status) VALUES ($1, $2, 'member', 'active')`, team, u); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if code := share(friend, mate); code != http.StatusOK {
+			t.Fatalf("share with a teammate: %d", code)
+		}
 		rec, r = ts.MakeAuthRequest(t, http.MethodGet, "/api/memories/shares", nil, friend, nil)
 		ts.HandleGetMemoryShares(rec, r)
 		var shares struct {
@@ -356,6 +373,25 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if code, _ := list(owner, "owner_id=abc"); code != http.StatusBadRequest {
 			t.Fatalf("bad owner_id: %d", code)
 		}
+		for _, bad := range []string{"issue=abc", "limit=-1", "offset=x"} {
+			if code, _ := list(owner, bad); code != http.StatusBadRequest {
+				t.Fatalf("%s: %d", bad, code)
+			}
+		}
+		if code, ms := list(owner, "file=deploy/run_me.sh&limit=1"); code != http.StatusOK || len(ms) != 1 {
+			t.Fatalf("file filter + limit: %d %d", code, len(ms))
+		}
+		_, active := list(owner, "")
+		_, all := list(owner, "status=all")
+		if len(all) <= len(active) {
+			t.Fatalf("status=all should include superseded memories: %d vs %d", len(all), len(active))
+		}
+		if res := search(owner, MemorySearchRequest{Query: "deploy script", IncludeInactive: true}); res.Total == 0 {
+			t.Fatal("include_inactive should find the superseded deploy memory")
+		}
+		if res := search(owner, MemorySearchRequest{Query: "r"}); res.Total == 0 {
+			t.Fatal("a one-letter query should search, not fail")
+		}
 		if code, _ := list(outsider, fmt.Sprintf("owner_id=%d", owner)); code != http.StatusForbidden {
 			t.Fatalf("unshared owner_id: %d", code)
 		}
@@ -367,6 +403,10 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			}
 			if res := search(owner, MemorySearchRequest{Query: "how do I roll back the image"}); res.Mode != "hybrid" || res.Total == 0 || !strings.Contains(res.Results[0].Title, "Rollback") {
 				t.Fatalf("hybrid search %+v", res)
+			}
+			// A partial word: full text misses, vectors or the keyword fallback still put the memory first.
+			if res := search(owner, MemorySearchRequest{Query: "rollbac"}); res.Total == 0 || !strings.Contains(res.Results[0].Title, "Rollback") {
+				t.Fatalf("partial word: %+v", res)
 			}
 		}
 	})
@@ -382,6 +422,15 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if code := setQuota(u, 10); code != http.StatusForbidden {
 			t.Fatalf("non-admin set quota: %d", code)
 		}
+		for _, bad := range []any{0, -5, memoryMaxQuota + 1} {
+			if code := setQuota(admin, bad); code != http.StatusBadRequest {
+				t.Fatalf("quota %v: %d", bad, code)
+			}
+		}
+		sid := "999999"
+		rec, r := ts.MakeAuthRequest(t, http.MethodPut, "/api/admin/users/"+sid+"/memory-quota", map[string]any{"quota_bytes": 10}, admin, map[string]string{"id": sid})
+		ts.HandleAdminSetMemoryQuota(rec, r)
+		AssertStatusCode(t, rec.Code, http.StatusNotFound)
 		_, first, _ := write(u, mem("one", "first memory"))
 		if first.Usage.QuotaBytes != memoryDefaultQuota || first.Usage.Warning != "" {
 			t.Fatalf("default usage %+v", first.Usage)
@@ -427,7 +476,24 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		n1 := mem("Partial index gotcha", "the github comment id index is partial so on conflict needs the where clause")
 		n1.CreatedAt = &old
 		write(u, n1)
-		write(u, mem("Partial index gotcha again", "the github comment id index is partial so on conflict needs the where clause too"))
+		write(u, mem("Partial index gotcha", "the github comment id index is partial so on conflict needs the where clause too"))
+		// Same body, different instruction in the title: both stay.
+		r1 := mem("Do not restart production workers", "deployment checklist: drain queues, then deploy")
+		r1.CreatedAt = &old
+		write(u, r1)
+		write(u, mem("Restart production workers", "deployment checklist: drain queues, then deploy"))
+		// The newer copy names fewer files: both stay, so a file filter still finds the older one.
+		f1 := mem("Lock order", "take the owner lock first")
+		f1.CreatedAt, f1.Scope.Files = &old, []string{"api/a.go", "api/b.go"}
+		write(u, f1)
+		write(u, mem("Lock order", "take the owner lock first"))
+		// Two hubs' copies of one lesson fold into one; the folded origin is then ignored.
+		h1 := mem("Two hubs", "the same lesson from two hubs")
+		h1.CreatedAt, h1.OriginHost, h1.OriginID = &old, "hub-a", "500"
+		write(u, h1)
+		h2 := h1
+		h2.CreatedAt, h2.OriginHost, h2.OriginID = nil, "hub-b", "900"
+		write(u, h2)
 		// A newer copy that expires does not absorb a permanent one.
 		tmp := time.Now().UTC().Add(24 * time.Hour)
 		k1 := mem("Rotate logs", "logrotate runs nightly at two")
@@ -452,7 +518,7 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		}
 
 		rep := compact(u)
-		if rep.SupersededRemoved != 1 || rep.ExpiredRemoved != 1 || rep.DuplicatesMerged != 1 ||
+		if rep.SupersededRemoved != 1 || rep.ExpiredRemoved != 1 || rep.DuplicatesMerged != 2 ||
 			rep.LowConfidenceSummarised != 3 || rep.SummariesCreated != 1 || rep.FreedBytes <= 0 {
 			t.Fatalf("first compaction %+v", rep)
 		}
@@ -465,6 +531,25 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		// A hub re-sending the compacted memory is ignored, and a second run frees nothing.
 		if _, again, _ := write(u, a); again.Outcome != "ignored" {
 			t.Fatalf("re-sent compacted memory: %+v", again)
+		}
+		if _, again, _ := write(u, h1); again.Outcome != "ignored" {
+			t.Fatalf("re-sent folded copy from the first hub: %+v", again)
+		}
+		titles := func(res MemorySearchResponse) map[string]int {
+			n := map[string]int{}
+			for _, m := range res.Results {
+				n[m.Title]++
+			}
+			return n
+		}
+		if got := titles(search(u, MemorySearchRequest{Query: "restart workers drain", Limit: 50})); got["Restart production workers"] != 1 || got["Do not restart production workers"] != 1 {
+			t.Fatalf("both restart memories should survive: %v", got)
+		}
+		if got := titles(search(u, MemorySearchRequest{Query: "lock order", Limit: 50})); got["Lock order"] != 2 {
+			t.Fatalf("both lock-order memories should survive: %v", got)
+		}
+		if res := search(u, MemorySearchRequest{Query: "lock", Files: []string{"api/b.go"}}); res.Total != 1 {
+			t.Fatalf("file filter lost the older memory: %+v", res)
 		}
 		rep = compact(u)
 		if rep != (MemoryCompactReport{BytesBefore: rep.BytesBefore, BytesAfter: rep.BytesBefore}) {
@@ -534,6 +619,16 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		}
 		if _, old := get(u, dr.Memory.ID); old.Status != "superseded" {
 			t.Fatalf("repeat did not supersede: %+v", old)
+		}
+
+		// A repeat that lasts longer extends the memory we keep.
+		soon := time.Now().UTC().Add(time.Hour)
+		g := mem("Freeze", "Deploy freeze this week")
+		g.ExpiresAt = &soon
+		write(u, g)
+		g.ExpiresAt = nil
+		if _, rep, _ := write(u, g); rep.Outcome != "duplicate" || rep.Memory.ExpiresAt != nil {
+			t.Fatalf("permanent repeat should drop the expiry: %+v", rep.Memory)
 		}
 
 		// An expired memory does not swallow a fresh write of the same lesson.
@@ -616,6 +711,9 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			}
 			return rec.Code, rep
 		}
+		rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/import-wiki", MemoryImportRequest{ProjectID: pid}, u, nil)
+		ts.HandleImportWikiMemories(rec, r)
+		AssertError(t, rec, http.StatusBadRequest, "origin_host", "validation_error")
 		if code, _ := run(outsider); code != http.StatusForbidden {
 			t.Fatalf("outsider import %d", code)
 		}

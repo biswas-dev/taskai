@@ -89,7 +89,11 @@ func (s *Server) HandleSetMemoryShares(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to update shares", "internal_error")
 		return
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback()                                        //nolint:errcheck
+	if err := s.lockMemoryOwner(ctx, tx, userID); err != nil { // two replacements must not interleave
+		respondError(w, http.StatusInternalServerError, "failed to update shares", "internal_error")
+		return
+	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM memory_shares WHERE owner_id = $1`, userID); err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to update shares", "internal_error")
 		return

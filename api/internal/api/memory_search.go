@@ -35,7 +35,10 @@ type MemorySearchResponse struct {
 
 // memoryQueryEmbedTimeout bounds the query embedding so a slow model cannot eat an agent's context budget;
 // past it, search falls back to full text.
-const memoryQueryEmbedTimeout = 1500 * time.Millisecond
+const (
+	memoryQueryEmbedTimeout = 1500 * time.Millisecond
+	memoryMaxQuery          = memoryEmbedInputChars // longer queries are cut: the model reads no more
+)
 
 var memoryWordRe = regexp.MustCompile(`[\p{L}\p{N}_]+`)
 
@@ -44,7 +47,7 @@ func memoryQueryWords(q string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, w := range memoryWordRe.FindAllString(strings.ToLower(q), -1) {
-		if len(w) > 1 && !seen[w] && len(out) < 12 {
+		if !seen[w] && len(out) < 12 {
 			seen[w] = true
 			out = append(out, w)
 		}
@@ -67,6 +70,9 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 	if len(req.Files) > memoryMaxFiles {
 		respondError(w, http.StatusBadRequest, "at most 50 files", "validation_error")
 		return
+	}
+	if len(req.Query) > memoryMaxQuery {
+		req.Query = strings.ToValidUTF8(req.Query[:memoryMaxQuery], "")
 	}
 	words := memoryQueryWords(req.Query)
 	if len(words) == 0 {
@@ -108,6 +114,8 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 		results, err = s.searchMemoriesHybrid(ctx, f, req.Query, words, req.Limit)
 		if errors.Is(err, errNoQueryVector) {
 			mode = "fts"
+		} else if err == nil && len(results) == 0 {
+			mode = "keyword" // partial words; new memories not embedded yet
 		}
 	}
 	if mode == "fts" {

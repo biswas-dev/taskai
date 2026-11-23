@@ -15,18 +15,17 @@ import (
 // path) and idempotent: a second run finds nothing to do.
 //  1. superseded memories go (their successor holds the lesson);
 //  2. expired memories go;
-//  3. a near-duplicate in the same scope (70% of words shared, the hub's rule) gives way to a newer one, but only
-//     when the newer body contains the older body's text (so "copy prod to staging" never replaces its reverse) and
-//     the newer one lasts at least as long;
+//  3. an older memory a newer one fully covers goes: same scope, kind and title, the newer body contains the older
+//     body's text, it names every file the older one does, its confidence is no lower and it lasts at least as long.
+//     Covering text, not shared words, so "copy prod to staging" never replaces its reverse;
 //  4. old low-confidence memories of one kind in one scope, without an expiry, are merged into one memory with
 //     their bodies kept verbatim.
 // Rows with an origin become tombstones, so a hub re-sending them is ignored.
 
 const (
-	memoryNearDuplicate   = 0.7
 	memorySummariseAfter  = 90 * 24 * time.Hour
 	memoryMinCluster      = 3
-	memoryNearDupWindow   = 200 // shortcut: compare with the newest 200 kept per scope, not all; widen if dupes slip by
+	memoryNearDupWindow   = 200 // shortcut: compare with the newest 200 kept per scope and title; widen if copies slip by
 	memoryEmbedBatch      = 32
 	memoryCompactRecent   = 5 * time.Minute // automatic compaction looks at owners written to this recently
 	memoryEmbedInputChars = 500             // the embedding model's context, as wiki blocks
@@ -44,35 +43,32 @@ type MemoryCompactReport struct {
 	FreedBytes              int64 `json:"freed_bytes"`
 }
 
-func memoryWordSet(s string) map[string]bool {
-	out := map[string]bool{}
-	for _, w := range memoryWordRe.FindAllString(strings.ToLower(s), -1) {
-		if len(w) > 1 {
-			out[w] = true
-		}
-	}
-	return out
-}
-
-func memoryJaccard(a, b map[string]bool) float64 {
-	if len(a) == 0 || len(b) == 0 {
-		return 0
-	}
-	n := 0
-	for w := range a {
-		if b[w] {
-			n++
-		}
-	}
-	return float64(n) / float64(len(a)+len(b)-n)
-}
-
 // memoryScopeKey: the same repo (with issue and PR), or the same folder when there is no repo (the hub's sameScope).
 func memoryScopeKey(sc MemoryScope) string {
 	if sc.Repo != "" {
 		return fmt.Sprintf("r\x00%s\x00%d\x00%d", strings.ToLower(sc.Repo), sc.Issue, sc.PR)
 	}
 	return "f\x00" + sc.Folder
+}
+
+var memoryConfidenceRank = map[string]int{"low": 0, "medium": 1, "high": 2}
+
+// memoryCovers: newer holds everything older does (same title is checked by the caller's grouping).
+func memoryCovers(newer, older Memory) bool {
+	if !strings.Contains(normWords(newer.Body), normWords(older.Body)) || !outlives(newer.ExpiresAt, older.ExpiresAt) ||
+		memoryConfidenceRank[newer.Confidence] < memoryConfidenceRank[older.Confidence] {
+		return false
+	}
+	files := map[string]bool{}
+	for _, f := range newer.Scope.Files {
+		files[f] = true
+	}
+	for _, f := range older.Scope.Files {
+		if !files[f] {
+			return false
+		}
+	}
+	return true
 }
 
 // outlives: a memory expiring at a lasts at least as long as one expiring at b (nil = never expires).
@@ -139,23 +135,16 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 	}
 
 	// Near-duplicates: newest first, so the newest of a group is kept.
-	type kept struct {
-		id      int64
-		words   map[string]bool
-		body    string
-		expires *time.Time
-	}
-	byScope := map[string][]kept{}
+
+	byKey := map[string][]Memory{}
 	var survivors []Memory
 	for _, m := range active {
-		key := memoryScopeKey(m.Scope)
-		words, body := memoryWordSet(m.Title+" "+m.Body), normWords(m.Body)
+		key := memoryScopeKey(m.Scope) + "\x00" + m.Kind + "\x00" + normWords(m.Title)
 		var dupOf int64
-		group := byScope[key]
+		group := byKey[key]
 		for i := len(group) - 1; i >= 0 && i >= len(group)-memoryNearDupWindow; i-- {
-			if memoryJaccard(words, group[i].words) >= memoryNearDuplicate && strings.Contains(group[i].body, body) &&
-				outlives(group[i].expires, m.ExpiresAt) {
-				dupOf = group[i].id
+			if memoryCovers(group[i], m) {
+				dupOf = group[i].ID
 				break
 			}
 		}
@@ -166,7 +155,7 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 			rep.DuplicatesMerged++
 			continue
 		}
-		byScope[key] = append(group, kept{m.ID, words, body, m.ExpiresAt})
+		byKey[key] = append(group, m)
 		survivors = append(survivors, m)
 	}
 
@@ -214,20 +203,31 @@ func memorySummaryEntry(m Memory) string {
 	return fmt.Sprintf("### %s\n_%s_\n\n%s\n\n", m.Title, m.CreatedAt.Format("2006-01-02"), m.Body)
 }
 
-// chunkMemories packs memories, in order, into groups whose merged body fits memoryMaxBody.
+// chunkMemories packs memories, in order, into groups whose merged body fits memoryMaxBody and whose files fit
+// memoryMaxFiles, so a merge never drops a file a search could filter by.
 func chunkMemories(ms []Memory) [][]Memory {
 	budget := memoryMaxBody - len(memorySummaryHeader) - 8
 	var out [][]Memory
 	var cur []Memory
 	size := 0
+	files := map[string]bool{}
 	for _, m := range ms {
 		n := len(memorySummaryEntry(m))
-		if len(cur) > 0 && size+n > budget {
+		added := 0
+		for _, f := range m.Scope.Files {
+			if !files[f] {
+				added++
+			}
+		}
+		if len(cur) > 0 && (size+n > budget || len(files)+added > memoryMaxFiles) {
 			out = append(out, cur)
-			cur, size = nil, 0
+			cur, size, files = nil, 0, map[string]bool{}
 		}
 		cur = append(cur, m)
 		size += n
+		for _, f := range m.Scope.Files {
+			files[f] = true
+		}
 	}
 	if len(cur) > 0 {
 		out = append(out, cur)

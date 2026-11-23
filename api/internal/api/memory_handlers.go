@@ -140,7 +140,18 @@ func (s *Server) HandleListMemories(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 	q := r.URL.Query()
-	atoi := func(k string) int { n, _ := strconv.Atoi(q.Get(k)); return n }
+	nums := map[string]int{}
+	for _, k := range []string{"issue", "pr", "limit", "offset"} {
+		if v := q.Get(k); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				respondError(w, http.StatusBadRequest, k+" must be a non-negative number", "validation_error")
+				return
+			}
+			nums[k] = n
+		}
+	}
+	atoi := func(k string) int { return nums[k] }
 	var ownerID int64
 	if v := q.Get("owner_id"); v != "" {
 		var err error
