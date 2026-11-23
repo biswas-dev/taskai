@@ -44,6 +44,7 @@ docker-compose up --build
 - 🔐 **Authentication** - Secure JWT-based auth with bcrypt password hashing
 - 🔍 **Full-Text Search** - Find tasks and projects instantly
 - 📱 **Responsive UI** - Works on desktop and mobile
+- 🧠 **Memories** - One store of short lessons per person, for every AI and app you use. Write and search over REST or MCP. See the [memory protocol and quick start](docs/memory-protocol.md).
 
 ### Technical Features
 - 🚀 **RESTful API** - Complete OpenAPI 3.1 specification
