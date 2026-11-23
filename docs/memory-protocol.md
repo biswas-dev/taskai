@@ -47,7 +47,7 @@ Over MCP, send `X-API-Key: <key>` to `https://mcp.taskai.cc/mcp`.
 | outcome | When | Status |
 |---|---|---|
 | `created` | A new memory. | 201 |
-| `updated` | The same origin with changed content or metadata (expiry, confidence, supersede link). | 200 |
+| `updated` | The same origin with changed content or metadata (expiry, confidence, supersede link, author). An upsert replaces the row. | 200 |
 | `duplicate` | Nothing new: an exact repeat. | 200 |
 | `ignored` | The origin was compacted or deleted. Do not send it again. | 200 |
 

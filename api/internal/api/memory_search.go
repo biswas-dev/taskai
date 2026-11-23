@@ -78,8 +78,8 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "query is required", "invalid_request")
 		return
 	}
-	if req.Issue < 0 || req.PR < 0 {
-		respondError(w, http.StatusBadRequest, "issue and pr are positive numbers", "validation_error")
+	if req.Issue < 0 || req.PR < 0 || req.OwnerID < 0 {
+		respondError(w, http.StatusBadRequest, "issue, pr and owner_id are positive numbers", "validation_error")
 		return
 	}
 	words := memoryQueryWords(req.Query)

@@ -391,6 +391,11 @@ func TestMemoryListDeleteUsageCompact(t *testing.T) {
 	if _, res := rpc(t, h, key, "tools/call", map[string]any{"name": "supersede_memory", "arguments": map[string]any{"memory_id": "0", "kind": "fact", "body": "x", "repo": "o/r"}}); !strings.Contains(fmt.Sprint(res), "memory_id must be") {
 		t.Fatalf("supersede with id 0 should fail: %v", res)
 	}
+	for _, bad := range []string{"usage", "", "0", "-3"} {
+		if _, res := rpc(t, h, key, "tools/call", map[string]any{"name": "get_memory", "arguments": map[string]any{"memory_id": bad}}); !strings.Contains(fmt.Sprint(res), "memory_id must be") {
+			t.Fatalf("get_memory %q should fail: %v", bad, res)
+		}
+	}
 	call(t, h, key, "delete_memory", map[string]any{"memory_id": "6"})
 	if req := api.last("/api/memories/6"); req.Method != http.MethodDelete {
 		t.Fatalf("delete: %+v", req)

@@ -2245,7 +2245,7 @@ export interface components {
             /** @description One line; defaults to the body's first line */
             title?: string;
             body: string;
-            scope: components["schemas"]["MemoryScope"];
+            scope?: components["schemas"]["MemoryScope"];
             author?: components["schemas"]["MemoryAuthor"];
             /**
              * @description Default medium
@@ -2355,7 +2355,7 @@ export interface components {
         };
         MemoryQuotaRequest: {
             /** Format: int64 */
-            quota_bytes?: number | null;
+            quota_bytes: number | null;
         };
         CreateMeetingRequest: {
             title: string;

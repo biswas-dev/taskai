@@ -166,7 +166,7 @@ func (s *Server) HandleListMemories(w http.ResponseWriter, r *http.Request) {
 	var ownerID int64
 	if v := q.Get("owner_id"); v != "" {
 		var err error
-		if ownerID, err = strconv.ParseInt(v, 10, 64); err != nil {
+		if ownerID, err = strconv.ParseInt(v, 10, 64); err != nil || ownerID <= 0 {
 			respondError(w, http.StatusBadRequest, "owner_id must be a user id", "validation_error")
 			return
 		}

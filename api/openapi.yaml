@@ -4568,7 +4568,7 @@ components:
         offset: {type: integer}
     MemoryWriteRequest:
       type: object
-      required: [kind, body, scope]
+      required: [kind, body]
       properties:
         kind: {type: string, enum: [fact, decision, gotcha, runbook, handoff]}
         title: {type: string, maxLength: 200, description: One line; defaults to the body's first line}
@@ -4663,6 +4663,7 @@ components:
         quota_exceeded: {type: boolean}
     MemoryQuotaRequest:
       type: object
+      required: [quota_bytes]
       properties:
         quota_bytes: {type: integer, format: int64, nullable: true}
     CreateMeetingRequest:

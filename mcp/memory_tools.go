@@ -71,6 +71,15 @@ type setMemorySharesIn struct {
 	UserIDs []int64 `json:"user_ids" jsonschema:"Everyone who may read and search your memories (people in a team or project with you); [] removes every share"`
 }
 
+// memoryID is a positive memory id, so "usage" or "" can never route to another endpoint.
+func memoryID(s string) (string, error) {
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || id <= 0 {
+		return "", fmt.Errorf("memory_id must be a memory ID, got %q", s)
+	}
+	return strconv.FormatInt(id, 10), nil
+}
+
 func (in writeMemoryIn) body() map[string]any {
 	b := map[string]any{"kind": in.Kind, "title": in.Title, "body": in.Body,
 		"scope":  map[string]any{"repo": in.Repo, "folder": in.Folder, "issue": in.Issue, "pr": in.PR, "files": in.Files},
@@ -128,10 +137,11 @@ func registerMemoryTools(srv *gomcp.Server) {
 
 	gomcp.Register(srv, write("supersede_memory", "Save a new memory that replaces an outdated one (the old one is marked superseded and dropped from search)."),
 		func(ctx context.Context, in supersedeMemoryIn) (any, error) {
-			id, err := strconv.ParseInt(in.MemoryID, 10, 64)
-			if err != nil || id <= 0 {
-				return nil, fmt.Errorf("memory_id must be a memory ID, got %q", in.MemoryID)
+			ids, err := memoryID(in.MemoryID)
+			if err != nil {
+				return nil, err
 			}
+			id, _ := strconv.ParseInt(ids, 10, 64)
 			_, c := sess(ctx)
 			b := in.body()
 			b["supersedes"] = id
@@ -140,8 +150,12 @@ func registerMemoryTools(srv *gomcp.Server) {
 
 	gomcp.Register(srv, read("get_memory", "Get one memory (yours or shared with you) in full."),
 		func(ctx context.Context, in memoryIDIn) (any, error) {
+			id, err := memoryID(in.MemoryID)
+			if err != nil {
+				return nil, err
+			}
 			_, c := sess(ctx)
-			return c.get(ctx, "/api/memories/"+esc(in.MemoryID))
+			return c.get(ctx, "/api/memories/"+id)
 		})
 
 	gomcp.Register(srv, read("get_memory_shares", "Who can read your memories, and whose memories you can read."),
@@ -158,8 +172,12 @@ func registerMemoryTools(srv *gomcp.Server) {
 
 	gomcp.Register(srv, destroy("delete_memory", "Delete one of your memories."),
 		func(ctx context.Context, in memoryIDIn) (any, error) {
+			id, err := memoryID(in.MemoryID)
+			if err != nil {
+				return nil, err
+			}
 			_, c := sess(ctx)
-			return c.send(ctx, http.MethodDelete, "/api/memories/"+esc(in.MemoryID), nil)
+			return c.send(ctx, http.MethodDelete, "/api/memories/"+id, nil)
 		})
 
 	gomcp.Register(srv, read("memory_usage", "How much of your memory quota is used (bytes, count, warning past 80%)."),

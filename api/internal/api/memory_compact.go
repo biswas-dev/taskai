@@ -40,12 +40,9 @@ type MemoryCompactReport struct {
 	FreedBytes              int64 `json:"freed_bytes"`
 }
 
-// memoryScopeKey: the same repo (with issue and PR), or the same folder when there is no repo (the hub's sameScope).
+// memoryScopeKey: the same repo, issue, PR and folder, so a merge never moves a note to another scope.
 func memoryScopeKey(sc MemoryScope) string {
-	if sc.Repo != "" {
-		return fmt.Sprintf("r\x00%s\x00%d\x00%d", strings.ToLower(sc.Repo), sc.Issue, sc.PR)
-	}
-	return "f\x00" + sc.Folder
+	return fmt.Sprintf("%s\x00%d\x00%d\x00%s", strings.ToLower(sc.Repo), sc.Issue, sc.PR, sc.Folder)
 }
 
 var memoryConfidenceRank = map[string]int{"low": 0, "medium": 1, "high": 2}

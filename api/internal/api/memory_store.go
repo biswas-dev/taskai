@@ -449,13 +449,16 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 
 	var existingID, oldSize int64
 	var oldStatus, oldHash, oldConfidence, oldSupOrigin string
+	var oldAuthor MemoryAuthor
 	var oldExpires *time.Time
 	var oldSupersedes *int64
 	found := false
 	if m.OriginID != "" {
-		err := tx.QueryRowContext(ctx, `SELECT id, status, content_hash, size_bytes, confidence, expires_at, supersedes_origin_id, supersedes
+		err := tx.QueryRowContext(ctx, `SELECT id, status, content_hash, size_bytes, confidence, expires_at, supersedes_origin_id, supersedes,
+			agent, provider, host, session
 			FROM agent_memories WHERE owner_id = $1 AND origin_host = $2 AND origin_id = $3`, ownerID, m.OriginHost, m.OriginID).
-			Scan(&existingID, &oldStatus, &oldHash, &oldSize, &oldConfidence, &oldExpires, &oldSupOrigin, &oldSupersedes)
+			Scan(&existingID, &oldStatus, &oldHash, &oldSize, &oldConfidence, &oldExpires, &oldSupOrigin, &oldSupersedes,
+				&oldAuthor.Agent, &oldAuthor.Provider, &oldAuthor.Host, &oldAuthor.Session)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return Memory{}, "", err
 		}
@@ -493,8 +496,19 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return Memory{}, "", err
 		}
-		if targetSupOrigin != "" && targetSupOrigin == m.OriginID {
-			return Memory{}, "", memoryInputError("supersedes_origin_id: the two memories would supersede each other")
+		// Walk the chain this would extend: reaching our own origin means a cycle, which would hide every memory in it.
+		for hop, next := 0, targetSupOrigin; next != "" && hop < 1000; hop++ {
+			if next == m.OriginID {
+				return Memory{}, "", memoryInputError("supersedes_origin_id: the memories would supersede each other in a cycle")
+			}
+			err := tx.QueryRowContext(ctx, `SELECT supersedes_origin_id FROM agent_memories WHERE owner_id = $1 AND origin_host = $2 AND origin_id = $3`,
+				ownerID, m.OriginHost, next).Scan(&next)
+			if errors.Is(err, sql.ErrNoRows) {
+				break
+			}
+			if err != nil {
+				return Memory{}, "", err
+			}
 		}
 	}
 	if found && target == existingID {
@@ -544,7 +558,7 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 
 	sameExpiry := (oldExpires == nil) == (m.ExpiresAt == nil) && (oldExpires == nil || oldExpires.Equal(*m.ExpiresAt))
 	sameLink := oldSupOrigin == m.supersedesOriginID && (target == 0 || oldSupersedes != nil && *oldSupersedes == target)
-	if found && oldHash == m.hash && oldStatus == m.Status && oldConfidence == m.Confidence && sameExpiry && sameLink {
+	if found && oldHash == m.hash && oldStatus == m.Status && oldConfidence == m.Confidence && sameExpiry && sameLink && oldAuthor == m.Author {
 		mem, err := s.getMemory(ctx, tx, existingID)
 		return mem, "duplicate", err
 	}

@@ -381,6 +381,9 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if code, ms := list(owner, "kind=runbook&repo=biswas-dev/other"); code != http.StatusOK || len(ms) != 1 {
 			t.Fatalf("list filter: %d %d", code, len(ms))
 		}
+		if code, _ := list(owner, "owner_id=0"); code != http.StatusBadRequest {
+			t.Fatalf("owner_id=0: %d", code)
+		}
 		if code, _ := list(owner, "owner_id=abc"); code != http.StatusBadRequest {
 			t.Fatalf("bad owner_id: %d", code)
 		}
@@ -645,6 +648,27 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("mutual supersede: %d %s", code, body)
 		}
 
+		// A three-memory cycle, out of order, is refused too.
+		c1 := mem("Cycle one", "first of three")
+		c1.OriginHost, c1.OriginID, c1.SupersedesOriginID = "hub-a", "30", "32"
+		write(u, c1)
+		c2 := mem("Cycle two", "second of three")
+		c2.OriginHost, c2.OriginID, c2.SupersedesOriginID = "hub-a", "31", "30"
+		write(u, c2)
+		c3 := mem("Cycle three", "third of three")
+		c3.OriginHost, c3.OriginID, c3.SupersedesOriginID = "hub-a", "32", "31"
+		if code, _, body := write(u, c3); code != http.StatusBadRequest {
+			t.Fatalf("three-memory cycle: %d %s", code, body)
+		}
+		// An author-only change is an update, not a duplicate.
+		au := mem("Attribution", "who wrote this")
+		au.OriginHost, au.OriginID = "hub-a", "40"
+		write(u, au)
+		au.Author.Agent = "codex"
+		if _, up, _ := write(u, au); up.Outcome != "updated" || up.Memory.Author.Agent != "codex" {
+			t.Fatalf("author-only update: %+v", up)
+		}
+
 		// A more confident repeat (no origin) raises the kept memory's confidence.
 		lc := mem("Hunch", "the queue may stall under load")
 		lc.Confidence = "low"
@@ -676,7 +700,7 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			DecodeJSON(t, rec, &out)
 			return out
 		}
-		if got := usage(); got.Count != 5 || got.ActiveCount != 3 {
+		if got := usage(); got.Count != 8 || got.ActiveCount != 5 {
 			t.Fatalf("usage should leave out the tombstone and count only active ones: %+v", got)
 		}
 
@@ -812,7 +836,8 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("second import %+v", rep)
 		}
 		hub := MemoryWriteRequest{Kind: "fact", Title: "Prod is Postgres", Body: "Every environment uses PostgreSQL.",
-			Scope: MemoryScope{Repo: "biswas-dev/taskai"}, Confidence: "high", OriginHost: "hub-a", OriginID: "41"}
+			Scope: MemoryScope{Repo: "biswas-dev/taskai"}, Confidence: "high", OriginHost: "hub-a", OriginID: "41",
+			Author: MemoryAuthor{Agent: "claude-code", Provider: "claude", Host: "mbp"}}
 		if _, resp, _ := write(u, hub); resp.Outcome != "duplicate" {
 			t.Fatalf("hub upsert after import: %+v", resp)
 		}
