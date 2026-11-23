@@ -38,6 +38,7 @@ function Where() {
     <>
       <button onClick={() => navigate('/app/memories?q=index&kind=gotcha')}>open link</button>
       <button onClick={() => navigate(-1)}>back</button>
+      <button onClick={() => navigate('/app/memories?kind=decision')}>kind link</button>
     </>
   )
 }
@@ -131,6 +132,39 @@ describe('Memories', () => {
     expect(new URLSearchParams(location).get('q')).toBe('index')
     expect(new URLSearchParams(location).get('repo')).toBeNull()
     expect(mocked.getMemories).not.toHaveBeenCalledWith(expect.objectContaining({ repo: 'api' }), expect.anything())
+  })
+
+  it('keeps a kind chosen while typing waits for the debounce', async () => {
+    renderAt()
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(1))
+    await userEvent.type(screen.getByLabelText('Repository'), 'acme/api')
+    await userEvent.click(screen.getByLabelText('Kind'))
+    await userEvent.click(screen.getByRole('option', { name: 'decision' }))
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenLastCalledWith(
+      { query: '', repo: 'acme/api', kind: 'decision' }, expect.any(AbortSignal)))
+    expect(new URLSearchParams(location).get('kind')).toBe('decision')
+    expect(new URLSearchParams(location).get('repo')).toBe('acme/api')
+  })
+
+  it('drops a pending edit when a link changes only the kind', async () => {
+    renderAt()
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(1))
+    await userEvent.type(screen.getByLabelText('Repository'), 'api')
+    await userEvent.click(screen.getByRole('button', { name: 'kind link' }))
+    await new Promise(r => setTimeout(r, 300))
+    expect(screen.getByLabelText('Repository')).toHaveValue('')
+    expect(new URLSearchParams(location).get('repo')).toBeNull()
+    expect(new URLSearchParams(location).get('kind')).toBe('decision')
+  })
+
+  it('treats spaces around URL values as the trimmed search, so Enter opens results', async () => {
+    renderAt('/app/memories?q=%20arm%20&repo=%20biswas-dev/taskai%20')
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledWith(
+      { query: 'arm', repo: 'biswas-dev/taskai', kind: '' }, expect.any(AbortSignal)))
+    await screen.findByText('Partial index needs WHERE')
+    await userEvent.click(screen.getByLabelText('Search'))
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 
   it('applies a kind filter at once and records it in the URL', async () => {

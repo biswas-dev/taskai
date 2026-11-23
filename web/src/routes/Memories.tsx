@@ -65,13 +65,14 @@ export default function Memories() {
   const { user } = useAuth()
   // The URL holds the applied search (q, repo, kind), so it can be shared, bookmarked and walked with back/forward.
   const [params, setParams] = useSearchParams()
-  const q = params.get('q') ?? ''
-  const r = params.get('repo') ?? ''
+  const q = (params.get('q') ?? '').trim()
+  const r = (params.get('repo') ?? '').trim()
   const urlKind = params.get('kind') ?? ''
   const kind: MemoryKind | '' = kinds.includes(urlKind as MemoryKind) ? (urlKind as MemoryKind) : ''
   const [query, setQuery] = useState(q)
   const [repo, setRepo] = useState(r)
-  const applied = useRef({ q, r }) // the search the URL holds, as the inputs last wrote or were reset to
+  const applied = useRef({ q, r, kind }) // the search the URL holds, as this page last wrote or was reset to
+  const draft = useRef({ q, r }) // the inputs as typed, read when the debounce fires
   const timer = useRef<ReturnType<typeof setTimeout>>()
   const setParamsNow = useRef(setParams)
   setParamsNow.current = setParams // react-router 6 hands a functional update the params of the render it came from
@@ -95,12 +96,13 @@ export default function Memories() {
   const stale = searching || query.trim() !== q || repo.trim() !== r
 
   // Typing applies the search after a pause, by writing it to the URL.
-  const type = (nextQuery: string, nextRepo: string) => {
-    setQuery(nextQuery)
-    setRepo(nextRepo)
+  const type = (field: 'q' | 'r', value: string) => {
+    draft.current = { ...draft.current, [field]: value }
+    if (field === 'q') setQuery(value)
+    else setRepo(value)
     clearTimeout(timer.current)
     timer.current = setTimeout(() => {
-      applied.current = { q: nextQuery.trim(), r: nextRepo.trim() }
+      applied.current = { ...applied.current, q: draft.current.q.trim(), r: draft.current.r.trim() }
       setParamsNow.current(prev => {
         const next = new URLSearchParams(prev)
         for (const [key, value] of [['q', applied.current.q], ['repo', applied.current.r]] as const) {
@@ -115,13 +117,25 @@ export default function Memories() {
 
   // A URL change the inputs did not make (back/forward, a pasted link) drops any pending edit and shows in both inputs.
   useEffect(() => {
-    if (q !== applied.current.q || r !== applied.current.r) {
+    const a = applied.current
+    if (q !== a.q || r !== a.r || kind !== a.kind) {
       clearTimeout(timer.current)
+      draft.current = { q, r }
       setQuery(q)
       setRepo(r)
     }
-    applied.current = { q, r }
-  }, [q, r])
+    applied.current = { q, r, kind }
+  }, [q, r, kind])
+
+  const chooseKind = (v: string) => {
+    applied.current = { ...applied.current, kind: kinds.includes(v as MemoryKind) ? (v as MemoryKind) : '' } // keeps a pending edit
+    setParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (v) next.set('kind', v)
+      else next.delete('kind')
+      return next
+    }, { replace: true })
+  }
 
   // A delete's or compaction's error belongs to the search it happened in.
   useEffect(() => setActionError(''), [q, r, kind])
@@ -278,7 +292,7 @@ export default function Memories() {
           placeholder="Search memories  ( / or ⌘K )"
           autoComplete="off"
           value={query}
-          onChange={e => type(e.target.value, repo)}
+          onChange={e => type('q', e.target.value)}
           onKeyDown={onSearchKey}
           role="combobox"
           aria-expanded={memories.length > 0}
@@ -287,11 +301,11 @@ export default function Memories() {
           aria-autocomplete="list"
         />
         <TextInput id="memory-repo" label="Repository" placeholder="owner/name" autoComplete="off" value={repo}
-          onChange={e => type(query, e.target.value)} />
+          onChange={e => type('r', e.target.value)} />
         <div>
           <label htmlFor="memory-kind" className="block text-xs font-medium text-dark-text-tertiary mb-1.5">Kind</label>
           <Select<string> id="memory-kind" value={kind}
-            onChange={v => setParams(prev => { const next = new URLSearchParams(prev); if (v) next.set('kind', v); else next.delete('kind'); return next }, { replace: true })}
+            onChange={chooseKind}
             options={[{ value: '', label: 'Any kind' }, ...kinds.map(k => ({ value: k, label: k }))]} />
         </div>
       </div>
