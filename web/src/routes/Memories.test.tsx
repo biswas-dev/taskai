@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, within, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import Memories from './Memories'
 import { api, type Memory, type MemoryUsage } from '../lib/api'
 
@@ -32,8 +32,14 @@ const usage: MemoryUsage = { used_bytes: 900 * 1024 * 1024, quota_bytes: 1024 * 
 let location = ''
 function Where() {
   const l = useLocation()
+  const navigate = useNavigate()
   location = l.search
-  return null
+  return (
+    <>
+      <button onClick={() => navigate('/app/memories?q=index&kind=gotcha')}>open link</button>
+      <button onClick={() => navigate(-1)}>back</button>
+    </>
+  )
 }
 
 function renderAt(url = '/app/memories') {
@@ -84,6 +90,22 @@ describe('Memories', () => {
     await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledWith(
       { query: 'arm', repo: 'biswas-dev/taskai', kind: 'gotcha' }, expect.any(AbortSignal)))
     expect(mocked.getMemories).toHaveBeenCalledTimes(1)
+  })
+
+  it('follows URL changes it did not make, like back and forward', async () => {
+    renderAt('/app/memories?q=arm')
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(1))
+    await userEvent.click(screen.getByRole('button', { name: 'open link' }))
+    expect(screen.getByLabelText('Search')).toHaveValue('index')
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenLastCalledWith(
+      { query: 'index', repo: '', kind: 'gotcha' }, expect.any(AbortSignal)))
+    await userEvent.click(screen.getByRole('button', { name: 'back' }))
+    expect(screen.getByLabelText('Search')).toHaveValue('arm')
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenLastCalledWith(
+      { query: 'arm', repo: '', kind: '' }, expect.any(AbortSignal)))
+    await new Promise(r => setTimeout(r, 300)) // past the debounce: the inputs must not write the old search back
+    expect(new URLSearchParams(location).get('q')).toBe('arm')
+    expect(new URLSearchParams(location).get('kind')).toBeNull()
   })
 
   it('applies a kind filter at once and records it in the URL', async () => {
@@ -181,6 +203,61 @@ describe('Memories', () => {
     expect(mocked.deleteMemory).toHaveBeenCalledWith(4)
     expect(screen.queryByText('Partial index needs WHERE')).not.toBeInTheDocument()
     expect(screen.queryByText('down')).not.toBeInTheDocument()
+  })
+
+  it('keeps a failed delete visible after the reload that restores the memory', async () => {
+    mocked.deleteMemory.mockRejectedValue(new Error('delete failed'))
+    renderAt()
+    await userEvent.click(await screen.findByText('Partial index needs WHERE'))
+    await userEvent.click(screen.getByRole('button', { name: 'Delete memory' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(await screen.findByText('delete failed')).toBeInTheDocument()
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('Partial index needs WHERE')).toBeInTheDocument()
+    expect(screen.getByText('delete failed')).toBeInTheDocument()
+  })
+
+  it('stays on a result when the selected last one is deleted', async () => {
+    mocked.deleteMemory.mockResolvedValue()
+    mocked.getMemories.mockResolvedValue([shared, mine])
+    renderAt()
+    await screen.findByText('Partial index needs WHERE')
+    await userEvent.click(screen.getByLabelText('Search'))
+    await userEvent.keyboard('{ArrowDown}{Enter}')
+    await userEvent.click(screen.getByRole('button', { name: 'Delete memory' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(within(results()).getByRole('option')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('Search')).toHaveAttribute('aria-activedescendant', 'memory-5')
+  })
+
+  it('does not open a result of the previous query while a new one is pending', async () => {
+    renderAt()
+    await screen.findByText('Partial index needs WHERE')
+    await userEvent.type(screen.getByLabelText('Search'), 'staging{Enter}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps Tab inside the open memory', async () => {
+    renderAt()
+    await userEvent.click(await screen.findByText('Partial index needs WHERE'))
+    const dialog = screen.getByRole('dialog')
+    for (let i = 0; i < 4; i++) {
+      await userEvent.tab()
+      expect(dialog).toContainElement(document.activeElement as HTMLElement)
+    }
+    await userEvent.tab({ shift: true })
+    expect(dialog).toContainElement(document.activeElement as HTMLElement)
+  })
+
+  it('shows a long body around its first match, with ellipses', async () => {
+    const long = { ...mine, body: `${'filler '.repeat(30)}the zebrafish heater ${'tail '.repeat(60)}` }
+    mocked.getMemories.mockResolvedValue([long])
+    renderAt('/app/memories?q=zebra')
+    await waitFor(() => expect(within(results()).getByText('zebra').tagName).toBe('MARK'))
+    const text = within(results()).getByText('zebra').closest('p')?.textContent ?? ''
+    expect(text.startsWith('…')).toBe(true)
+    expect(text.endsWith('…')).toBe(true)
+    expect(text.length).toBeLessThan(230)
   })
 
   it('compacts and reports what it freed', async () => {

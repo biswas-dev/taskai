@@ -72,39 +72,55 @@ const isTyping = (el: EventTarget | null) =>
 
 export default function Memories() {
   const { user } = useAuth()
+  // The URL holds the applied search (q, repo, kind), so it can be shared, bookmarked and walked with back/forward.
   const [params, setParams] = useSearchParams()
-  const [query, setQuery] = useState(params.get('q') ?? '')
-  const [repo, setRepo] = useState(params.get('repo') ?? '')
+  const q = params.get('q') ?? ''
+  const r = params.get('repo') ?? ''
   const urlKind = params.get('kind') ?? ''
   const kind: MemoryKind | '' = kinds.includes(urlKind as MemoryKind) ? (urlKind as MemoryKind) : ''
-  const q = useDebounced(query, SEARCH_DEBOUNCE_MS)
-  const r = useDebounced(repo, SEARCH_DEBOUNCE_MS)
+  const [query, setQuery] = useState(q)
+  const [repo, setRepo] = useState(r)
+  const typedQuery = useDebounced(query, SEARCH_DEBOUNCE_MS)
+  const typedRepo = useDebounced(repo, SEARCH_DEBOUNCE_MS)
+  const written = useRef({ q, r }) // what the inputs last put in the URL
 
   const [memories, setMemories] = useState<Memory[]>([])
   const [loaded, setLoaded] = useState(false)
   const [searching, setSearching] = useState(true)
   const [took, setTook] = useState<number | null>(null)
   const [searched, setSearched] = useState('') // the query the shown results answer, for highlighting
-  const [active, setActive] = useState(0)
+  const [selected, setActive] = useState(0)
   const [open, setOpen] = useState<Memory | null>(null)
   const [reload, setReload] = useState(0)
   const [usage, setUsage] = useState<MemoryUsage | null>(null)
-  const [error, setError] = useState('')
+  const [error, setError] = useState('') // the search's; a newer search clears it
+  const [actionError, setActionError] = useState('') // a delete's or compaction's; survives the reload after it
   const [compacting, setCompacting] = useState(false)
   const [report, setReport] = useState<MemoryCompactReport | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const active = Math.min(selected, Math.max(0, memories.length - 1)) // stays on a result when the list shrinks
+  // Results are stale while typing waits for the debounce or a search is in flight.
+  const stale = searching || query.trim() !== q || repo.trim() !== r
 
-  // The URL holds the applied search, so it can be shared or bookmarked.
+  // Typing, after the debounce, applies the search by writing it to the URL.
   useEffect(() => {
+    written.current = { q: typedQuery.trim(), r: typedRepo.trim() }
     setParams(prev => {
       const next = new URLSearchParams(prev)
-      for (const [key, value] of [['q', q.trim()], ['repo', r.trim()], ['kind', kind]] as const) {
+      for (const [key, value] of [['q', typedQuery.trim()], ['repo', typedRepo.trim()]] as const) {
         if (value) next.set(key, value)
         else next.delete(key)
       }
       return next.toString() === prev.toString() ? prev : next
     }, { replace: true })
-  }, [q, r, kind, setParams])
+  }, [typedQuery, typedRepo, setParams])
+
+  // A URL change the inputs did not make (back/forward, a pasted link) shows in the inputs.
+  useEffect(() => {
+    if (q !== written.current.q) setQuery(q)
+    if (r !== written.current.r) setRepo(r)
+    written.current = { q, r }
+  }, [q, r])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -163,8 +179,8 @@ export default function Memories() {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       const step = e.key === 'ArrowDown' ? 1 : -1
-      setActive(i => Math.max(0, Math.min(memories.length - 1, i + step)))
-    } else if (e.key === 'Enter' && memories[active]) {
+      setActive(Math.max(0, Math.min(memories.length - 1, active + step)))
+    } else if (e.key === 'Enter' && memories[active] && !stale) { // never open a result of the previous query
       e.preventDefault()
       setOpen(memories[active])
     }
@@ -176,13 +192,14 @@ export default function Memories() {
   }, [])
 
   const remove = async (id: number) => {
+    setActionError('')
     setMemories(ms => ms.filter(m => m.id !== id))
     close()
     try {
       await api.deleteMemory(id)
     } catch (err) {
       setReload(n => n + 1) // reload rather than restore a snapshot newer searches may have moved past
-      setError(err instanceof Error ? err.message : 'Failed to delete memory')
+      setActionError(err instanceof Error ? err.message : 'Failed to delete memory')
       return
     }
     refreshUsage()
@@ -191,12 +208,12 @@ export default function Memories() {
   const compact = async () => {
     try {
       setCompacting(true)
-      setError('')
+      setActionError('')
       setReport(await api.compactMemories())
       setReload(n => n + 1)
       refreshUsage()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to compact memories')
+      setActionError(err instanceof Error ? err.message : 'Failed to compact memories')
     } finally {
       setCompacting(false)
     }
@@ -282,7 +299,7 @@ export default function Memories() {
         {searching && <span>{loaded ? 'Searching…' : 'Loading memories…'}</span>}
       </div>
 
-      <FormError message={error} />
+      <FormError message={actionError || error} />
 
       {loaded && memories.length === 0 && !searching && (
         <p className="text-sm text-dark-text-tertiary">
@@ -345,7 +362,22 @@ function MemoryDetail({ memory: m, words, canDelete, onClose, onDelete }: {
   const dialogRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     dialogRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Tab' || !dialogRef.current) return
+      // Keep Tab inside the dialog: wrap from the last control to the first and back.
+      const items = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), a[href]')]
+      if (items.length === 0) return
+      const [first, last] = [items[0], items[items.length - 1]]
+      const inside = dialogRef.current.contains(document.activeElement)
+      if (e.shiftKey && (!inside || document.activeElement === first || document.activeElement === dialogRef.current)) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && (!inside || document.activeElement === last)) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
