@@ -98,7 +98,9 @@ func parseMemoryPage(title, content string) (req MemoryWriteRequest, superseded 
 		switch {
 		case strings.HasPrefix(part, "by "):
 			by, host, _ := strings.Cut(strings.TrimPrefix(part, "by "), " on ")
-			req.Author.Host = host
+			if host != "" {
+				req.Author.Host = host
+			}
 			req.Author.Agent, req.Author.Provider, _ = strings.Cut(by, " / ")
 		case strings.HasPrefix(part, "session "):
 			req.Author.Session = strings.Trim(strings.TrimPrefix(part, "session "), "`")
@@ -119,7 +121,7 @@ func (s *Server) HandleImportWikiMemories(w http.ResponseWriter, r *http.Request
 		return
 	}
 	req.OriginHost = strings.TrimSpace(req.OriginHost)
-	if req.ProjectID <= 0 || req.OriginHost == "" {
+	if req.ProjectID <= 0 || req.OriginHost == "" || len(req.OriginHost) > memoryMaxField || !oneLine(req.OriginHost) {
 		respondError(w, http.StatusBadRequest, "project_id and origin_host (the hub that wrote the pages) are required", "validation_error")
 		return
 	}

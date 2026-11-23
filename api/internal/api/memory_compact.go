@@ -15,9 +15,7 @@ import (
 // path) and idempotent: a second run finds nothing to do.
 //  1. superseded memories go (their successor holds the lesson);
 //  2. expired memories go;
-//  3. an older memory a newer one fully covers goes: same scope, kind and title, the newer body contains the older
-//     body's text, it names every file the older one does, its confidence is no lower and it lasts at least as long.
-//     Covering text, not shared words, so "copy prod to staging" never replaces its reverse;
+//  3. copies (same kind, title, body and scope, ignoring case and spacing) fold into the newest one;
 //  4. old low-confidence memories of one kind in one scope, without an expiry, are merged into one memory with
 //     their bodies kept verbatim.
 // Rows with an origin become tombstones, so a hub re-sending them is ignored.
@@ -25,7 +23,6 @@ import (
 const (
 	memorySummariseAfter  = 90 * 24 * time.Hour
 	memoryMinCluster      = 3
-	memoryNearDupWindow   = 200 // shortcut: compare with the newest 200 kept per scope and title; widen if copies slip by
 	memoryEmbedBatch      = 32
 	memoryCompactRecent   = 5 * time.Minute // automatic compaction looks at owners written to this recently
 	memoryEmbedInputChars = 500             // the embedding model's context, as wiki blocks
@@ -52,24 +49,6 @@ func memoryScopeKey(sc MemoryScope) string {
 }
 
 var memoryConfidenceRank = map[string]int{"low": 0, "medium": 1, "high": 2}
-
-// memoryCovers: newer holds everything older does (same title is checked by the caller's grouping).
-func memoryCovers(newer, older Memory) bool {
-	if !strings.Contains(normWords(newer.Body), normWords(older.Body)) || !outlives(newer.ExpiresAt, older.ExpiresAt) ||
-		memoryConfidenceRank[newer.Confidence] < memoryConfidenceRank[older.Confidence] {
-		return false
-	}
-	files := map[string]bool{}
-	for _, f := range newer.Scope.Files {
-		files[f] = true
-	}
-	for _, f := range older.Scope.Files {
-		if !files[f] {
-			return false
-		}
-	}
-	return true
-}
 
 // outlives: a memory expiring at a lasts at least as long as one expiring at b (nil = never expires).
 func outlives(a, b *time.Time) bool {
@@ -134,29 +113,42 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 		return rep, err
 	}
 
-	// Near-duplicates: newest first, so the newest of a group is kept.
-
-	byKey := map[string][]Memory{}
+	// Copies: the same content hash (kind, title, body and scope, ignoring case and spacing). Newest first, so the
+	// newest is kept; it takes the longest expiry and highest confidence of its copies. Anything less than a copy is
+	// left alone: text that merely overlaps can say the opposite ("Use X" / "Do not use X"); supersede it instead.
+	type keptCopy struct {
+		index int // into survivors
+		grown bool
+	}
+	byHash := map[string]*keptCopy{}
 	var survivors []Memory
 	for _, m := range active {
-		key := memoryScopeKey(m.Scope) + "\x00" + m.Kind + "\x00" + normWords(m.Title)
-		var dupOf int64
-		group := byKey[key]
-		for i := len(group) - 1; i >= 0 && i >= len(group)-memoryNearDupWindow; i-- {
-			if memoryCovers(group[i], m) {
-				dupOf = group[i].ID
-				break
-			}
-		}
-		if dupOf > 0 {
-			if err := s.removeMemories(ctx, tx, []int64{m.ID}, dupOf, now); err != nil {
-				return rep, err
-			}
-			rep.DuplicatesMerged++
+		h := memoryHash(m)
+		k := byHash[h]
+		if k == nil {
+			byHash[h] = &keptCopy{index: len(survivors)}
+			survivors = append(survivors, m)
 			continue
 		}
-		byKey[key] = append(group, m)
-		survivors = append(survivors, m)
+		keep := &survivors[k.index]
+		if !outlives(keep.ExpiresAt, m.ExpiresAt) {
+			keep.ExpiresAt, k.grown = m.ExpiresAt, true
+		}
+		if memoryConfidenceRank[m.Confidence] > memoryConfidenceRank[keep.Confidence] {
+			keep.Confidence, k.grown = m.Confidence, true
+		}
+		if err := s.removeMemories(ctx, tx, []int64{m.ID}, keep.ID, now); err != nil {
+			return rep, err
+		}
+		rep.DuplicatesMerged++
+	}
+	for _, k := range byHash {
+		if keep := survivors[k.index]; k.grown {
+			if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET expires_at = $1, confidence = $2, updated_at = $3 WHERE id = $4`,
+				keep.ExpiresAt, keep.Confidence, now, keep.ID); err != nil {
+				return rep, err
+			}
+		}
 	}
 
 	// Old low-confidence clusters (one scope, one kind) merge into memories of at most memoryMaxBody.
@@ -291,9 +283,11 @@ func (s *Server) HandleCompactMemories(w http.ResponseWriter, r *http.Request) {
 
 // maintainMemories runs with the indexing worker: it embeds new memories and compacts owners past the high-water mark.
 func (s *Server) maintainMemories(parent context.Context) {
-	ctx, cancel := context.WithTimeout(parent, 2*time.Minute)
+	embedCtx, cancelEmbed := context.WithTimeout(parent, time.Minute) // a backlog must not starve compaction
+	s.embedPendingMemories(embedCtx)
+	cancelEmbed()
+	ctx, cancel := context.WithTimeout(parent, time.Minute)
 	defer cancel()
-	s.embedPendingMemories(ctx)
 
 	// Only owners past the high-water mark with something compaction can act on: a recent write, or rows that are
 	// superseded or expired. Otherwise a full owner who cannot shrink would be rescanned on every tick.

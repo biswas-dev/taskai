@@ -1471,7 +1471,7 @@ paths:
   /api/memories/compact:
     post:
       summary: Compact Memories
-      description: Drop superseded and expired memories, drop an older near-duplicate in the same scope when a newer body contains its text, and merge old low-confidence memories (without an expiry) of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
+      description: Drop superseded and expired memories, fold copies (same kind, title, body and scope, ignoring case and spacing) into the newest one, and merge old low-confidence memories (without an expiry) of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
       tags: [Memories]
       operationId: compactMemories
       security:

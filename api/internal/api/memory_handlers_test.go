@@ -81,6 +81,9 @@ func TestParseMemoryPage(t *testing.T) {
 		t.Fatalf("dates %v %v", req.CreatedAt, req.ExpiresAt)
 	}
 
+	if req, _, err := parseMemoryPage("[fact] /x: t", "**fact** · folder `/x`\n\nb\n\n---\n\n_2026-01-01 on mbp · by codex · llm-brain memory 3_"); err != nil || req.Author.Host != "mbp" || req.Author.Agent != "codex" {
+		t.Fatalf("host before by: %+v %v", req.Author, err)
+	}
 	if _, sup, err := parseMemoryPage("[superseded] [fact] /x: t", "> Superseded by memory 3.\n\n**fact** · folder `/x` · confidence medium\n\nb\n\n---\n\n_2026-01-01 on h · llm-brain memory 2_"); err != nil || !sup {
 		t.Fatalf("superseded page: %v %v", sup, err)
 	}
@@ -427,6 +430,9 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 				t.Fatalf("quota %v: %d", bad, code)
 			}
 		}
+		rec0, r0 := ts.MakeAuthRequest(t, http.MethodPut, "/api/admin/users/1/memory-quota", map[string]any{"quota": 5}, admin, map[string]string{"id": "1"})
+		ts.HandleAdminSetMemoryQuota(rec0, r0)
+		AssertError(t, rec0, http.StatusBadRequest, "quota_bytes is required", "validation_error")
 		sid := "999999"
 		rec, r := ts.MakeAuthRequest(t, http.MethodPut, "/api/admin/users/"+sid+"/memory-quota", map[string]any{"quota_bytes": 10}, admin, map[string]string{"id": sid})
 		ts.HandleAdminSetMemoryQuota(rec, r)
@@ -476,7 +482,13 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		n1 := mem("Partial index gotcha", "the github comment id index is partial so on conflict needs the where clause")
 		n1.CreatedAt = &old
 		write(u, n1)
-		write(u, mem("Partial index gotcha", "the github comment id index is partial so on conflict needs the where clause too"))
+		// Without an origin, a copy differing only in case and spacing is caught at write time.
+		if _, dup, _ := write(u, mem("partial  INDEX gotcha", "The GitHub comment id index is partial so ON CONFLICT needs the WHERE clause")); dup.Outcome != "duplicate" {
+			t.Fatalf("case-only copy: %+v", dup)
+		}
+		// Overlapping text that says the opposite: both stay.
+		write(u, mem("Port", "Use PORT=3000."))
+		write(u, mem("Port", "Do not use PORT=3000."))
 		// Same body, different instruction in the title: both stay.
 		r1 := mem("Do not restart production workers", "deployment checklist: drain queues, then deploy")
 		r1.CreatedAt = &old
@@ -494,13 +506,15 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		h2 := h1
 		h2.CreatedAt, h2.OriginHost, h2.OriginID = nil, "hub-b", "900"
 		write(u, h2)
-		// A newer copy that expires does not absorb a permanent one.
+		// A newer copy that expires folds in, and the kept one stays permanent and keeps the higher confidence.
 		tmp := time.Now().UTC().Add(24 * time.Hour)
 		k1 := mem("Rotate logs", "logrotate runs nightly at two")
-		k1.CreatedAt = &old
+		k1.CreatedAt, k1.Confidence = &old, "high"
+		k1.OriginHost, k1.OriginID = "hub-a", "600"
 		write(u, k1)
-		k2 := mem("Rotate logs", "logrotate runs nightly at two (this week)")
+		k2 := mem("Rotate logs", "logrotate runs nightly at two")
 		k2.ExpiresAt = &tmp
+		k2.OriginHost, k2.OriginID = "hub-b", "601"
 		write(u, k2)
 		// Same words, opposite meaning: both stay.
 		p1 := mem("Copy data", "copy production data to staging")
@@ -548,6 +562,13 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if got := titles(search(u, MemorySearchRequest{Query: "lock order", Limit: 50})); got["Lock order"] != 2 {
 			t.Fatalf("both lock-order memories should survive: %v", got)
 		}
+		if got := titles(search(u, MemorySearchRequest{Query: "port 3000", Limit: 50})); got["Port"] != 2 {
+			t.Fatalf("opposite instructions must both survive: %v", got)
+		}
+		logs := search(u, MemorySearchRequest{Query: "logrotate nightly"})
+		if logs.Total != 1 || logs.Results[0].ExpiresAt != nil || logs.Results[0].Confidence != "high" {
+			t.Fatalf("folded copy should be permanent and high confidence: %+v", logs)
+		}
 		if res := search(u, MemorySearchRequest{Query: "lock", Files: []string{"api/b.go"}}); res.Total != 1 {
 			t.Fatalf("file filter lost the older memory: %+v", res)
 		}
@@ -578,6 +599,13 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("expiry-only change: %+v", upd)
 		}
 
+		// A -> B -> C by origin: replaying the middle one, unchanged, is idempotent.
+		cc := mem("Deploy via release", "Deploys go through the release workflow")
+		cc.OriginHost, cc.OriginID, cc.SupersedesOriginID = "hub-a", "4", "2"
+		write(u, cc)
+		if code, again, body := write(u, b); code != http.StatusOK || again.Memory.Status != "superseded" {
+			t.Fatalf("replaying a superseded middle memory: %d %s", code, body)
+		}
 		if code, _, body := write(u, func() MemoryWriteRequest { r := b; r.SupersedesOriginID = "2"; return r }()); code != http.StatusBadRequest {
 			t.Fatalf("self-supersede: %d %s", code, body)
 		}
@@ -604,7 +632,7 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			DecodeJSON(t, rec, &out)
 			return out
 		}
-		if got := usage(); got.Count != 2 || got.ActiveCount != 1 {
+		if got := usage(); got.Count != 3 || got.ActiveCount != 1 {
 			t.Fatalf("usage should leave out the tombstone and count only active ones: %+v", got)
 		}
 
@@ -649,6 +677,22 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("superseding a removed memory: %d", code)
 		}
 		_ = ar
+	})
+
+	t.Run("an original arriving after its successor was compacted stays superseded", func(t *testing.T) {
+		u := user("late")
+		b := mem("B", "second version")
+		b.OriginHost, b.OriginID, b.SupersedesOriginID = "hub-a", "2", "1"
+		write(u, b)
+		c := mem("C", "third version")
+		c.OriginHost, c.OriginID, c.SupersedesOriginID = "hub-a", "3", "2"
+		write(u, c)
+		compact(u)
+		a := mem("A", "first version")
+		a.OriginHost, a.OriginID = "hub-a", "1"
+		if _, late, _ := write(u, a); late.Memory.Status != "superseded" {
+			t.Fatalf("late original revived: %+v", late.Memory)
+		}
 	})
 
 	t.Run("over quota: compaction runs before refusing, and the worker compacts past the high-water mark", func(t *testing.T) {

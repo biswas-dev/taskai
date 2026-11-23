@@ -466,7 +466,10 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 	}
 	// Resolve what it supersedes before writing, so a bad id is refused.
 	var target int64
-	if m.supersedes > 0 {
+	unchangedLink := found && oldSupersedes != nil && (*oldSupersedes == m.supersedes || m.supersedes == 0 && m.supersedesOriginID == oldSupOrigin && oldSupOrigin != "")
+	if unchangedLink {
+		target = *oldSupersedes // a replay of an accepted link, even if its target was compacted since
+	} else if m.supersedes > 0 {
 		var st string
 		err := tx.QueryRowContext(ctx, `SELECT status FROM agent_memories WHERE id = $1 AND owner_id = $2`, m.supersedes, ownerID).Scan(&st)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -489,7 +492,7 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 	if found && target == existingID {
 		return Memory{}, "", memoryInputError("a memory cannot supersede itself")
 	}
-	if found && oldStatus == "superseded" && target > 0 {
+	if found && oldStatus == "superseded" && target > 0 && !unchangedLink {
 		return Memory{}, "", memoryInputError("a superseded memory cannot supersede another")
 	}
 
@@ -618,8 +621,8 @@ func (s *Server) removeMemories(ctx context.Context, q sqlQuerier, ids []int64, 
 			continue
 		}
 		if _, err := q.ExecContext(ctx, `UPDATE agent_memories SET status = 'compacted', title = '', body = '', files = '',
-			folder = '', agent = '', provider = '', host = '', session = '', supersedes_origin_id = '',
-			superseded_by = COALESCE($1, superseded_by), size_bytes = $2, updated_at = $3 WHERE id = $4`,
+			folder = '', agent = '', provider = '', host = '', session = '',
+			superseded_by = COALESCE($1, superseded_by), size_bytes = $2 + LENGTH(supersedes_origin_id), updated_at = $3 WHERE id = $4`,
 			by, tombstoneSize(hash, host, origin), now, id); err != nil {
 			return err
 		}

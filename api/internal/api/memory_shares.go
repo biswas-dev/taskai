@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -148,11 +149,22 @@ func (s *Server) HandleAdminSetMemoryQuota(w http.ResponseWriter, r *http.Reques
 		respondError(w, http.StatusBadRequest, "invalid user id", "validation_error")
 		return
 	}
+	// quota_bytes must be present: null resets to the default, a missing field (or a typo) must not.
+	var raw map[string]json.RawMessage
 	var req struct {
 		QuotaBytes *int64 `json:"quota_bytes"`
 	}
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(r, &raw); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
+		return
+	}
+	body, ok := raw["quota_bytes"]
+	if !ok {
+		respondError(w, http.StatusBadRequest, "quota_bytes is required (null restores the default)", "validation_error")
+		return
+	}
+	if err := json.Unmarshal(body, &req.QuotaBytes); err != nil {
+		respondError(w, http.StatusBadRequest, "quota_bytes must be a number or null", "validation_error")
 		return
 	}
 	if req.QuotaBytes != nil && (*req.QuotaBytes <= 0 || *req.QuotaBytes > memoryMaxQuota) {
