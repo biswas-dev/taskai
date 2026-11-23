@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type Memory, type MemoryCompactReport, type MemoryKind, type MemoryUsage } from '../lib/api'
 import { useAuth } from '../state/AuthContext'
@@ -75,7 +75,6 @@ export default function Memories() {
   const draft = useRef({ q, r }) // the inputs as typed, read when the debounce fires
   const timer = useRef<ReturnType<typeof setTimeout>>()
   const setParamsNow = useRef(setParams)
-  setParamsNow.current = setParams // react-router 6 hands a functional update the params of the render it came from
 
   const [memories, setMemories] = useState<Memory[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -116,7 +115,11 @@ export default function Memories() {
   useEffect(() => () => clearTimeout(timer.current), [])
 
   // A URL change the inputs did not make (back/forward, a pasted link) drops any pending edit and shows in both inputs.
-  useEffect(() => {
+  // Layout effects run at commit, before a due debounce timer can write the dropped edit.
+  useLayoutEffect(() => {
+    setParamsNow.current = setParams // react-router 6 hands a functional update the params of the render it came from
+  }, [setParams])
+  useLayoutEffect(() => {
     const a = applied.current
     if (q !== a.q || r !== a.r || kind !== a.kind) {
       clearTimeout(timer.current)

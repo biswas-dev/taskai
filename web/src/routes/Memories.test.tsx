@@ -138,6 +138,7 @@ describe('Memories', () => {
     renderAt()
     await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(1))
     await userEvent.type(screen.getByLabelText('Repository'), 'acme/api')
+    expect(new URLSearchParams(location).get('repo')).toBeNull() // still pending
     await userEvent.click(screen.getByLabelText('Kind'))
     await userEvent.click(screen.getByRole('option', { name: 'decision' }))
     await waitFor(() => expect(mocked.getMemories).toHaveBeenLastCalledWith(
@@ -150,6 +151,7 @@ describe('Memories', () => {
     renderAt()
     await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(1))
     await userEvent.type(screen.getByLabelText('Repository'), 'api')
+    expect(new URLSearchParams(location).get('repo')).toBeNull() // still pending
     await userEvent.click(screen.getByRole('button', { name: 'kind link' }))
     await new Promise(r => setTimeout(r, 300))
     expect(screen.getByLabelText('Repository')).toHaveValue('')
