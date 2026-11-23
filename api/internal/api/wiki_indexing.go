@@ -31,6 +31,7 @@ func (s *Server) StartIndexingWorker(ctx context.Context) {
 
 	// Run immediately on startup
 	s.indexPages(ctx)
+	s.maintainMemories(ctx)
 
 	for {
 		select {
@@ -39,6 +40,7 @@ func (s *Server) StartIndexingWorker(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.indexPages(ctx)
+			s.maintainMemories(ctx)
 		}
 	}
 }

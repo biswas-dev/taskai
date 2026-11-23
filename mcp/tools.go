@@ -485,6 +485,7 @@ func oneOf(field, value string, allowed ...string) error {
 
 func registerTools(srv *gomcp.Server) {
 	registerMembershipTools(srv)
+	registerMemoryTools(srv)
 	read := func(name, desc string) gomcp.Tool { return gomcp.Tool{Name: name, Description: desc} }
 	write := func(name, desc string) gomcp.Tool { return gomcp.Tool{Name: name, Description: desc, Write: true} }
 	update := func(name, desc string) gomcp.Tool {

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import MemoriesHero from '../components/MemoriesHero'
 
 interface BlogPost {
   title: string
@@ -31,6 +32,7 @@ export default function Landing() {
             <span className="text-base font-semibold tracking-tight">TaskAI</span>
           </Link>
           <div className="hidden md:flex items-center gap-8 text-sm text-dark-text-tertiary">
+            <a href="#memories" className="hover:text-dark-text-primary transition-colors">Memories</a>
             <a href="#features" className="hover:text-dark-text-primary transition-colors">Features</a>
             <a href="#ai" className="hover:text-dark-text-primary transition-colors">AI agents</a>
             <a href="#integrations" className="hover:text-dark-text-primary transition-colors">Integrations</a>
@@ -51,8 +53,10 @@ export default function Landing() {
         </div>
       </nav>
 
-      {/* ── Hero ── */}
-      <section className="relative pt-36 pb-24 md:pt-48 md:pb-32 overflow-hidden">
+      <MemoriesHero />
+
+      {/* ── Project management ── */}
+      <section className="relative pt-20 pb-24 md:pt-28 md:pb-32 border-t border-dark-border-subtle overflow-hidden">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[700px] bg-primary-500/[0.06] rounded-full blur-[140px]" />
           <div className="absolute top-1/4 right-1/4 w-[500px] h-[500px] bg-secondary-500/[0.04] rounded-full blur-[120px]" />
@@ -65,13 +69,13 @@ export default function Landing() {
             MCP Server built-in — works with Claude, Cursor, and any MCP client
           </div>
 
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05]">
+          <h2 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05]">
             Project management
             <br />
             <span className="bg-gradient-to-r from-primary-400 via-primary-300 to-secondary-400 bg-clip-text text-transparent">
               built for AI agents
             </span>
-          </h1>
+          </h2>
 
           <p className="mt-7 text-lg md:text-xl text-dark-text-tertiary max-w-2xl mx-auto leading-relaxed">
             The complete workspace where AI agents and humans collaborate. Tasks, roadmaps, wiki, knowledge graph, GitHub sync — all accessible via MCP, REST API, or the visual UI.
@@ -223,6 +227,25 @@ export default function Landing() {
 
           {/* Feature grid: 2-column alternating large feature + detail */}
           <div className="space-y-6">
+
+            {/* Memories, the lead feature */}
+            <a
+              href="#memories"
+              className="group relative block p-8 rounded-2xl bg-dark-bg-primary border border-primary-500/30 hover:border-primary-500/60 transition-all duration-300 overflow-hidden"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-primary-500/[0.06] to-transparent" />
+              <div className="relative md:flex md:items-center md:justify-between md:gap-8">
+                <div>
+                  <h3 className="text-xl font-semibold mb-3 tracking-tight">Memories</h3>
+                  <p className="text-sm text-dark-text-tertiary leading-relaxed max-w-2xl">
+                    One store of lessons for every AI you use. Agents write facts, decisions, gotchas, runbooks and handoffs over REST or MCP, and every model and app finds them with hybrid search, scoped to your repos, issues and PRs.
+                  </p>
+                </div>
+                <span className="mt-4 md:mt-0 inline-flex shrink-0 items-center text-sm font-medium text-primary-400 group-hover:text-primary-300">
+                  See how it works →
+                </span>
+              </div>
+            </a>
 
             {/* Row 1: Tasks + Roadmap + Wiki */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

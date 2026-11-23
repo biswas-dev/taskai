@@ -559,6 +559,19 @@ func main() {
 			r.Get("/meetings/{id}", server.HandleGetMeeting)
 			r.Patch("/meetings/{id}", server.HandleUpdateMeeting)
 			r.Delete("/meetings/{id}", server.HandleDeleteMeeting)
+			r.Group(func(r chi.Router) {
+				r.Use(api.MemoryProtocol)
+				r.Get("/memories", server.HandleListMemories)
+				r.Post("/memories", server.HandleWriteMemory)
+				r.Post("/memories/search", server.HandleSearchMemories)
+				r.Get("/memories/usage", server.HandleMemoryUsage)
+				r.Post("/memories/compact", server.HandleCompactMemories)
+				r.Get("/memories/shares", server.HandleGetMemoryShares)
+				r.Put("/memories/shares", server.HandleSetMemoryShares)
+				r.Post("/memories/import-wiki", server.HandleImportWikiMemories)
+				r.Get("/memories/{id}", server.HandleGetMemory)
+				r.Delete("/memories/{id}", server.HandleDeleteMemory)
+			})
 
 			// Task dependency routes
 			r.Get("/tasks/{taskId}/dependencies", server.HandleListDependencies)
@@ -698,6 +711,7 @@ func main() {
 			r.Patch("/admin/users/{id}/profile", server.HandleUpdateUserProfile)
 			r.Post("/admin/users/{id}/reset-password", server.HandleAdminResetPassword)
 			r.Delete("/admin/users/{id}", server.HandleDeleteUser)
+			r.With(api.MemoryProtocol).Put("/admin/users/{id}/memory-quota", server.HandleAdminSetMemoryQuota)
 
 			// Admin email provider routes
 			r.Get("/admin/settings/email", server.HandleGetEmailProvider)

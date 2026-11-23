@@ -167,6 +167,16 @@ describe('Sidebar', () => {
     expect(screen.getByText('Assets')).toBeInTheDocument()
   })
 
+  it('offers Memories in the main navigation, even before a project is chosen', async () => {
+    const user = userEvent.setup()
+    mockedGetProjects.mockResolvedValue([])
+    render(<Sidebar {...defaultProps} />)
+    const memories = await screen.findByRole('button', { name: 'Memories' })
+    expect(memories).toBeEnabled()
+    await user.click(memories)
+    expect(mockNavigate).toHaveBeenCalledWith('/app/memories')
+  })
+
   it('navigates to project on click', async () => {
     const user = userEvent.setup()
     const projects = [
