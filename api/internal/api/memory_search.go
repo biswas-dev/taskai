@@ -1,0 +1,209 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"go.uber.org/zap"
+)
+
+// MemorySearchRequest searches the memories the caller can read (their own and those shared with them).
+type MemorySearchRequest struct {
+	Query           string   `json:"query"`
+	OwnerID         int64    `json:"owner_id,omitempty"`
+	Repo            string   `json:"repo,omitempty"`
+	Kind            string   `json:"kind,omitempty"`
+	Issue           int      `json:"issue,omitempty"`
+	PR              int      `json:"pr,omitempty"`
+	Files           []string `json:"files,omitempty"` // matches a memory naming any of them
+	IncludeInactive bool     `json:"include_inactive,omitempty"`
+	Limit           int      `json:"limit,omitempty"`
+	Mode            string   `json:"mode,omitempty"` // hybrid (default with embeddings) | fts | keyword
+}
+
+// MemorySearchResponse is the ranked result.
+type MemorySearchResponse struct {
+	Results []Memory `json:"results"`
+	Total   int      `json:"total"`
+	Mode    string   `json:"mode"`
+}
+
+// memoryQueryEmbedTimeout bounds the query embedding so a slow model cannot eat an agent's context budget;
+// past it, search falls back to full text.
+const memoryQueryEmbedTimeout = 1500 * time.Millisecond
+
+var memoryWordRe = regexp.MustCompile(`[\p{L}\p{N}_]+`)
+
+// memoryQueryWords are the distinct words of a query (at most 12), lower case.
+func memoryQueryWords(q string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, w := range memoryWordRe.FindAllString(strings.ToLower(q), -1) {
+		if len(w) > 1 && !seen[w] && len(out) < 12 {
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// HandleSearchMemories ranks memories by full text and vector similarity merged with RRF (POST /api/memories/search).
+func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
+	userID, ok := GetUserID(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
+		return
+	}
+	var req MemorySearchRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
+		return
+	}
+	words := memoryQueryWords(req.Query)
+	if len(words) == 0 {
+		respondError(w, http.StatusBadRequest, "query is required", "invalid_request")
+		return
+	}
+	if req.Limit <= 0 {
+		req.Limit = 10
+	}
+	req.Limit = min(req.Limit, 50)
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+
+	owners, err := s.resolveMemoryOwners(ctx, userID, req.OwnerID)
+	if errors.Is(err, errMemoryAccess) {
+		respondError(w, http.StatusForbidden, "those memories are not shared with you", "forbidden")
+		return
+	}
+	if err != nil {
+		s.logger.Error("Failed to resolve memory owners", zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to search memories", "internal_error")
+		return
+	}
+	f := memoryFilter{Owners: owners, Repo: req.Repo, Kind: req.Kind, Issue: req.Issue, PR: req.PR, Files: req.Files,
+		IncludeInactive: req.IncludeInactive}
+
+	mode := req.Mode
+	if s.db.Driver != "postgres" {
+		mode = "keyword"
+	} else if mode == "" {
+		mode = "hybrid"
+	}
+	var results []Memory
+	if mode == "hybrid" {
+		results, err = s.searchMemoriesHybrid(ctx, f, req.Query, words, req.Limit)
+		if errors.Is(err, errNoQueryVector) {
+			mode = "fts"
+		}
+	}
+	if mode == "fts" {
+		results, err = s.searchMemoriesFTS(ctx, f, words, req.Limit)
+		if err == nil && len(results) == 0 {
+			mode = "keyword" // partial words
+		}
+	}
+	if mode == "keyword" {
+		results, err = s.searchMemoriesKeyword(ctx, f, words, req.Limit)
+	}
+	if err != nil {
+		s.logger.Error("Failed to search memories", zap.Int64("user_id", userID), zap.String("mode", mode), zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to search memories", "internal_error")
+		return
+	}
+	respondJSON(w, http.StatusOK, MemorySearchResponse{Results: results, Total: len(results), Mode: mode})
+}
+
+var errNoQueryVector = errors.New("no query vector")
+
+// memoryTSQuery matches any of the words (ranked by how many match), via websearch syntax, which is safe for any input.
+func memoryTSQuery(words []string) string { return strings.Join(words, " or ") }
+
+func (s *Server) searchMemoriesFTS(ctx context.Context, f memoryFilter, words []string, limit int) ([]Memory, error) {
+	where, args := f.sql("m", time.Now().UTC(), nil)
+	args = append(args, memoryTSQuery(words))
+	q := "$" + strconv.Itoa(len(args))
+	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("m")+`, ts_rank(m.search_vector, websearch_to_tsquery('english', `+q+`)) AS rank
+		FROM agent_memories m WHERE m.search_vector @@ websearch_to_tsquery('english', `+q+`) AND `+where+`
+		ORDER BY rank DESC, m.id DESC LIMIT `+strconv.Itoa(limit), args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanMemories(rows, true)
+}
+
+func (s *Server) searchMemoriesHybrid(ctx context.Context, f memoryFilter, query string, words []string, limit int) ([]Memory, error) {
+	if s.embeddingClient == nil {
+		return nil, errNoQueryVector
+	}
+	ectx, cancel := context.WithTimeout(ctx, memoryQueryEmbedTimeout)
+	vec, err := s.embeddingClient.Embed(ectx, query)
+	cancel()
+	if err != nil {
+		s.logger.Warn("Memory query embedding failed, using full text", zap.Error(err))
+		return nil, errNoQueryVector
+	}
+	where, args := f.sql("m", time.Now().UTC(), nil)
+	args = append(args, memoryTSQuery(words), float32SliceToVectorString(vec))
+	tsq, vq := "$"+strconv.Itoa(len(args)-1), "$"+strconv.Itoa(len(args))
+	pool := strconv.Itoa(limit * 3)
+	// Reciprocal Rank Fusion: 1/(60+fts_rank) + 1/(60+vector_rank), as wiki search does.
+	rows, err := s.db.QueryContext(ctx, `
+		WITH fts AS (
+			SELECT id, ROW_NUMBER() OVER (ORDER BY r DESC, id DESC) AS rn FROM (
+				SELECT m.id, ts_rank(m.search_vector, websearch_to_tsquery('english', `+tsq+`)) AS r
+				FROM agent_memories m
+				WHERE m.search_vector @@ websearch_to_tsquery('english', `+tsq+`) AND `+where+`
+				ORDER BY r DESC, m.id DESC LIMIT `+pool+`) x
+		),
+		vec AS (
+			SELECT id, ROW_NUMBER() OVER (ORDER BY d, id DESC) AS rn FROM (
+				SELECT m.id, m.embedding <=> `+vq+`::vector AS d
+				FROM agent_memories m
+				WHERE m.embedding IS NOT NULL AND `+where+`
+				ORDER BY d LIMIT `+pool+`) y
+		),
+		combined AS (
+			SELECT COALESCE(fts.id, vec.id) AS id,
+			       COALESCE(1.0/(60+fts.rn), 0) + COALESCE(1.0/(60+vec.rn), 0) AS score
+			FROM fts FULL OUTER JOIN vec ON fts.id = vec.id
+		)
+		SELECT `+prefixCols("m")+`, c.score FROM combined c JOIN agent_memories m ON m.id = c.id
+		ORDER BY c.score DESC, m.id DESC LIMIT `+strconv.Itoa(limit), args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanMemories(rows, true)
+}
+
+// searchMemoriesKeyword ranks by how many query words appear in the title or body (SQLite, and partial words).
+func (s *Server) searchMemoriesKeyword(ctx context.Context, f memoryFilter, words []string, limit int) ([]Memory, error) {
+	where, args := f.sql("m", time.Now().UTC(), nil)
+	hits := make([]string, len(words))
+	for i, w := range words {
+		args = append(args, "%"+w+"%")
+		hits[i] = `(CASE WHEN LOWER(m.title) LIKE $` + strconv.Itoa(len(args)) + ` OR LOWER(m.body) LIKE $` + strconv.Itoa(len(args)) + ` THEN 1 ELSE 0 END)`
+	}
+	score := strings.Join(hits, " + ")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("m")+`, CAST(`+score+` AS REAL) AS rank
+		FROM agent_memories m WHERE `+where+` AND (`+score+`) > 0
+		ORDER BY rank DESC, m.updated_at DESC, m.id DESC LIMIT `+strconv.Itoa(limit), args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanMemories(rows, true)
+}
+
+// prefixCols qualifies memoryCols with a table alias.
+func prefixCols(alias string) string {
+	cols := strings.Split(memoryCols, ",")
+	for i, c := range cols {
+		cols[i] = alias + "." + strings.TrimSpace(c)
+	}
+	return strings.Join(cols, ", ")
+}

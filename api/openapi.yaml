@@ -35,6 +35,8 @@ tags:
     description: User registration and login
   - name: Users
     description: User profile management
+  - name: Memories
+    description: Agent memories owned by a user, with hybrid search, sharing, quota and compaction
   - name: Projects
     description: Project CRUD operations
   - name: Tasks
@@ -1289,6 +1291,403 @@ paths:
           $ref: "#/components/responses/InternalError"
         "404":
           $ref: "#/components/responses/NotFound"
+  /api/memories:
+    get:
+      summary: List Memories
+      description: Memories the caller can read (their own and those shared with them), newest first. Active and unexpired only unless status=all.
+      tags: [Memories]
+      operationId: listMemories
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: owner_id
+          in: query
+          description: Only this owner's memories (must be the caller or have shared with them)
+          schema:
+            type: integer
+            format: int64
+        - name: repo
+          in: query
+          description: owner/name, case-insensitive
+          schema:
+            type: string
+        - name: kind
+          in: query
+          description: fact, decision, gotcha, runbook or handoff
+          schema:
+            type: string
+        - name: issue
+          in: query
+          schema:
+            type: integer
+        - name: pr
+          in: query
+          schema:
+            type: integer
+        - name: file
+          in: query
+          description: Repeatable; matches a memory naming any of them
+          schema:
+            type: array
+            items:
+              type: string
+        - name: status
+          in: query
+          description: all includes superseded
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Default 20, max 100
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Memories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryList"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      summary: Write Memory
+      description: Create a memory, or upsert it by (origin_host, origin_id). An exact repeat (same content and scope) returns the memory already kept (outcome duplicate); a compacted origin is ignored. 201 when created, 200 otherwise. usage.warning is set at 80% of the quota.
+      tags: [Memories]
+      operationId: writeMemory
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryWriteRequest"
+      responses:
+        "201":
+          description: Created (200 for updated, duplicate or ignored)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryWriteResponse"
+        "413":
+          description: "Memory quota exceeded (code: memory_quota_exceeded). Terminal: retrying will not help until memories are compacted or deleted, or the quota is raised."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/memories/search:
+    post:
+      summary: Search Memories
+      description: Hybrid search (Postgres full text + pgvector, merged with Reciprocal Rank Fusion) over the memories the caller can read. Falls back to full text when the query cannot be embedded within 1.5 s, and to keyword matching on SQLite. Answers within 4 s.
+      tags: [Memories]
+      operationId: searchMemories
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemorySearchRequest"
+      responses:
+        "200":
+          description: Ranked memories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemorySearchResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/memories/usage:
+    get:
+      summary: Memory Usage
+      description: Bytes stored (text, metadata and embeddings) against the caller's quota.
+      tags: [Memories]
+      operationId: getMemoryUsage
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryUsage"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/memories/compact:
+    post:
+      summary: Compact Memories
+      description: Drop superseded and expired memories, merge near-duplicates in the same scope (newest kept), and merge old low-confidence memories of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
+      tags: [Memories]
+      operationId: compactMemories
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: What was freed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryCompactReport"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/memories/shares:
+    get:
+      summary: List Memory Shares
+      description: Who can read the caller's memories, and whose memories the caller can read.
+      tags: [Memories]
+      operationId: getMemoryShares
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: Shares
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryShares"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      summary: Set Memory Shares
+      description: Replace the list of users who can read and search (never change) the caller's memories.
+      tags: [Memories]
+      operationId: setMemoryShares
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemorySharesRequest"
+      responses:
+        "200":
+          description: Shares
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryShares"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/memories/import-wiki:
+    post:
+      summary: Import Wiki Memories
+      description: Copy llm-brain memory pages (one wiki page per memory) from a project into the caller's memories. The page footer's 'llm-brain memory N' becomes origin_id N under origin_host, so a second run, or the hub's later upserts, add nothing. Superseded pages are skipped. Pages are not deleted.
+      tags: [Memories]
+      operationId: importWikiMemories
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryImportRequest"
+      responses:
+        "200":
+          description: Import report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryImportReport"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/memories/{id}:
+    get:
+      summary: Get Memory
+      tags: [Memories]
+      operationId: getMemory
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Memory
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Memory"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      summary: Delete Memory
+      description: Owner only. A memory with an origin leaves a tombstone so its hub does not re-create it.
+      tags: [Memories]
+      operationId: deleteMemory
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "204":
+          description: Deleted
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/admin/users/{id}/memory-quota:
+    put:
+      summary: Set Memory Quota
+      description: Admin only. quota_bytes null restores the default (1 GiB).
+      tags: [Admin]
+      operationId: setMemoryQuota
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryQuotaRequest"
+      responses:
+        "200":
+          description: The user's usage under the new quota
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryUsage"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/projects/{id}/members:
     get:
       summary: List Project Members
@@ -4118,6 +4517,148 @@ components:
             $ref: "#/components/schemas/MeetingAttendee"
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    MemoryScope:
+      type: object
+      description: What a memory is about. Needs repo or folder; issue and pr need repo.
+      properties:
+        repo: {type: string, example: biswas-dev/taskai}
+        issue: {type: integer}
+        pr: {type: integer}
+        folder: {type: string, description: Absolute path on the author's host}
+        files: {type: array, maxItems: 50, items: {type: string}}
+    MemoryAuthor:
+      type: object
+      properties:
+        agent: {type: string}
+        provider: {type: string, description: "claude | codex | gemini | human"}
+        host: {type: string}
+        session: {type: string}
+    Memory:
+      type: object
+      properties:
+        id: {type: integer, format: int64}
+        owner_id: {type: integer, format: int64}
+        kind: {type: string, enum: [fact, decision, gotcha, runbook, handoff]}
+        title: {type: string}
+        body: {type: string}
+        scope: {$ref: "#/components/schemas/MemoryScope"}
+        author: {$ref: "#/components/schemas/MemoryAuthor"}
+        confidence: {type: string, enum: [low, medium, high]}
+        supersedes: {type: integer, format: int64}
+        superseded_by: {type: integer, format: int64}
+        status: {type: string, enum: [active, superseded, compacted]}
+        expires_at: {type: string, format: date-time}
+        origin_host: {type: string}
+        origin_id: {type: string}
+        size_bytes: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        rank: {type: number, description: Search results only}
+    MemoryList:
+      type: object
+      properties:
+        memories: {type: array, items: {$ref: "#/components/schemas/Memory"}}
+        limit: {type: integer}
+        offset: {type: integer}
+    MemoryWriteRequest:
+      type: object
+      required: [kind, body, scope]
+      properties:
+        kind: {type: string, enum: [fact, decision, gotcha, runbook, handoff]}
+        title: {type: string, maxLength: 200, description: One line; defaults to the body's first line}
+        body: {type: string, maxLength: 8000}
+        scope: {$ref: "#/components/schemas/MemoryScope"}
+        author: {$ref: "#/components/schemas/MemoryAuthor"}
+        confidence: {type: string, enum: [low, medium, high], default: medium}
+        status: {type: string, enum: [active, superseded], default: active, description: superseded replicates a memory a hub already replaced}
+        expires_at: {type: string, format: date-time}
+        supersedes: {type: integer, format: int64, description: A TaskAI memory id this one replaces}
+        supersedes_origin_id: {type: string, description: "The origin_id (same origin_host) this one replaces; may arrive before it"}
+        origin_host: {type: string, description: The hub that holds the original}
+        origin_id: {type: string, description: Its id on that hub; (origin_host, origin_id) is the upsert key}
+        created_at: {type: string, format: date-time, description: Original creation time when replicating}
+    MemoryUsage:
+      type: object
+      properties:
+        used_bytes: {type: integer, format: int64}
+        quota_bytes: {type: integer, format: int64}
+        percent: {type: number}
+        count: {type: integer}
+        active_count: {type: integer}
+        high_water_percent: {type: integer}
+        warning: {type: string}
+    MemoryWriteResponse:
+      type: object
+      properties:
+        memory: {$ref: "#/components/schemas/Memory"}
+        outcome: {type: string, enum: [created, updated, duplicate, ignored]}
+        usage: {$ref: "#/components/schemas/MemoryUsage"}
+    MemorySearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query: {type: string}
+        owner_id: {type: integer, format: int64}
+        repo: {type: string}
+        kind: {type: string}
+        issue: {type: integer}
+        pr: {type: integer}
+        files: {type: array, items: {type: string}}
+        include_inactive: {type: boolean}
+        limit: {type: integer, default: 10, maximum: 50}
+        mode: {type: string, enum: [hybrid, fts, keyword]}
+    MemorySearchResponse:
+      type: object
+      properties:
+        results: {type: array, items: {$ref: "#/components/schemas/Memory"}}
+        total: {type: integer}
+        mode: {type: string}
+    MemoryCompactReport:
+      type: object
+      properties:
+        superseded_removed: {type: integer}
+        expired_removed: {type: integer}
+        duplicates_merged: {type: integer}
+        low_confidence_summarised: {type: integer}
+        summaries_created: {type: integer}
+        bytes_before: {type: integer, format: int64}
+        bytes_after: {type: integer, format: int64}
+        freed_bytes: {type: integer, format: int64}
+    MemoryShareUser:
+      type: object
+      properties:
+        user_id: {type: integer, format: int64}
+        email: {type: string}
+    MemoryShares:
+      type: object
+      properties:
+        shared_with: {type: array, items: {$ref: "#/components/schemas/MemoryShareUser"}}
+        shared_with_me: {type: array, items: {$ref: "#/components/schemas/MemoryShareUser"}}
+    MemorySharesRequest:
+      type: object
+      required: [user_ids]
+      properties:
+        user_ids: {type: array, items: {type: integer, format: int64}}
+    MemoryImportRequest:
+      type: object
+      required: [project_id, origin_host]
+      properties:
+        project_id: {type: integer, format: int64}
+        origin_host: {type: string, description: Name of the hub that wrote the pages}
+    MemoryImportReport:
+      type: object
+      properties:
+        pages: {type: integer}
+        imported: {type: integer}
+        duplicates: {type: integer}
+        skipped_superseded: {type: integer}
+        failed: {type: integer}
+        errors: {type: array, items: {type: string}}
+        quota_exceeded: {type: boolean}
+    MemoryQuotaRequest:
+      type: object
+      properties:
+        quota_bytes: {type: integer, format: int64, nullable: true}
     CreateMeetingRequest:
       type: object
       required: [title, starts_at, ends_at]
