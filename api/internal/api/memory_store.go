@@ -194,7 +194,12 @@ func normalizeMemory(req MemoryWriteRequest, now time.Time) (memoryRow, string) 
 
 	sc := &m.Scope
 	sc.Repo = strings.TrimSuffix(strings.TrimSpace(sc.Repo), ".git")
-	sc.Folder = strings.TrimRight(strings.TrimSpace(sc.Folder), "/")
+	sc.Folder = strings.TrimSpace(sc.Folder)
+	if strings.Trim(sc.Folder, "/") == "" && sc.Folder != "" {
+		sc.Folder = "/"
+	} else {
+		sc.Folder = strings.TrimRight(sc.Folder, "/")
+	}
 	switch {
 	case sc.Repo != "" && !memoryRepoRe.MatchString(sc.Repo):
 		return m, "scope.repo must be owner/name"
@@ -224,10 +229,10 @@ func normalizeMemory(req MemoryWriteRequest, now time.Time) (memoryRow, string) 
 		m.files = "\n" + strings.Join(files, "\n") + "\n"
 	}
 
-	for _, f := range []string{sc.Folder, m.Author.Agent, m.Author.Provider, m.Author.Host, m.Author.Session,
+	for _, f := range []string{sc.Repo, sc.Folder, m.Author.Agent, m.Author.Provider, m.Author.Host, m.Author.Session,
 		m.OriginHost, m.OriginID, m.supersedesOriginID} {
 		if len(f) > memoryMaxField || !oneLine(f) {
-			return m, "scope.folder, author fields and origin ids must be one line under 500 bytes"
+			return m, "scope.repo, scope.folder, author fields and origin ids must be one line under 500 bytes"
 		}
 	}
 	if m.OriginID != "" && m.OriginHost == "" {
@@ -258,7 +263,7 @@ func normalizeMemory(req MemoryWriteRequest, now time.Time) (memoryRow, string) 
 func memoryHash(m Memory) string {
 	h := sha256.New()
 	for _, s := range []string{m.Kind, normWords(m.Title), normWords(m.Body), strings.ToLower(m.Scope.Repo),
-		strconv.Itoa(m.Scope.Issue), strconv.Itoa(m.Scope.PR), m.Scope.Folder, strings.Join(m.Scope.Files, ",")} {
+		strconv.Itoa(m.Scope.Issue), strconv.Itoa(m.Scope.PR), m.Scope.Folder, strings.Join(m.Scope.Files, "\n")} {
 		h.Write([]byte(s))
 		h.Write([]byte{0})
 	}
@@ -483,10 +488,14 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 		}
 		target = m.supersedes
 	} else if m.supersedesOriginID != "" {
-		err := tx.QueryRowContext(ctx, `SELECT id FROM agent_memories WHERE owner_id = $1 AND origin_host = $2 AND origin_id = $3`,
-			ownerID, m.OriginHost, m.supersedesOriginID).Scan(&target)
+		var targetSupOrigin string
+		err := tx.QueryRowContext(ctx, `SELECT id, supersedes_origin_id FROM agent_memories WHERE owner_id = $1 AND origin_host = $2 AND origin_id = $3`,
+			ownerID, m.OriginHost, m.supersedesOriginID).Scan(&target, &targetSupOrigin)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return Memory{}, "", err
+		}
+		if targetSupOrigin != "" && targetSupOrigin == m.OriginID {
+			return Memory{}, "", memoryInputError("supersedes_origin_id: the two memories would supersede each other")
 		}
 	}
 	if found && target == existingID {
@@ -501,9 +510,10 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 		// have. Writes with an origin always land on their own key; compaction later folds copies from other keys.
 		var dupID int64
 		var dupExpires *time.Time
-		err := tx.QueryRowContext(ctx, `SELECT id, expires_at FROM agent_memories WHERE owner_id = $1 AND content_hash = $2
+		var dupConfidence string
+		err := tx.QueryRowContext(ctx, `SELECT id, expires_at, confidence FROM agent_memories WHERE owner_id = $1 AND content_hash = $2
 			AND status = 'active' AND (expires_at IS NULL OR expires_at > $3) ORDER BY id LIMIT 1`, ownerID, m.hash, m.UpdatedAt).
-			Scan(&dupID, &dupExpires)
+			Scan(&dupID, &dupExpires, &dupConfidence)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return Memory{}, "", err
 		}
@@ -511,6 +521,12 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 			if !outlives(dupExpires, m.ExpiresAt) { // the repeat should last longer: extend the one we keep
 				if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET expires_at = $1, updated_at = $2 WHERE id = $3`,
 					m.ExpiresAt, m.UpdatedAt, dupID); err != nil {
+					return Memory{}, "", err
+				}
+			}
+			if memoryConfidenceRank[m.Confidence] > memoryConfidenceRank[dupConfidence] {
+				if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET confidence = $1, updated_at = $2 WHERE id = $3`,
+					m.Confidence, m.UpdatedAt, dupID); err != nil {
 					return Memory{}, "", err
 				}
 			}
@@ -576,8 +592,8 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 		// A newer memory from the same hub that arrived first already names this one: it is superseded on arrival.
 		var newer int64
 		err := tx.QueryRowContext(ctx, `SELECT id FROM agent_memories WHERE owner_id = $1 AND origin_host = $2
-			AND supersedes_origin_id = $3 AND supersedes IS NULL AND id <> $4 ORDER BY id DESC LIMIT 1`,
-			ownerID, m.OriginHost, m.OriginID, id).Scan(&newer)
+			AND supersedes_origin_id = $3 AND supersedes IS NULL AND id <> $4 AND id <> $5 ORDER BY id DESC LIMIT 1`,
+			ownerID, m.OriginHost, m.OriginID, id, target).Scan(&newer)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return Memory{}, "", err
 		}

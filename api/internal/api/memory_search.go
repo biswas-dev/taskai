@@ -74,9 +74,17 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 	if len(req.Query) > memoryMaxQuery {
 		req.Query = strings.ToValidUTF8(req.Query[:memoryMaxQuery], "")
 	}
-	words := memoryQueryWords(req.Query)
-	if len(words) == 0 {
+	if strings.TrimSpace(req.Query) == "" {
 		respondError(w, http.StatusBadRequest, "query is required", "invalid_request")
+		return
+	}
+	if req.Issue < 0 || req.PR < 0 {
+		respondError(w, http.StatusBadRequest, "issue and pr are positive numbers", "validation_error")
+		return
+	}
+	words := memoryQueryWords(req.Query)
+	if len(words) == 0 { // only punctuation: nothing can match
+		respondJSON(w, http.StatusOK, MemorySearchResponse{Results: []Memory{}, Mode: "keyword"})
 		return
 	}
 	if req.Limit <= 0 {

@@ -15,7 +15,7 @@ import (
 // path) and idempotent: a second run finds nothing to do.
 //  1. superseded memories go (their successor holds the lesson);
 //  2. expired memories go;
-//  3. copies (same kind, title, body and scope, ignoring case and spacing) fold into the newest one;
+//  3. copies (same kind, title, body and scope, ignoring case and spacing) fold into the one that dominates them;
 //  4. old low-confidence memories of one kind in one scope, without an expiry, are merged into one memory with
 //     their bodies kept verbatim.
 // Rows with an origin become tombstones, so a hub re-sending them is ignored.
@@ -49,6 +49,16 @@ func memoryScopeKey(sc MemoryScope) string {
 }
 
 var memoryConfidenceRank = map[string]int{"low": 0, "medium": 1, "high": 2}
+
+// dominatesAll: c lasts at least as long and is at least as confident as every memory in group.
+func dominatesAll(c Memory, group []Memory) bool {
+	for _, o := range group {
+		if !outlives(c.ExpiresAt, o.ExpiresAt) || memoryConfidenceRank[c.Confidence] < memoryConfidenceRank[o.Confidence] {
+			return false
+		}
+	}
+	return true
+}
 
 // outlives: a memory expiring at a lasts at least as long as one expiring at b (nil = never expires).
 func outlives(a, b *time.Time) bool {
@@ -113,41 +123,42 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 		return rep, err
 	}
 
-	// Copies: the same content hash (kind, title, body and scope, ignoring case and spacing). Newest first, so the
-	// newest is kept; it takes the longest expiry and highest confidence of its copies. Anything less than a copy is
-	// left alone: text that merely overlaps can say the opposite ("Use X" / "Do not use X"); supersede it instead.
-	type keptCopy struct {
-		index int // into survivors
-		grown bool
-	}
-	byHash := map[string]*keptCopy{}
-	var survivors []Memory
+	// Copies: the same content hash (kind, title, body and scope, ignoring case and spacing). The kept copy must
+	// dominate the rest (lasts at least as long, confidence at least as high; the newest wins ties), so nothing it
+	// replaces is worth more and a replay from its own hub cannot undo the fold. Without such a copy the group stays.
+	// Anything less than a copy is left alone: overlapping text can say the opposite ("Use X" / "Do not use X").
+	groups := map[string][]Memory{}
+	var hashes []string
 	for _, m := range active {
 		h := memoryHash(m)
-		k := byHash[h]
-		if k == nil {
-			byHash[h] = &keptCopy{index: len(survivors)}
-			survivors = append(survivors, m)
+		if groups[h] == nil {
+			hashes = append(hashes, h)
+		}
+		groups[h] = append(groups[h], m)
+	}
+	var survivors []Memory
+	for _, h := range hashes {
+		group := groups[h]
+		keep := -1
+		for i, c := range group { // newest first, so the first dominating copy is the newest one
+			if dominatesAll(c, group) {
+				keep = i
+				break
+			}
+		}
+		if keep < 0 || len(group) == 1 {
+			survivors = append(survivors, group...)
 			continue
 		}
-		keep := &survivors[k.index]
-		if !outlives(keep.ExpiresAt, m.ExpiresAt) {
-			keep.ExpiresAt, k.grown = m.ExpiresAt, true
-		}
-		if memoryConfidenceRank[m.Confidence] > memoryConfidenceRank[keep.Confidence] {
-			keep.Confidence, k.grown = m.Confidence, true
-		}
-		if err := s.removeMemories(ctx, tx, []int64{m.ID}, keep.ID, now); err != nil {
-			return rep, err
-		}
-		rep.DuplicatesMerged++
-	}
-	for _, k := range byHash {
-		if keep := survivors[k.index]; k.grown {
-			if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET expires_at = $1, confidence = $2, updated_at = $3 WHERE id = $4`,
-				keep.ExpiresAt, keep.Confidence, now, keep.ID); err != nil {
+		survivors = append(survivors, group[keep])
+		for i, m := range group {
+			if i == keep {
+				continue
+			}
+			if err := s.removeMemories(ctx, tx, []int64{m.ID}, group[keep].ID, now); err != nil {
 				return rep, err
 			}
+			rep.DuplicatesMerged++
 		}
 	}
 

@@ -41,6 +41,8 @@ func TestNormalizeMemory(t *testing.T) {
 		{"bad status", with(func(r *MemoryWriteRequest) { r.Status = "compacted" }), "status must be"},
 		{"origin id without host", with(func(r *MemoryWriteRequest) { r.OriginID = "7" }), "needs origin_host"},
 		{"multi-line file", with(func(r *MemoryWriteRequest) { r.Scope.Files = []string{"a\nb"} }), "one line"},
+		{"repo too long", with(func(r *MemoryWriteRequest) { r.Scope.Repo = "a/" + strings.Repeat("b", 600) }), "under 500 bytes"},
+		{"root folder", with(func(r *MemoryWriteRequest) { r.Scope = MemoryScope{Folder: "/"} }), ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -57,6 +59,11 @@ func TestNormalizeMemory(t *testing.T) {
 	b, _ := normalizeMemory(with(func(r *MemoryWriteRequest) { r.Title, r.Body = "  T ", "B" }), now)
 	if a.hash != b.hash {
 		t.Error("hash should ignore case and spacing")
+	}
+	f1, _ := normalizeMemory(with(func(r *MemoryWriteRequest) { r.Scope.Files = []string{"a,b"} }), now)
+	f2, _ := normalizeMemory(with(func(r *MemoryWriteRequest) { r.Scope.Files = []string{"a", "b"} }), now)
+	if f1.hash == f2.hash {
+		t.Error(`files ["a,b"] and ["a","b"] must not hash the same`)
 	}
 }
 
@@ -395,6 +402,12 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if res := search(owner, MemorySearchRequest{Query: "r"}); res.Total == 0 {
 			t.Fatal("a one-letter query should search, not fail")
 		}
+		if res := search(owner, MemorySearchRequest{Query: "---"}); res.Total != 0 {
+			t.Fatalf("punctuation-only query: %+v", res)
+		}
+		rec, r = ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "deploy", Issue: -1}, owner, nil)
+		ts.HandleSearchMemories(rec, r)
+		AssertError(t, rec, http.StatusBadRequest, "positive", "validation_error")
 		if code, _ := list(outsider, fmt.Sprintf("owner_id=%d", owner)); code != http.StatusForbidden {
 			t.Fatalf("unshared owner_id: %d", code)
 		}
@@ -466,6 +479,7 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 	t.Run("compaction frees space, keeps knowledge, is idempotent", func(t *testing.T) {
 		u := user("compact")
 		old := time.Now().UTC().Add(-200 * 24 * time.Hour)
+		tmp := time.Now().UTC().Add(24 * time.Hour)
 		past := time.Now().UTC().Add(-time.Hour)
 		// superseded (with origin: becomes a tombstone)
 		a := mem("Old way", "Deploy by hand")
@@ -489,6 +503,14 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		// Overlapping text that says the opposite: both stay.
 		write(u, mem("Port", "Use PORT=3000."))
 		write(u, mem("Port", "Do not use PORT=3000."))
+		// Copies where neither dominates (one lasts longer, the other is more confident) both stay.
+		x1 := mem("Cache TTL", "the cache ttl is one hour")
+		x1.CreatedAt, x1.Confidence, x1.ExpiresAt = &old, "high", &tmp
+		x1.OriginHost, x1.OriginID = "hub-a", "700"
+		write(u, x1)
+		x2 := mem("Cache TTL", "the cache ttl is one hour")
+		x2.Confidence, x2.OriginHost, x2.OriginID = "low", "hub-b", "701"
+		write(u, x2)
 		// Same body, different instruction in the title: both stay.
 		r1 := mem("Do not restart production workers", "deployment checklist: drain queues, then deploy")
 		r1.CreatedAt = &old
@@ -507,7 +529,6 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		h2.CreatedAt, h2.OriginHost, h2.OriginID = nil, "hub-b", "900"
 		write(u, h2)
 		// A newer copy that expires folds in, and the kept one stays permanent and keeps the higher confidence.
-		tmp := time.Now().UTC().Add(24 * time.Hour)
 		k1 := mem("Rotate logs", "logrotate runs nightly at two")
 		k1.CreatedAt, k1.Confidence = &old, "high"
 		k1.OriginHost, k1.OriginID = "hub-a", "600"
@@ -566,8 +587,11 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("opposite instructions must both survive: %v", got)
 		}
 		logs := search(u, MemorySearchRequest{Query: "logrotate nightly"})
-		if logs.Total != 1 || logs.Results[0].ExpiresAt != nil || logs.Results[0].Confidence != "high" {
-			t.Fatalf("folded copy should be permanent and high confidence: %+v", logs)
+		if logs.Total != 1 || logs.Results[0].ExpiresAt != nil || logs.Results[0].Confidence != "high" || logs.Results[0].OriginID != "600" {
+			t.Fatalf("the dominating copy (permanent, high) should be kept: %+v", logs)
+		}
+		if got := titles(search(u, MemorySearchRequest{Query: "cache ttl hour", Limit: 50})); got["Cache TTL"] != 2 {
+			t.Fatalf("copies where neither dominates must both stay: %v", got)
 		}
 		if res := search(u, MemorySearchRequest{Query: "lock", Files: []string{"api/b.go"}}); res.Total != 1 {
 			t.Fatalf("file filter lost the older memory: %+v", res)
@@ -610,6 +634,25 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("self-supersede: %d %s", code, body)
 		}
 
+		// Out of order, two memories naming each other: the second is refused instead of hiding both.
+		m1 := mem("Mutual one", "first of a pair")
+		m1.OriginHost, m1.OriginID, m1.SupersedesOriginID = "hub-a", "20", "21"
+		write(u, m1)
+		m2 := mem("Mutual two", "second of a pair")
+		m2.OriginHost, m2.OriginID, m2.SupersedesOriginID = "hub-a", "21", "20"
+		if code, _, body := write(u, m2); code != http.StatusBadRequest {
+			t.Fatalf("mutual supersede: %d %s", code, body)
+		}
+
+		// A more confident repeat (no origin) raises the kept memory's confidence.
+		lc := mem("Hunch", "the queue may stall under load")
+		lc.Confidence = "low"
+		write(u, lc)
+		lc.Confidence = "high"
+		if _, up, _ := write(u, lc); up.Outcome != "duplicate" || up.Memory.Confidence != "high" {
+			t.Fatalf("confidence upgrade on repeat: %+v", up.Memory)
+		}
+
 		// Deleting a memory with an origin is not undone when its hub sends it again.
 		c := mem("Staging is ARM64", "Staging and UAT are aarch64")
 		c.OriginHost, c.OriginID = "hub-a", "3"
@@ -632,7 +675,7 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			DecodeJSON(t, rec, &out)
 			return out
 		}
-		if got := usage(); got.Count != 3 || got.ActiveCount != 1 {
+		if got := usage(); got.Count != 5 || got.ActiveCount != 3 {
 			t.Fatalf("usage should leave out the tombstone and count only active ones: %+v", got)
 		}
 
