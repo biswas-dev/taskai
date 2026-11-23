@@ -63,6 +63,17 @@ describe('Memories', () => {
     expect(screen.queryByText('Partial index needs WHERE')).not.toBeInTheDocument()
   })
 
+  it('keeps a deleted memory gone when the usage refresh fails', async () => {
+    mocked.deleteMemory.mockResolvedValue()
+    render(<Memories />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete memory Partial index needs WHERE' }))
+    mocked.getMemoryUsage.mockRejectedValue(new Error('down'))
+    const item = screen.getByText('Partial index needs WHERE').closest('li') as HTMLElement
+    await userEvent.click(within(item).getByRole('button', { name: 'Delete' }))
+    expect(screen.queryByText('Partial index needs WHERE')).not.toBeInTheDocument()
+    expect(screen.queryByText('down')).not.toBeInTheDocument()
+  })
+
   it('compacts and reports what it freed', async () => {
     mocked.compactMemories.mockResolvedValue({ superseded_removed: 2, expired_removed: 1, duplicates_merged: 3,
       low_confidence_summarised: 0, summaries_created: 0, bytes_before: 10000, bytes_after: 4000, freed_bytes: 6000 })

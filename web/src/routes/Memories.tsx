@@ -68,11 +68,13 @@ export default function Memories() {
     setConfirmId(null)
     try {
       await api.deleteMemory(id)
-      setUsage(await api.getMemoryUsage())
     } catch (err) {
       setMemories(before)
       setError(err instanceof Error ? err.message : 'Failed to delete memory')
+      return
     }
+    // A failed usage refresh leaves the bar stale; the delete itself succeeded.
+    api.getMemoryUsage().then(setUsage, () => undefined)
   }
 
   const compact = async () => {
