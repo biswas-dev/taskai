@@ -53,32 +53,18 @@ export default function Landing() {
         </div>
       </nav>
 
-      <MemoriesHero />
+      {/* ── Hero: project management ── */}
+      <section className="pt-32 pb-16 md:pt-40 md:pb-24">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <h1 className="text-4xl md:text-6xl font-bold tracking-tight leading-tight">
+            Project management built for AI agents
+          </h1>
 
-      {/* ── Project management ── */}
-      <section className="relative pt-20 pb-24 md:pt-28 md:pb-32 border-t border-dark-border-subtle overflow-hidden">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[700px] bg-primary-500/[0.06] rounded-full blur-[140px]" />
-          <div className="absolute top-1/4 right-1/4 w-[500px] h-[500px] bg-secondary-500/[0.04] rounded-full blur-[120px]" />
-          <div className="absolute bottom-0 left-1/3 w-[400px] h-[300px] bg-primary-500/[0.04] rounded-full blur-[100px]" />
-        </div>
-
-        <div className="relative max-w-4xl mx-auto px-6 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-8 text-xs font-medium text-primary-400 bg-primary-500/10 border border-primary-500/20 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
-            MCP Server built-in — works with Claude, Cursor, and any MCP client
-          </div>
-
-          <h2 className="text-5xl md:text-7xl font-bold tracking-tight leading-[1.05]">
-            Project management
-            <br />
-            <span className="bg-gradient-to-r from-primary-400 via-primary-300 to-secondary-400 bg-clip-text text-transparent">
-              built for AI agents
-            </span>
-          </h2>
-
-          <p className="mt-7 text-lg md:text-xl text-dark-text-tertiary max-w-2xl mx-auto leading-relaxed">
-            The complete workspace where AI agents and humans collaborate. Tasks, roadmaps, wiki, knowledge graph, GitHub sync — all accessible via MCP, REST API, or the visual UI.
+          <p className="mt-6 text-lg text-dark-text-tertiary max-w-2xl mx-auto leading-relaxed">
+            One workspace for people and AI agents. Tasks, roadmaps, wiki, knowledge graph and GitHub sync, in the app, over the REST API or over MCP.
+          </p>
+          <p className="mt-3 text-base text-dark-text-quaternary max-w-2xl mx-auto leading-relaxed">
+            The MCP server is built in. It works with Claude, Cursor, ChatGPT, GitHub Copilot and any other MCP client.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -101,20 +87,10 @@ export default function Landing() {
               Read the docs
             </a>
           </div>
-
-          {/* Compatibility pills */}
-          <div className="mt-12 flex flex-wrap items-center justify-center gap-2">
-            <span className="text-xs text-dark-text-quaternary mr-2">Works with</span>
-            {['Claude', 'Cursor', 'ChatGPT', 'GitHub Copilot', 'Any MCP client'].map(tool => (
-              <span key={tool} className="px-2.5 py-1 text-xs font-medium text-dark-text-tertiary bg-dark-bg-primary border border-dark-border-subtle rounded-full">
-                {tool}
-              </span>
-            ))}
-          </div>
         </div>
 
         {/* Fake UI Preview */}
-        <div className="relative mt-20 max-w-5xl mx-auto px-6">
+        <div className="mt-16 max-w-5xl mx-auto px-6">
           <div className="rounded-xl border border-dark-border-subtle bg-dark-bg-primary shadow-linear-xl overflow-hidden">
             {/* Window chrome */}
             <div className="flex items-center gap-2 px-4 py-3 bg-dark-bg-secondary border-b border-dark-border-subtle">
@@ -158,9 +134,9 @@ export default function Landing() {
               {/* Board content */}
               <div className="flex-1 overflow-hidden p-4 bg-dark-bg-base">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-dark-text-primary">Sprint 3 · AI Dashboard</h3>
+                  <p className="text-sm font-semibold text-dark-text-primary">Sprint 3 · AI Dashboard</p>
                   <div className="flex gap-2">
-                    <div className="px-2 py-0.5 text-xs text-primary-400 bg-primary-500/10 rounded-full border border-primary-500/20">MCP connected</div>
+                    <span className="text-xs text-primary-400">MCP connected</span>
                   </div>
                 </div>
 
@@ -206,16 +182,16 @@ export default function Landing() {
               </div>
             </div>
           </div>
-          {/* Glow below */}
-          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 w-3/4 h-16 bg-primary-500/10 blur-2xl rounded-full pointer-events-none" />
         </div>
       </section>
 
+      <MemoriesHero />
+
       {/* ── Feature pillars ── */}
-      <section id="features" className="py-24 md:py-32 border-t border-dark-border-subtle">
+      <section id="features" className="py-16 md:py-24 border-t border-dark-border-subtle">
         <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center mb-20">
-            <h2 className="text-3xl md:text-5xl font-bold tracking-tight">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
               Everything your team needs.
               <br />
               <span className="text-dark-text-tertiary font-normal">Nothing you don't.</span>
@@ -233,7 +209,6 @@ export default function Landing() {
               href="#memories"
               className="group relative block p-8 rounded-2xl bg-dark-bg-primary border border-primary-500/30 hover:border-primary-500/60 transition-all duration-300 overflow-hidden"
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-primary-500/[0.06] to-transparent" />
               <div className="relative md:flex md:items-center md:justify-between md:gap-8">
                 <div>
                   <h3 className="text-xl font-semibold mb-3 tracking-tight">Memories</h3>
@@ -251,7 +226,6 @@ export default function Landing() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Tasks */}
               <div className="group relative p-8 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle hover:border-primary-500/30 transition-all duration-300 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-primary-500/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="relative">
                   <div className="w-11 h-11 bg-primary-500/10 rounded-xl flex items-center justify-center mb-5">
                     <svg className="w-5 h-5 text-primary-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -277,7 +251,6 @@ export default function Landing() {
 
               {/* Roadmap */}
               <div className="group relative p-8 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle hover:border-teal-500/30 transition-all duration-300 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-teal-500/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="relative">
                   <div className="w-11 h-11 bg-teal-500/10 rounded-xl flex items-center justify-center mb-5">
                     <svg className="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -303,7 +276,6 @@ export default function Landing() {
 
               {/* Wiki */}
               <div className="group relative p-8 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle hover:border-blue-500/30 transition-all duration-300 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="relative">
                   <div className="w-11 h-11 bg-blue-500/10 rounded-xl flex items-center justify-center mb-5">
                     <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -332,7 +304,6 @@ export default function Landing() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Sprints — 2 cols */}
               <div className="md:col-span-2 group relative p-8 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle hover:border-secondary-500/30 transition-all duration-300 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="relative flex flex-col md:flex-row gap-8">
                   <div className="md:w-64 flex-shrink-0">
                     <div className="w-11 h-11 bg-secondary-500/10 rounded-xl flex items-center justify-center mb-5">
@@ -377,7 +348,6 @@ export default function Landing() {
 
               {/* Knowledge Graph */}
               <div className="group relative p-8 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle hover:border-orange-500/30 transition-all duration-300 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                 <div className="relative">
                   <div className="w-11 h-11 bg-orange-500/10 rounded-xl flex items-center justify-center mb-5">
                     <svg className="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -428,11 +398,7 @@ export default function Landing() {
                   <p className="text-sm text-dark-text-tertiary leading-relaxed mb-4">
                     Two-way sync with GitHub Issues and PRs. Import issues as tasks, push task changes back, sync comments and reactions. All automatically, on a schedule.
                   </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {['Issue sync', 'PR tracking', 'Comment sync', 'Reactions', 'Auto-schedule'].map(tag => (
-                      <span key={tag} className="px-2 py-0.5 text-[10px] font-medium bg-dark-bg-tertiary border border-dark-border-subtle rounded text-dark-text-tertiary">{tag}</span>
-                    ))}
-                  </div>
+                  <p className="text-xs text-dark-text-quaternary">Issue sync, PR tracking, comment sync, reactions and a sync schedule.</p>
                 </div>
               </div>
 
@@ -495,35 +461,20 @@ export default function Landing() {
       </section>
 
       {/* ── Knowledge Spine ── */}
-      <section id="knowledge-spine" className="py-24 md:py-32 border-t border-dark-border-subtle relative overflow-hidden">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/3 left-1/4 w-[500px] h-[500px] bg-violet-500/[0.04] rounded-full blur-[120px]" />
-          <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-emerald-500/[0.04] rounded-full blur-[100px]" />
-        </div>
+      <section id="knowledge-spine" className="py-16 md:py-24 border-t border-dark-border-subtle">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-6 text-xs font-medium text-violet-400 bg-violet-500/10 border border-violet-500/20 rounded-full">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              Knowledge Spine
-            </div>
-            <h2 className="text-3xl md:text-5xl font-bold tracking-tight">
-              Your wiki becomes the
-              <br />
-              <span className="bg-gradient-to-r from-violet-400 via-purple-300 to-emerald-400 bg-clip-text text-transparent">
-                AI's memory
-              </span>
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
+              Your wiki becomes the AI's knowledge base
             </h2>
             <p className="mt-5 text-base text-dark-text-tertiary max-w-2xl mx-auto leading-relaxed">
-              Every wiki page you write is automatically vectorized and indexed. When an AI agent needs context — deployment patterns, API contracts, architecture decisions — it finds exactly the right knowledge in milliseconds, not by keyword matching, but by understanding what you mean.
+              The Knowledge Spine indexes every wiki page you write, with full text and vectors. When an AI agent needs context — deployment patterns, API contracts, architecture decisions — it finds exactly the right knowledge in milliseconds, not by keyword matching, but by understanding what you mean.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
             {/* Automatic Embedding */}
             <div className="group relative p-8 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle hover:border-violet-500/30 transition-all duration-300 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-violet-500/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               <div className="relative">
                 <div className="w-11 h-11 bg-violet-500/10 rounded-xl flex items-center justify-center mb-5">
                   <svg className="w-5 h-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -539,7 +490,6 @@ export default function Landing() {
 
             {/* Semantic Search */}
             <div className="group relative p-8 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle hover:border-emerald-500/30 transition-all duration-300 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               <div className="relative">
                 <div className="w-11 h-11 bg-emerald-500/10 rounded-xl flex items-center justify-center mb-5">
                   <svg className="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -555,7 +505,6 @@ export default function Landing() {
 
             {/* Local & Private */}
             <div className="group relative p-8 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle hover:border-amber-500/30 transition-all duration-300 overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/[0.03] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               <div className="relative">
                 <div className="w-11 h-11 bg-amber-500/10 rounded-xl flex items-center justify-center mb-5">
                   <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -642,23 +591,17 @@ export default function Landing() {
       </section>
 
       {/* ── AI Agents section ── */}
-      <section id="ai" className="py-24 md:py-32 border-t border-dark-border-subtle">
+      <section id="ai" className="py-16 md:py-24 border-t border-dark-border-subtle">
         <div className="max-w-6xl mx-auto px-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
             <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-6 text-xs font-medium text-primary-400 bg-primary-500/10 border border-primary-500/20 rounded-full">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                Model Context Protocol
-              </div>
               <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-6">
                 Let your AI agent
                 <br />
                 run your standup
               </h2>
               <p className="text-dark-text-tertiary leading-relaxed mb-8">
-                TaskAI ships with a built-in MCP server. Point Claude, Cursor, or any compatible agent at your workspace and it can read project context, create and update tasks, manage sprints and milestones, track roadmap progress — all through natural language.
+                TaskAI ships with a built-in MCP (Model Context Protocol) server. Point Claude, Cursor, or any compatible agent at your workspace and it can read project context, create and update tasks, manage sprints and milestones, track roadmap progress — all through natural language.
               </p>
               <div className="space-y-4">
                 {[
@@ -710,7 +653,7 @@ export default function Landing() {
       </section>
 
       {/* ── Integrations & everything else ── */}
-      <section id="integrations" className="py-24 md:py-32 border-t border-dark-border-subtle">
+      <section id="integrations" className="py-16 md:py-24 border-t border-dark-border-subtle">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">
@@ -738,7 +681,7 @@ export default function Landing() {
             ].map(item => (
               <div key={item.title} className="p-5 rounded-xl bg-dark-bg-primary border border-dark-border-subtle hover:border-dark-border-medium transition-all duration-200 group">
                 <div className="text-2xl mb-3">{item.icon}</div>
-                <h4 className="text-sm font-semibold text-dark-text-primary mb-1.5">{item.title}</h4>
+                <h3 className="text-sm font-semibold text-dark-text-primary mb-1.5">{item.title}</h3>
                 <p className="text-xs text-dark-text-quaternary leading-relaxed">{item.desc}</p>
               </div>
             ))}
@@ -805,12 +748,9 @@ export default function Landing() {
       )}
 
       {/* ── CTA ── */}
-      <section className="py-24 md:py-32 border-t border-dark-border-subtle relative overflow-hidden">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-primary-500/[0.07] rounded-full blur-[100px]" />
-        </div>
-        <div className="relative max-w-3xl mx-auto px-6 text-center">
-          <h2 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
+      <section className="py-16 md:py-24 border-t border-dark-border-subtle">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-6">
             Start shipping with AI today
           </h2>
           <p className="text-lg text-dark-text-tertiary mb-10 max-w-xl mx-auto leading-relaxed">

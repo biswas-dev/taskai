@@ -9,19 +9,44 @@ vi.mock('react-router-dom', () => ({
 }))
 
 describe('Landing', () => {
-  it('renders the hero heading', () => {
+  it('leads with the project management hero as the only h1, first on the page', () => {
     render(<Landing />)
-    expect(screen.getByText('Project management')).toBeInTheDocument()
-    expect(screen.getByText('built for AI agents')).toBeInTheDocument()
+    const h1s = screen.getAllByRole('heading', { level: 1 })
+    expect(h1s).toHaveLength(1)
+    expect(h1s[0]).toHaveTextContent('Project management built for AI agents')
+    const first = document.querySelector('h1, h2')
+    expect(first).toBe(h1s[0])
   })
 
-  it('leads with Memories: one heading, a quick start for REST and MCP, and a link to the protocol', () => {
+  it('shows memories below the hero as an h2 section, with a protocol link and no quick start', () => {
     render(<Landing />)
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('One memory for every AI you use')
-    expect(screen.getByText('REST (curl)')).toBeInTheDocument()
-    expect(screen.getByText(/claude mcp add --transport http taskai/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Read the protocol' })).toHaveAttribute('href', expect.stringContaining('docs/memory-protocol.md'))
+    const memories = screen.getByRole('region', { name: 'One memory for every AI you use' })
+    expect(memories).toHaveAttribute('id', 'memories')
+    expect(screen.getByRole('heading', { level: 2, name: 'One memory for every AI you use' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Read the memory protocol/ })).toHaveAttribute('href', expect.stringContaining('docs/memory-protocol.md'))
     expect(screen.getByRole('link', { name: 'Memories' })).toHaveAttribute('href', '#memories')
+    expect(screen.queryByText(/Quick start/i)).toBeNull()
+    expect(screen.queryByText(/claude mcp add/)).toBeNull()
+    expect(screen.queryByText(/curl /)).toBeNull()
+  })
+
+  it('has no pill labels, glow blobs or gradient text', () => {
+    const { container } = render(<Landing />)
+    expect(container.querySelector('.animate-pulse')).toBeNull()
+    expect(container.querySelector('.bg-clip-text')).toBeNull()
+    expect(container.querySelector('[class*="blur-["]')).toBeNull()
+    expect(screen.queryByText(/^New ·/)).toBeNull()
+    // The facts the old pills held are still on the page, as text.
+    expect(screen.getByText(/The MCP server is built in/)).toBeInTheDocument()
+  })
+
+  it('keeps heading levels in order (no level is skipped)', () => {
+    const { container } = render(<Landing />)
+    const levels = [...container.querySelectorAll('h1, h2, h3, h4, h5, h6')].map(h => Number(h.tagName[1]))
+    levels.reduce((prev, cur) => {
+      expect(cur).toBeLessThanOrEqual(prev + 1)
+      return cur
+    })
   })
 
   it('shows how memories work with the rest of TaskAI, and leads the features with a Memories card', () => {
@@ -56,7 +81,7 @@ describe('Landing', () => {
   it('renders the AI agents section', () => {
     render(<Landing />)
     expect(screen.getByText(/Let your AI agent/)).toBeInTheDocument()
-    expect(screen.getByText('Model Context Protocol')).toBeInTheDocument()
+    expect(screen.getByText(/built-in MCP \(Model Context Protocol\) server/)).toBeInTheDocument()
   })
 
   it('renders the footer', () => {
