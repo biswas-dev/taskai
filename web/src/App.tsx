@@ -21,6 +21,7 @@ const Sprints = lazy(() => import('./routes/Sprints'))
 const Tags = lazy(() => import('./routes/Tags'))
 const Admin = lazy(() => import('./routes/Admin'))
 const Settings = lazy(() => import('./routes/Settings'))
+const Memories = lazy(() => import('./routes/Memories'))
 const Assets = lazy(() => import('./routes/Assets'))
 const AcceptTeamInvite = lazy(() => import('./routes/AcceptTeamInvite'))
 const KnowledgeGraphPage = lazy(() => import('./routes/KnowledgeGraphPage'))
@@ -125,6 +126,7 @@ function AppRoutes() {
           <Route path="users/:userId" element={<UserProfile />} />
           <Route path="admin" element={<Admin />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="memories" element={<Memories />} />
         </Route>
 
         {/* Catch-all: a real 404, not a redirect. Redirecting unknown URLs

@@ -15,6 +15,27 @@ describe('Landing', () => {
     expect(screen.getByText('built for AI agents')).toBeInTheDocument()
   })
 
+  it('leads with Memories: one heading, a quick start for REST and MCP, and a link to the protocol', () => {
+    render(<Landing />)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('One memory for every AI you use')
+    expect(screen.getByText('REST (curl)')).toBeInTheDocument()
+    expect(screen.getByText(/claude mcp add --transport http taskai/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Read the protocol' })).toHaveAttribute('href', expect.stringContaining('docs/memory-protocol.md'))
+    expect(screen.getByRole('link', { name: 'Memories' })).toHaveAttribute('href', '#memories')
+  })
+
+  it('shows how memories work with the rest of TaskAI, and leads the features with a Memories card', () => {
+    render(<Landing />)
+    const connect = screen.getByRole('region', { name: 'Works with everything in TaskAI' })
+    for (const title of ['Tasks, issues and PRs', 'GitHub sync', 'Wiki and knowledge graph', 'One MCP server, one API key', 'Teams and projects']) {
+      expect(connect).toHaveTextContent(title)
+    }
+    const card = screen.getByRole('link', { name: /^Memories One store of lessons/ })
+    expect(card).toHaveAttribute('href', '#memories')
+    const featureHeadings = [...document.querySelectorAll('#features h3')].map(h => h.textContent)
+    expect(featureHeadings[0]).toBe('Memories')
+  })
+
   it('renders "Sign in" and "Get started free" navigation links', () => {
     render(<Landing />)
     const signInLinks = screen.getAllByText('Sign in')

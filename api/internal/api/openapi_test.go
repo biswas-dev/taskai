@@ -110,6 +110,19 @@ func buildTestRouter(server *Server) chi.Router {
 			r.Get("/meetings/{id}", server.HandleGetMeeting)
 			r.Patch("/meetings/{id}", server.HandleUpdateMeeting)
 			r.Delete("/meetings/{id}", server.HandleDeleteMeeting)
+			r.Group(func(r chi.Router) {
+				r.Use(MemoryProtocol)
+				r.Get("/memories", server.HandleListMemories)
+				r.Post("/memories", server.HandleWriteMemory)
+				r.Post("/memories/search", server.HandleSearchMemories)
+				r.Get("/memories/usage", server.HandleMemoryUsage)
+				r.Post("/memories/compact", server.HandleCompactMemories)
+				r.Get("/memories/shares", server.HandleGetMemoryShares)
+				r.Put("/memories/shares", server.HandleSetMemoryShares)
+				r.Post("/memories/import-wiki", server.HandleImportWikiMemories)
+				r.Get("/memories/{id}", server.HandleGetMemory)
+				r.Delete("/memories/{id}", server.HandleDeleteMemory)
+			})
 			r.Get("/projects/{id}/github", server.HandleGetProjectGitHubSettings)
 			r.Patch("/projects/{id}/github", server.HandleUpdateProjectGitHubSettings)
 
@@ -155,6 +168,7 @@ func buildTestRouter(server *Server) chi.Router {
 			r.Get("/admin/users", server.HandleGetUsers)
 			r.Get("/admin/users/{id}/activity", server.HandleGetUserActivity)
 			r.Patch("/admin/users/{id}/admin", server.HandleUpdateUserAdmin)
+			r.With(MemoryProtocol).Put("/admin/users/{id}/memory-quota", server.HandleAdminSetMemoryQuota)
 		})
 	})
 

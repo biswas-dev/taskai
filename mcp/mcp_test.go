@@ -81,6 +81,21 @@ func (f *fakeAPI) handler(t *testing.T) http.Handler {
 			reply(map[string]any{"total": 1, "results": []any{map[string]any{"page_id": 5, "page_title": "Arch", "headings_path": "Intro", "snippet": "…", "rank": 0.9}}})
 		case r.URL.Path == "/draw/api/new":
 			reply(map[string]any{"id": "abc", "edit_url": "/draw/abc/edit", "view_url": "/draw/abc"})
+		case r.URL.Path == "/api/memories/search":
+			reply(map[string]any{"total": 1, "mode": "hybrid", "results": []any{map[string]any{"id": 4, "kind": "gotcha", "title": "T",
+				"body": "B", "scope": map[string]any{"repo": "o/r"}, "rank": 0.03, "author": map[string]any{"host": "h"}, "size_bytes": 1700}}})
+		case r.URL.Path == "/api/memories" && r.Method == "GET":
+			reply(map[string]any{"memories": []any{map[string]any{"id": 6, "kind": "fact", "title": "L", "body": "B", "size_bytes": 9}}})
+		case r.URL.Path == "/api/memories/shares":
+			reply(map[string]any{"shared_with": []any{}, "shared_with_me": []any{}})
+		case r.URL.Path == "/api/memories/6" && r.Method == "GET":
+			reply(map[string]any{"id": 6})
+		case r.URL.Path == "/api/memories/6" && r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/api/memories/usage" || r.URL.Path == "/api/memories/compact":
+			reply(map[string]any{"used_bytes": 10})
+		case r.URL.Path == "/api/memories" && r.Method == "POST":
+			reply(map[string]any{"outcome": "created", "memory": map[string]any{"id": 5}})
 		case r.URL.Path == "/api/projects/3/meetings" && r.Method == "POST":
 			reply(map[string]any{"id": 1, "title": body["title"]})
 		case r.URL.Path == "/api/projects/3/drawings" && r.Method == "POST":
@@ -193,7 +208,9 @@ func TestToolListMatchesTheNodeServer(t *testing.T) {
 		update_wiki_page_content update_wiki_page_title move_wiki_page download_wiki_pdf download_wiki_markdown
 		autocomplete_wiki_pages get_version list_milestones create_milestone update_milestone get_milestone_progress
 		add_dependency remove_dependency health_check list_project_members add_project_member get_wiki_sharing update_wiki_sharing
-		list_meetings get_meeting create_meeting update_meeting`)
+		list_meetings get_meeting create_meeting update_meeting
+		search_memories list_memories write_memory supersede_memory delete_memory memory_usage compact_memories
+		get_memory get_memory_shares set_memory_shares`)
 	have := map[string]bool{}
 	for _, n := range names {
 		have[n] = true
@@ -334,5 +351,66 @@ func TestCreateMeetingOmitsAttendeesForWholeProject(t *testing.T) {
 	}
 	if _, ok := req.Body["attendee_ids"]; ok {
 		t.Fatalf("attendee_ids must be omitted so the API adds every member: %+v", req.Body)
+	}
+}
+
+func TestMemoryTools(t *testing.T) {
+	api, h := setup(t)
+	r := call(t, h, key, "search_memories", map[string]any{"query": "partial index", "repo": "o/r", "files": []string{"a.go"}})
+	if !strings.Contains(text(r), `"title":"T"`) || strings.Contains(text(r), "size_bytes") {
+		t.Fatalf("search result should be trimmed: %s", text(r))
+	}
+	if req := api.last("/api/memories/search"); req.Body["repo"] != "o/r" || req.Body["query"] != "partial index" {
+		t.Fatalf("search request: %+v", req)
+	}
+	call(t, h, key, "supersede_memory", map[string]any{"memory_id": "9", "kind": "fact", "body": "New", "repo": "o/r"})
+	req := api.last("/api/memories")
+	scope, _ := req.Body["scope"].(map[string]any)
+	if req.Method != http.MethodPost || req.Body["supersedes"] != float64(9) || req.Body["body"] != "New" || scope["repo"] != "o/r" {
+		t.Fatalf("supersede request: %+v", req)
+	}
+	if _, ok := req.Body["origin_id"]; ok {
+		t.Fatalf("empty origin must be omitted: %+v", req.Body)
+	}
+}
+
+func TestMemoryListDeleteUsageCompact(t *testing.T) {
+	api, h := setup(t)
+	r := call(t, h, key, "list_memories", map[string]any{"repo": "o/r", "kind": "fact", "limit": 5})
+	if !strings.Contains(text(r), `"title":"L"`) || strings.Contains(text(r), "size_bytes") {
+		t.Fatalf("list should be trimmed: %s", text(r))
+	}
+	if q := api.last("/api/memories").Query; !strings.Contains(q, "repo=o%2Fr") || !strings.Contains(q, "kind=fact") || !strings.Contains(q, "limit=5") || strings.Contains(q, "offset") {
+		t.Fatalf("list query: %s", q)
+	}
+	call(t, h, key, "write_memory", map[string]any{"kind": "gotcha", "body": "B", "repo": "o/r", "files": []string{"a.go"}, "agent": "codex"})
+	w := api.last("/api/memories")
+	if w.Method != http.MethodPost || w.Body["author"].(map[string]any)["agent"] != "codex" || w.Body["scope"].(map[string]any)["files"] == nil {
+		t.Fatalf("write: %+v", w)
+	}
+	if _, res := rpc(t, h, key, "tools/call", map[string]any{"name": "supersede_memory", "arguments": map[string]any{"memory_id": "0", "kind": "fact", "body": "x", "repo": "o/r"}}); !strings.Contains(fmt.Sprint(res), "memory_id must be") {
+		t.Fatalf("supersede with id 0 should fail: %v", res)
+	}
+	for _, bad := range []string{"usage", "", "0", "-3"} {
+		if _, res := rpc(t, h, key, "tools/call", map[string]any{"name": "get_memory", "arguments": map[string]any{"memory_id": bad}}); !strings.Contains(fmt.Sprint(res), "memory_id must be") {
+			t.Fatalf("get_memory %q should fail: %v", bad, res)
+		}
+	}
+	call(t, h, key, "delete_memory", map[string]any{"memory_id": "6"})
+	if req := api.last("/api/memories/6"); req.Method != http.MethodDelete {
+		t.Fatalf("delete: %+v", req)
+	}
+	call(t, h, key, "get_memory", map[string]any{"memory_id": "6"})
+	if req := api.last("/api/memories/6"); req.Method != http.MethodGet {
+		t.Fatalf("get: %+v", req)
+	}
+	call(t, h, key, "set_memory_shares", map[string]any{"user_ids": []int64{4}})
+	if req := api.last("/api/memories/shares"); req.Method != http.MethodPut || fmt.Sprint(req.Body["user_ids"]) != "[4]" {
+		t.Fatalf("set shares: %+v", req)
+	}
+	call(t, h, key, "memory_usage", map[string]any{})
+	call(t, h, key, "compact_memories", map[string]any{})
+	if req := api.last("/api/memories/compact"); req.Method != http.MethodPost {
+		t.Fatalf("compact: %+v", req)
 	}
 }
