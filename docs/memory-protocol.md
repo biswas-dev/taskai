@@ -135,6 +135,10 @@ MCP (Claude Code shown; any MCP client takes the same URL and header):
 claude mcp add --transport http taskai https://mcp.taskai.cc/mcp --header "X-API-Key: $TASKAI_KEY"
 ```
 
+Then ask your agent, for example: "search my memories for the deploy gotchas". The MCP tools are `write_memory`, `search_memories`, `get_memory`, `list_memories`, `supersede_memory`, `get_memory_shares`, `memory_usage` and `compact_memories`.
+
+This protocol works with Claude, Codex, Gemini, ChatGPT and any other client that can send HTTP or MCP requests.
+
 ## Versioning
 
 This is version `1`. Additive changes (new optional fields, new endpoints, new outcomes clients may ignore) keep the version. An incompatible change bumps `TaskAI-Memory-Protocol`, and the previous version stays served until clients have moved. Clients should ignore fields they don't know.
