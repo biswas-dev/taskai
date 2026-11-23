@@ -597,7 +597,7 @@ export interface paths {
         put?: never;
         /**
          * Compact Memories
-         * @description Drop superseded and expired memories, merge near-duplicates in the same scope (newest kept), and merge old low-confidence memories of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
+         * @description Drop superseded and expired memories, drop an older near-duplicate in the same scope when a newer body contains its text, and merge old low-confidence memories (without an expiry) of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
          */
         post: operations["compactMemories"];
         delete?: never;
@@ -620,7 +620,7 @@ export interface paths {
         get: operations["getMemoryShares"];
         /**
          * Set Memory Shares
-         * @description Replace the list of users who can read and search (never change) the caller's memories.
+         * @description Replace the list of users who can read and search (never change) the caller's memories. Only people in a team or project with the caller can be added; at most 100.
          */
         put: operations["setMemoryShares"];
         post?: never;
@@ -2248,16 +2248,15 @@ export interface components {
             scope: components["schemas"]["MemoryScope"];
             author?: components["schemas"]["MemoryAuthor"];
             /**
-             * @default medium
+             * @description Default medium
              * @enum {string}
              */
-            confidence: "low" | "medium" | "high";
+            confidence?: "low" | "medium" | "high";
             /**
-             * @description superseded replicates a memory a hub already replaced
-             * @default active
+             * @description Default active; superseded replicates a memory a hub already replaced
              * @enum {string}
              */
-            status: "active" | "superseded";
+            status?: "active" | "superseded";
             /** Format: date-time */
             expires_at?: string;
             /**
@@ -2269,7 +2268,7 @@ export interface components {
             supersedes_origin_id?: string;
             /** @description The hub that holds the original */
             origin_host?: string;
-            /** @description Its id on that hub; (origin_host */
+            /** @description Its id on that hub; (origin_host, origin_id) is the upsert key */
             origin_id?: string;
             /**
              * Format: date-time
@@ -2304,8 +2303,8 @@ export interface components {
             pr?: number;
             files?: string[];
             include_inactive?: boolean;
-            /** @default 10 */
-            limit: number;
+            /** @description Default 10 */
+            limit?: number;
             /** @enum {string} */
             mode?: "hybrid" | "fts" | "keyword";
         };
@@ -3856,7 +3855,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created (200 for updated, duplicate or ignored) */
+            /** @description Updated, duplicate (already known) or ignored (compacted, deleted, or an alias of a memory known under another origin) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryWriteResponse"];
+                };
+            };
+            /** @description Created */
             201: {
                 headers: {
                     [name: string]: unknown;

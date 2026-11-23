@@ -151,7 +151,13 @@ func (s *Server) HandleImportWikiMemories(w http.ResponseWriter, r *http.Request
 		}
 		pages = append(pages, p)
 	}
+	err = rows.Err()
 	rows.Close()
+	if err != nil {
+		s.logger.Error("Failed to read memory pages", zap.Int64("project_id", req.ProjectID), zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to read pages", "internal_error")
+		return
+	}
 
 	rep := MemoryImportReport{Pages: len(pages)}
 	fail := func(p page, why string) {

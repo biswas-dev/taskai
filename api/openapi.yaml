@@ -1381,7 +1381,13 @@ paths:
               $ref: "#/components/schemas/MemoryWriteRequest"
       responses:
         "201":
-          description: Created (200 for updated, duplicate or ignored)
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryWriteResponse"
+        "200":
+          description: "Updated, duplicate (already known) or ignored (compacted, deleted, or an alias of a memory known under another origin)"
           content:
             application/json:
               schema:
@@ -1465,7 +1471,7 @@ paths:
   /api/memories/compact:
     post:
       summary: Compact Memories
-      description: Drop superseded and expired memories, merge near-duplicates in the same scope (newest kept), and merge old low-confidence memories of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
+      description: Drop superseded and expired memories, drop an older near-duplicate in the same scope when a newer body contains its text, and merge old low-confidence memories (without an expiry) of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
       tags: [Memories]
       operationId: compactMemories
       security:
@@ -1516,7 +1522,7 @@ paths:
           $ref: "#/components/responses/InternalError"
     put:
       summary: Set Memory Shares
-      description: Replace the list of users who can read and search (never change) the caller's memories.
+      description: Replace the list of users who can read and search (never change) the caller's memories. Only people in a team or project with the caller can be added; at most 100.
       tags: [Memories]
       operationId: setMemoryShares
       security:
@@ -4569,13 +4575,13 @@ components:
         body: {type: string, maxLength: 8000}
         scope: {$ref: "#/components/schemas/MemoryScope"}
         author: {$ref: "#/components/schemas/MemoryAuthor"}
-        confidence: {type: string, enum: [low, medium, high], default: medium}
-        status: {type: string, enum: [active, superseded], default: active, description: superseded replicates a memory a hub already replaced}
+        confidence: {type: string, enum: [low, medium, high], description: "Default medium"}
+        status: {type: string, enum: [active, superseded], description: "Default active; superseded replicates a memory a hub already replaced"}
         expires_at: {type: string, format: date-time}
         supersedes: {type: integer, format: int64, description: A TaskAI memory id this one replaces}
         supersedes_origin_id: {type: string, description: "The origin_id (same origin_host) this one replaces; may arrive before it"}
         origin_host: {type: string, description: The hub that holds the original}
-        origin_id: {type: string, description: Its id on that hub; (origin_host, origin_id) is the upsert key}
+        origin_id: {type: string, description: "Its id on that hub; (origin_host, origin_id) is the upsert key"}
         created_at: {type: string, format: date-time, description: Original creation time when replicating}
     MemoryUsage:
       type: object
@@ -4605,7 +4611,7 @@ components:
         pr: {type: integer}
         files: {type: array, items: {type: string}}
         include_inactive: {type: boolean}
-        limit: {type: integer, default: 10, maximum: 50}
+        limit: {type: integer, maximum: 50, description: "Default 10"}
         mode: {type: string, enum: [hybrid, fts, keyword]}
     MemorySearchResponse:
       type: object

@@ -74,6 +74,19 @@ describe('Memories', () => {
     expect(screen.queryByText('down')).not.toBeInTheDocument()
   })
 
+  it('ignores a slower, older search that resolves last', async () => {
+    let resolveFirst: (ms: Memory[]) => void = () => undefined
+    mocked.getMemories.mockReturnValueOnce(new Promise(r => { resolveFirst = r }))
+    render(<Memories />)
+    mocked.getMemories.mockResolvedValueOnce([shared])
+    await userEvent.type(screen.getByLabelText('Search'), 'arm')
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }))
+    expect(await screen.findByText('Staging is ARM64')).toBeInTheDocument()
+    resolveFirst([mine])
+    await new Promise(r => setTimeout(r, 0))
+    expect(screen.queryByText('Partial index needs WHERE')).not.toBeInTheDocument()
+  })
+
   it('compacts and reports what it freed', async () => {
     mocked.compactMemories.mockResolvedValue({ superseded_removed: 2, expired_removed: 1, duplicates_merged: 3,
       low_confidence_summarised: 0, summaries_created: 0, bytes_before: 10000, bytes_after: 4000, freed_bytes: 6000 })

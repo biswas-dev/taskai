@@ -90,6 +90,10 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 		IncludeInactive: req.IncludeInactive}
 
 	mode := req.Mode
+	if mode != "" && mode != "hybrid" && mode != "fts" && mode != "keyword" {
+		respondError(w, http.StatusBadRequest, "mode must be hybrid, fts or keyword", "invalid_request")
+		return
+	}
 	if s.db.Driver != "postgres" {
 		mode = "keyword"
 	} else if mode == "" {
@@ -186,8 +190,9 @@ func (s *Server) searchMemoriesKeyword(ctx context.Context, f memoryFilter, word
 	where, args := f.sql("m", time.Now().UTC(), nil)
 	hits := make([]string, len(words))
 	for i, w := range words {
-		args = append(args, "%"+w+"%")
-		hits[i] = `(CASE WHEN LOWER(m.title) LIKE $` + strconv.Itoa(len(args)) + ` OR LOWER(m.body) LIKE $` + strconv.Itoa(len(args)) + ` THEN 1 ELSE 0 END)`
+		args = append(args, "%"+likeEscaper.Replace(w)+"%")
+		n := "$" + strconv.Itoa(len(args))
+		hits[i] = `(CASE WHEN LOWER(m.title) LIKE ` + n + ` ESCAPE '\' OR LOWER(m.body) LIKE ` + n + ` ESCAPE '\' THEN 1 ELSE 0 END)`
 	}
 	score := strings.Join(hits, " + ")
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("m")+`, CAST(`+score+` AS REAL) AS rank

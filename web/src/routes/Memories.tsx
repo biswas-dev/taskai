@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, type Memory, type MemoryCompactReport, type MemoryFilter, type MemoryKind, type MemoryUsage } from '../lib/api'
 import { useAuth } from '../state/AuthContext'
 import Button from '../components/ui/Button'
@@ -38,18 +38,21 @@ export default function Memories() {
   const [confirmId, setConfirmId] = useState<number | null>(null)
   const [compacting, setCompacting] = useState(false)
   const [report, setReport] = useState<MemoryCompactReport | null>(null)
+  const latest = useRef(0) // only the newest request may set results
 
   const load = useCallback(async () => {
+    const request = ++latest.current
     try {
       setLoading(true)
       setError('')
       const [ms, u] = await Promise.all([api.getMemories(applied), api.getMemoryUsage()])
+      if (request !== latest.current) return
       setMemories(ms)
       setUsage(u)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load memories')
+      if (request === latest.current) setError(err instanceof Error ? err.message : 'Failed to load memories')
     } finally {
-      setLoading(false)
+      if (request === latest.current) setLoading(false)
     }
   }, [applied])
 

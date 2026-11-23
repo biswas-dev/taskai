@@ -15,8 +15,10 @@ import (
 // path) and idempotent: a second run finds nothing to do.
 //  1. superseded memories go (their successor holds the lesson);
 //  2. expired memories go;
-//  3. a near-duplicate in the same scope (the hub's rule: 70% of words shared) gives way to the newest one;
-//  4. old low-confidence memories of one kind in one scope are merged, bodies kept verbatim, into one memory.
+//  3. a near-duplicate in the same scope (70% of words shared, the hub's rule) gives way to a newer one, but only
+//     when the newer body contains the older body's text, so "copy prod to staging" never replaces its reverse;
+//  4. old low-confidence memories of one kind in one scope, without an expiry, are merged into one memory with
+//     their bodies kept verbatim.
 // Rows with an origin become tombstones, so a hub re-sending them is ignored.
 
 const (
@@ -25,7 +27,8 @@ const (
 	memoryMinCluster      = 3
 	memoryNearDupWindow   = 200 // shortcut: compare with the newest 200 kept per scope, not all; widen if dupes slip by
 	memoryEmbedBatch      = 32
-	memoryEmbedInputChars = 500 // the embedding model's context, as wiki blocks
+	memoryCompactRecent   = 5 * time.Minute // automatic compaction looks at owners written to this recently
+	memoryEmbedInputChars = 500             // the embedding model's context, as wiki blocks
 )
 
 // MemoryCompactReport says what a compaction freed.
@@ -133,16 +136,17 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 	type kept struct {
 		id    int64
 		words map[string]bool
+		body  string
 	}
 	byScope := map[string][]kept{}
 	var survivors []Memory
 	for _, m := range active {
 		key := memoryScopeKey(m.Scope)
-		words := memoryWordSet(m.Title + " " + m.Body)
+		words, body := memoryWordSet(m.Title+" "+m.Body), normWords(m.Body)
 		var dupOf int64
 		group := byScope[key]
 		for i := len(group) - 1; i >= 0 && i >= len(group)-memoryNearDupWindow; i-- {
-			if memoryJaccard(words, group[i].words) >= memoryNearDuplicate {
+			if memoryJaccard(words, group[i].words) >= memoryNearDuplicate && strings.Contains(group[i].body, body) {
 				dupOf = group[i].id
 				break
 			}
@@ -154,7 +158,7 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 			rep.DuplicatesMerged++
 			continue
 		}
-		byScope[key] = append(group, kept{m.ID, words})
+		byScope[key] = append(group, kept{m.ID, words, body})
 		survivors = append(survivors, m)
 	}
 
@@ -162,7 +166,7 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 	clusters := map[string][]Memory{}
 	var order []string
 	for _, m := range survivors {
-		if m.Confidence != "low" || m.CreatedAt.After(now.Add(-memorySummariseAfter)) {
+		if m.Confidence != "low" || m.ExpiresAt != nil || m.CreatedAt.After(now.Add(-memorySummariseAfter)) {
 			continue
 		}
 		key := memoryScopeKey(m.Scope) + "\x00" + m.Kind
@@ -283,8 +287,15 @@ func (s *Server) maintainMemories(parent context.Context) {
 	defer cancel()
 	s.embedPendingMemories(ctx)
 
+	// Only owners past the high-water mark with something compaction can act on: a recent write, or rows that are
+	// superseded or expired. Otherwise a full owner who cannot shrink would be rescanned on every tick.
+	now := time.Now().UTC()
 	rows, err := s.db.QueryContext(ctx, `SELECT m.owner_id, SUM(m.size_bytes), COALESCE(MAX(q.quota_bytes), $1)
-		FROM agent_memories m LEFT JOIN memory_quotas q ON q.user_id = m.owner_id GROUP BY m.owner_id`, memoryDefaultQuota)
+		FROM agent_memories m LEFT JOIN memory_quotas q ON q.user_id = m.owner_id
+		GROUP BY m.owner_id
+		HAVING MAX(m.updated_at) >= $2
+		    OR SUM(CASE WHEN m.status = 'superseded' OR (m.status = 'active' AND m.expires_at <= $3) THEN 1 ELSE 0 END) > 0`,
+		memoryDefaultQuota, now.Add(-memoryCompactRecent), now)
 	if err != nil {
 		s.logger.Error("Failed to read memory usage for compaction", zap.Error(err))
 		return
@@ -299,6 +310,9 @@ func (s *Server) maintainMemories(parent context.Context) {
 		if used*100 >= quota*memoryHighWater {
 			over = append(over, owner)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		s.logger.Error("Failed to read memory usage for compaction", zap.Error(err))
 	}
 	rows.Close()
 	for _, owner := range over {
@@ -339,7 +353,12 @@ func (s *Server) embedPendingMemories(ctx context.Context) {
 			}
 			ids, texts = append(ids, id), append(texts, text)
 		}
+		err = rows.Err()
 		rows.Close()
+		if err != nil {
+			s.logger.Error("Failed to list memories to embed", zap.Error(err))
+			return
+		}
 		if len(ids) == 0 {
 			return
 		}
@@ -353,11 +372,12 @@ func (s *Server) embedPendingMemories(ctx context.Context) {
 			if i >= len(vectors) || vectors[i] == nil {
 				continue
 			}
-			stored++
 			if _, err := s.db.ExecContext(ctx, `UPDATE agent_memories SET embedding = $1::vector, embedded_at = $2 WHERE id = $3`,
 				float32SliceToVectorString(vectors[i]), time.Now().UTC(), id); err != nil {
 				s.logger.Warn("Failed to store memory embedding", zap.Int64("memory_id", id), zap.Error(err))
+				continue
 			}
+			stored++
 		}
 		if len(ids) < memoryEmbedBatch || stored == 0 {
 			return

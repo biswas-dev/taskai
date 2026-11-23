@@ -146,6 +146,15 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 	if _, err := ts.DB.ExecContext(ctx, `UPDATE users SET is_admin = true WHERE id = $1`, admin); err != nil {
 		t.Fatal(err)
 	}
+	var sharedProject int64
+	if err := ts.DB.QueryRowContext(ctx, `INSERT INTO projects (owner_id, name) VALUES ($1, 'Team') RETURNING id`, owner).Scan(&sharedProject); err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range []int64{owner, friend} {
+		if _, err := ts.DB.ExecContext(ctx, `INSERT INTO project_members (project_id, user_id, role, granted_by) VALUES ($1, $2, 'member', $3)`, sharedProject, u, owner); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	write := func(u int64, req MemoryWriteRequest) (int, MemoryWriteResponse, string) {
 		t.Helper()
@@ -253,9 +262,20 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if code, _ := get(friend, m.Memory.ID); code != http.StatusNotFound {
 			t.Fatalf("unshared get %d", code)
 		}
-		rec, r := ts.MakeAuthRequest(t, http.MethodPut, "/api/memories/shares", map[string]any{"user_ids": []int64{friend}}, owner, nil)
-		ts.HandleSetMemoryShares(rec, r)
-		AssertStatusCode(t, rec.Code, http.StatusOK)
+		share := func(ids ...int64) int {
+			rec, r := ts.MakeAuthRequest(t, http.MethodPut, "/api/memories/shares", map[string]any{"user_ids": ids}, owner, nil)
+			ts.HandleSetMemoryShares(rec, r)
+			return rec.Code
+		}
+		if code := share(outsider); code != http.StatusBadRequest {
+			t.Fatalf("sharing with someone outside your teams and projects: %d", code)
+		}
+		if code := share(999999); code != http.StatusBadRequest {
+			t.Fatalf("sharing with an unknown id: %d", code)
+		}
+		if code := share(friend); code != http.StatusOK {
+			t.Fatalf("share with a project collaborator: %d", code)
+		}
 		if code, _ := get(friend, m.Memory.ID); code != http.StatusOK {
 			t.Fatalf("shared get %d", code)
 		}
@@ -268,7 +288,7 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if res := search(outsider, MemorySearchRequest{Query: "lint fmt"}); res.Total != 0 {
 			t.Fatalf("outsider search found %d", res.Total)
 		}
-		rec, r = ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "lint", OwnerID: owner}, outsider, nil)
+		rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "lint", OwnerID: owner}, outsider, nil)
 		ts.HandleSearchMemories(rec, r)
 		AssertStatusCode(t, rec.Code, http.StatusForbidden)
 
@@ -299,6 +319,30 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		}
 		if res := search(owner, MemorySearchRequest{Query: "rollback", Files: []string{"deploy/runXme.sh"}}); res.Total != 0 {
 			t.Fatal("underscore in a file filter must not act as a wildcard")
+		}
+		if res := search(owner, MemorySearchRequest{Query: "r_llback", Mode: "keyword"}); res.Total != 0 {
+			t.Fatal("underscore in a keyword query must not act as a wildcard")
+		}
+		rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "x", Mode: "semantic"}, owner, nil)
+		ts.HandleSearchMemories(rec, r)
+		AssertStatusCode(t, rec.Code, http.StatusBadRequest)
+		list := func(u int64, query string) (int, []Memory) {
+			rec, r := ts.MakeAuthRequest(t, http.MethodGet, "/api/memories?"+query, nil, u, nil)
+			ts.HandleListMemories(rec, r)
+			var out struct{ Memories []Memory }
+			if rec.Code == http.StatusOK {
+				DecodeJSON(t, rec, &out)
+			}
+			return rec.Code, out.Memories
+		}
+		if code, ms := list(owner, "kind=runbook&repo=biswas-dev/other"); code != http.StatusOK || len(ms) != 1 {
+			t.Fatalf("list filter: %d %d", code, len(ms))
+		}
+		if code, _ := list(owner, "owner_id=abc"); code != http.StatusBadRequest {
+			t.Fatalf("bad owner_id: %d", code)
+		}
+		if code, _ := list(outsider, fmt.Sprintf("owner_id=%d", owner)); code != http.StatusForbidden {
+			t.Fatalf("unshared owner_id: %d", code)
 		}
 		if ts.DB.Driver == "postgres" {
 			ts.embedPendingMemories(ctx)
@@ -365,10 +409,15 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		e.Kind, e.ExpiresAt = "handoff", &past
 		write(u, e)
 		// near-duplicates in one scope: the newer is kept
-		n1 := mem("Partial index gotcha", "the github comment id index is partial so on conflict needs the where clause too")
+		n1 := mem("Partial index gotcha", "the github comment id index is partial so on conflict needs the where clause")
 		n1.CreatedAt = &old
 		write(u, n1)
-		write(u, mem("Partial index gotcha again", "the github comment id index is partial so on conflict needs the where clause"))
+		write(u, mem("Partial index gotcha again", "the github comment id index is partial so on conflict needs the where clause too"))
+		// Same words, opposite meaning: both stay.
+		p1 := mem("Copy data", "copy production data to staging")
+		p1.CreatedAt = &old
+		write(u, p1)
+		write(u, mem("Copy data", "copy staging data to production"))
 		// old low-confidence cluster in one scope and kind
 		hunches := []string{"Maybe the redis cache is stale after deploy", "Websocket reconnects drop presence for a minute",
 			"Thumbnail worker skips webp uploads"}
@@ -403,6 +452,85 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		}
 	})
 
+	t.Run("origin replays: deleted stays deleted, superseded stays superseded, metadata updates apply", func(t *testing.T) {
+		u := user("replay")
+		a := mem("Use the deploy script", "Deploys go through script/server deploy")
+		a.OriginHost, a.OriginID = "hub-a", "1"
+		_, ar, _ := write(u, a)
+		b := mem("Deploy via workflow", "Deploys go through GitHub Actions")
+		b.OriginHost, b.OriginID, b.SupersedesOriginID = "hub-a", "2", "1"
+		write(u, b)
+		if _, again, _ := write(u, a); again.Memory.Status != "superseded" {
+			t.Fatalf("replaying the original revived it: %+v", again.Memory)
+		}
+
+		exp := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
+		b.ExpiresAt = &exp
+		if _, upd, _ := write(u, b); upd.Outcome != "updated" || upd.Memory.ExpiresAt == nil {
+			t.Fatalf("expiry-only change: %+v", upd)
+		}
+
+		// The same lesson from a second hub is an alias; deleting it is not undone by either hub.
+		c := mem("Staging is ARM64", "Staging and UAT are aarch64")
+		c.OriginHost, c.OriginID = "hub-a", "3"
+		_, cr, _ := write(u, c)
+		c2 := c
+		c2.OriginHost, c2.OriginID = "hub-b", "70"
+		if _, dup, _ := write(u, c2); dup.Outcome != "duplicate" || dup.Memory.ID != cr.Memory.ID {
+			t.Fatalf("second origin: %+v", dup)
+		}
+		sid := fmt.Sprint(cr.Memory.ID)
+		rec, r := ts.MakeAuthRequest(t, http.MethodDelete, "/api/memories/"+sid, nil, u, map[string]string{"id": sid})
+		ts.HandleDeleteMemory(rec, r)
+		AssertStatusCode(t, rec.Code, http.StatusNoContent)
+		if code, _ := get(u, cr.Memory.ID); code != http.StatusNotFound {
+			t.Fatalf("tombstone visible: %d", code)
+		}
+		for _, replay := range []MemoryWriteRequest{c, c2} {
+			if _, again, _ := write(u, replay); again.Outcome != "ignored" {
+				t.Fatalf("replay after delete from %s: %+v", replay.OriginHost, again)
+			}
+		}
+		if res := search(u, MemorySearchRequest{Query: "staging aarch64"}); res.Total != 0 {
+			t.Fatalf("deleted memory still searchable: %+v", res)
+		}
+		gone := mem("x", "y")
+		gone.Supersedes = cr.Memory.ID
+		if code, _, _ := write(u, gone); code != http.StatusBadRequest {
+			t.Fatalf("superseding a removed memory: %d", code)
+		}
+		_ = ar
+	})
+
+	t.Run("over quota: compaction runs before refusing, and the worker compacts past the high-water mark", func(t *testing.T) {
+		u := user("autocompact")
+		_, a, _ := write(u, mem("Old way", "Deploy by hand"))
+		b := mem("New way", "Deploy by workflow")
+		b.Supersedes = a.Memory.ID
+		_, br, _ := write(u, b)
+		if _, err := ts.DB.ExecContext(ctx, `INSERT INTO memory_quotas (user_id, quota_bytes) VALUES ($1, $2)`, u, br.Usage.UsedBytes+100); err != nil {
+			t.Fatal(err)
+		}
+		// Room only once the superseded memory is gone.
+		code, resp, body := write(u, mem("Third", "Needs the space the superseded memory holds"))
+		if code != http.StatusCreated || resp.Usage.UsedBytes > resp.Usage.QuotaBytes {
+			t.Fatalf("write after inline compaction: %d %s", code, body)
+		}
+
+		w := user("worker")
+		_, wa, _ := write(w, mem("Old", "Deploy by hand"))
+		wb := mem("New", "Deploy by workflow")
+		wb.Supersedes = wa.Memory.ID
+		_, wbr, _ := write(w, wb)
+		if _, err := ts.DB.ExecContext(ctx, `INSERT INTO memory_quotas (user_id, quota_bytes) VALUES ($1, $2)`, w, wbr.Usage.UsedBytes); err != nil {
+			t.Fatal(err)
+		}
+		ts.maintainMemories(ctx)
+		if all, active := count(w); all != 1 || active != 1 {
+			t.Fatalf("worker did not compact: %d rows, %d active", all, active)
+		}
+	})
+
 	t.Run("import wiki memory pages twice, then a hub upsert converges", func(t *testing.T) {
 		u := user("import")
 		var pid int64
@@ -412,6 +540,8 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if _, err := ts.DB.ExecContext(ctx, `INSERT INTO project_members (project_id, user_id, role, granted_by) VALUES ($1, $2, 'owner', $2)`, pid, u); err != nil {
 			t.Fatal(err)
 		}
+		// Other Postgres tests count every page waiting to be indexed; leave none behind.
+		t.Cleanup(func() { _, _ = ts.DB.ExecContext(ctx, `DELETE FROM projects WHERE id = $1`, pid) })
 		pages := [][2]string{
 			{"[fact] biswas-dev/taskai: Prod is Postgres", "**fact** · repo `biswas-dev/taskai` · confidence high\n\nEvery environment uses PostgreSQL.\n\n---\n\n_2026-09-01 · by claude-code / claude on mbp · llm-brain memory 41_\n"},
 			{"[superseded] [fact] biswas-dev/taskai: Prod is SQLite", "> Superseded by memory 41. Kept for history; agents no longer see it.\n\n**fact** · repo `biswas-dev/taskai` · confidence low\n\nSQLite.\n\n---\n\n_2026-08-01 on mbp · llm-brain memory 40_\n"},

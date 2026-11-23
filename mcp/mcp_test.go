@@ -84,6 +84,12 @@ func (f *fakeAPI) handler(t *testing.T) http.Handler {
 		case r.URL.Path == "/api/memories/search":
 			reply(map[string]any{"total": 1, "mode": "hybrid", "results": []any{map[string]any{"id": 4, "kind": "gotcha", "title": "T",
 				"body": "B", "scope": map[string]any{"repo": "o/r"}, "rank": 0.03, "author": map[string]any{"host": "h"}, "size_bytes": 1700}}})
+		case r.URL.Path == "/api/memories" && r.Method == "GET":
+			reply(map[string]any{"memories": []any{map[string]any{"id": 6, "kind": "fact", "title": "L", "body": "B", "size_bytes": 9}}})
+		case r.URL.Path == "/api/memories/6" && r.Method == "DELETE":
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/api/memories/usage" || r.URL.Path == "/api/memories/compact":
+			reply(map[string]any{"used_bytes": 10})
 		case r.URL.Path == "/api/memories" && r.Method == "POST":
 			reply(map[string]any{"outcome": "created", "memory": map[string]any{"id": 5}})
 		case r.URL.Path == "/api/projects/3/meetings" && r.Method == "POST":
@@ -360,5 +366,25 @@ func TestMemoryTools(t *testing.T) {
 	}
 	if _, ok := req.Body["origin_id"]; ok {
 		t.Fatalf("empty origin must be omitted: %+v", req.Body)
+	}
+}
+
+func TestMemoryListDeleteUsageCompact(t *testing.T) {
+	api, h := setup(t)
+	r := call(t, h, key, "list_memories", map[string]any{"repo": "o/r", "kind": "fact", "limit": 5})
+	if !strings.Contains(text(r), `"title":"L"`) || strings.Contains(text(r), "size_bytes") {
+		t.Fatalf("list should be trimmed: %s", text(r))
+	}
+	if q := api.last("/api/memories").Query; !strings.Contains(q, "repo=o%2Fr") || !strings.Contains(q, "kind=fact") || !strings.Contains(q, "limit=5") || strings.Contains(q, "offset") {
+		t.Fatalf("list query: %s", q)
+	}
+	call(t, h, key, "delete_memory", map[string]any{"memory_id": "6"})
+	if req := api.last("/api/memories/6"); req.Method != http.MethodDelete {
+		t.Fatalf("delete: %+v", req)
+	}
+	call(t, h, key, "memory_usage", map[string]any{})
+	call(t, h, key, "compact_memories", map[string]any{})
+	if req := api.last("/api/memories/compact"); req.Method != http.MethodPost {
+		t.Fatalf("compact: %+v", req)
 	}
 }

@@ -32,6 +32,7 @@ const (
 	memoryHighWater      = 80             // percent: warn, and compact automatically
 	memoryEmbeddingBytes = 384 * 4        // vector(384) of float4, charged up front
 	memoryRowOverhead    = 64             // ids, numbers, timestamps
+	memoryMaxShares      = 100
 	memoryCols           = `id, owner_id, kind, title, body, repo, issue, pr, folder, files, agent, provider, host, session,
 		confidence, supersedes, superseded_by, status, expires_at, origin_host, origin_id, size_bytes, created_at, updated_at`
 )
@@ -42,6 +43,7 @@ var (
 	memorySpaceRe   = regexp.MustCompile(`[ \t]+`)
 	errMemoryQuota  = errors.New("memory quota exceeded")
 	errMemoryAccess = errors.New("memory not found")
+	likeEscaper     = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 )
 
 // MemoryScope says what a memory is about.
@@ -427,12 +429,14 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 	}
 
 	var existingID, oldSize int64
-	var oldStatus, oldHash string
+	var oldStatus, oldHash, oldConfidence, oldSupOrigin string
+	var oldExpires *time.Time
+	var oldSupersedes *int64
 	found := false
 	if m.OriginID != "" {
-		err := tx.QueryRowContext(ctx, `SELECT id, status, content_hash, size_bytes FROM agent_memories
-			WHERE owner_id = $1 AND origin_host = $2 AND origin_id = $3`, ownerID, m.OriginHost, m.OriginID).
-			Scan(&existingID, &oldStatus, &oldHash, &oldSize)
+		err := tx.QueryRowContext(ctx, `SELECT id, status, content_hash, size_bytes, confidence, expires_at, supersedes_origin_id, supersedes
+			FROM agent_memories WHERE owner_id = $1 AND origin_host = $2 AND origin_id = $3`, ownerID, m.OriginHost, m.OriginID).
+			Scan(&existingID, &oldStatus, &oldHash, &oldSize, &oldConfidence, &oldExpires, &oldSupOrigin, &oldSupersedes)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return Memory{}, "", err
 		}
@@ -441,6 +445,9 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 	if found && oldStatus == "compacted" {
 		mem, err := s.getMemory(ctx, tx, existingID)
 		return mem, "ignored", err
+	}
+	if found && oldStatus == "superseded" {
+		m.Status = "superseded" // a replay of the original must not bring back what replaced it
 	}
 	if !found {
 		var dupID int64
@@ -451,9 +458,23 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 			return Memory{}, "", err
 		}
 		if err == nil {
-			if dupOrigin == "" && m.OriginID != "" { // adopt the origin so later updates from that hub land here
+			switch {
+			case dupOrigin == "" && m.OriginID != "": // adopt the origin so later updates from that hub land here
 				if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET origin_host = $1, origin_id = $2, size_bytes = size_bytes + $3 WHERE id = $4`,
 					m.OriginHost, m.OriginID, len(m.OriginHost)+len(m.OriginID), dupID); err != nil {
+					return Memory{}, "", err
+				}
+			case m.OriginID != "":
+				// Known under another origin: record this one as an alias tombstone, so deleting or compacting the
+				// memory is not undone when the second hub sends it again.
+				alias := memoryRow{Memory: Memory{Kind: m.Kind, Confidence: m.Confidence, Status: "compacted",
+					OriginHost: m.OriginHost, OriginID: m.OriginID, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt}, hash: m.hash}
+				alias.SizeBytes = tombstoneSize(m.hash, m.OriginHost, m.OriginID)
+				aliasID, err := insertMemoryRow(ctx, tx, ownerID, alias, nil)
+				if err == nil {
+					_, err = tx.ExecContext(ctx, `UPDATE agent_memories SET superseded_by = $1 WHERE id = $2`, dupID, aliasID)
+				}
+				if err != nil {
 					return Memory{}, "", err
 				}
 			}
@@ -476,6 +497,9 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 		if err != nil {
 			return Memory{}, "", err
 		}
+		if st == "compacted" {
+			return Memory{}, "", memoryInputError(fmt.Sprintf("supersedes: memory %d was removed", m.supersedes))
+		}
 		target = m.supersedes
 	} else if m.supersedesOriginID != "" {
 		err := tx.QueryRowContext(ctx, `SELECT id FROM agent_memories WHERE owner_id = $1 AND origin_host = $2 AND origin_id = $3`,
@@ -485,7 +509,9 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 		}
 	}
 
-	if found && oldHash == m.hash && oldStatus == m.Status {
+	sameExpiry := (oldExpires == nil) == (m.ExpiresAt == nil) && (oldExpires == nil || oldExpires.Equal(*m.ExpiresAt))
+	sameLink := oldSupOrigin == m.supersedesOriginID && (target == 0 || oldSupersedes != nil && *oldSupersedes == target)
+	if found && oldHash == m.hash && oldStatus == m.Status && oldConfidence == m.Confidence && sameExpiry && sameLink {
 		mem, err := s.getMemory(ctx, tx, existingID)
 		return mem, "duplicate", err
 	}
@@ -650,7 +676,7 @@ func (f memoryFilter) sql(alias string, now time.Time, args []any) (string, []an
 	if len(f.Files) > 0 {
 		var ors []string
 		for _, file := range f.Files {
-			esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.TrimPrefix(file, "./"))
+			esc := likeEscaper.Replace(strings.TrimPrefix(file, "./"))
 			ors = append(ors, alias+".files LIKE "+arg("%\n"+esc+"\n%")+` ESCAPE '\'`)
 		}
 		conds = append(conds, "("+strings.Join(ors, " OR ")+")")
@@ -683,7 +709,14 @@ func (s *Server) HandleListMemories(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	q := r.URL.Query()
 	atoi := func(k string) int { n, _ := strconv.Atoi(q.Get(k)); return n }
-	ownerID, _ := strconv.ParseInt(q.Get("owner_id"), 10, 64)
+	var ownerID int64
+	if v := q.Get("owner_id"); v != "" {
+		var err error
+		if ownerID, err = strconv.ParseInt(v, 10, 64); err != nil {
+			respondError(w, http.StatusBadRequest, "owner_id must be a user id", "validation_error")
+			return
+		}
+	}
 	owners, err := s.resolveMemoryOwners(ctx, userID, ownerID)
 	if errors.Is(err, errMemoryAccess) {
 		respondError(w, http.StatusForbidden, "those memories are not shared with you", "forbidden")
@@ -728,6 +761,9 @@ func (s *Server) memoryFromPath(w http.ResponseWriter, r *http.Request) (mem Mem
 		return mem, 0, false, false
 	}
 	mem, err = s.getMemory(r.Context(), s.db, id)
+	if err == nil && mem.Status == "compacted" {
+		err = errMemoryAccess
+	}
 	if err == nil && mem.OwnerID != userID {
 		var can bool
 		if can, err = s.canReadMemories(r.Context(), userID, mem.OwnerID); err == nil && !can {
@@ -794,7 +830,21 @@ func (s *Server) HandleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusForbidden, "only the owner can delete a memory", "forbidden")
 		return
 	}
-	if err := s.removeMemories(r.Context(), s.db, []int64{mem.ID}, 0, time.Now().UTC().Truncate(time.Second)); err != nil {
+	err := func() error {
+		tx, err := s.db.BeginTx(r.Context(), nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback() //nolint:errcheck
+		if err := s.lockMemoryOwner(r.Context(), tx, userID); err != nil {
+			return err
+		}
+		if err := s.removeMemories(r.Context(), tx, []int64{mem.ID}, 0, time.Now().UTC().Truncate(time.Second)); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}()
+	if err != nil {
 		s.logger.Error("Failed to delete memory", zap.Int64("memory_id", mem.ID), zap.Int64("user_id", userID), zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to delete memory", "internal_error")
 		return
@@ -881,7 +931,12 @@ func (s *Server) HandleSetMemoryShares(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
 		return
 	}
-	ctx := r.Context()
+	if len(req.UserIDs) > memoryMaxShares {
+		respondError(w, http.StatusBadRequest, fmt.Sprintf("share with at most %d people", memoryMaxShares), "validation_error")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to update shares", "internal_error")
@@ -898,13 +953,19 @@ func (s *Server) HandleSetMemoryShares(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		seen[id] = true
+		// Only people the owner already works with (a team or a project in common), so ids cannot be probed for emails.
 		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id = $1 AND deleted_at IS NULL`, id).Scan(&n); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users u WHERE u.id = $2 AND u.deleted_at IS NULL AND (
+			EXISTS (SELECT 1 FROM team_members a JOIN team_members b ON a.team_id = b.team_id
+				WHERE a.user_id = $1 AND b.user_id = u.id AND a.status = 'active' AND b.status = 'active')
+			OR EXISTS (SELECT 1 FROM project_members a JOIN project_members b ON a.project_id = b.project_id
+				WHERE a.user_id = $1 AND b.user_id = u.id))`, userID, id).Scan(&n); err != nil {
+			s.logger.Error("Failed to check memory share target", zap.Int64("user_id", userID), zap.Error(err))
 			respondError(w, http.StatusInternalServerError, "failed to update shares", "internal_error")
 			return
 		}
 		if n == 0 {
-			respondError(w, http.StatusBadRequest, fmt.Sprintf("no user %d", id), "validation_error")
+			respondError(w, http.StatusBadRequest, fmt.Sprintf("user %d is not in a team or project with you", id), "validation_error")
 			return
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO memory_shares (owner_id, user_id, granted_by) VALUES ($1, $2, $1)`, userID, id); err != nil {
@@ -949,7 +1010,12 @@ func (s *Server) HandleAdminSetMemoryQuota(w http.ResponseWriter, r *http.Reques
 	}
 	ctx := r.Context()
 	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id = $1`, target).Scan(&n); err != nil || n == 0 {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE id = $1`, target).Scan(&n); err != nil {
+		s.logger.Error("Failed to look up user for memory quota", zap.Int64("user_id", target), zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to set quota", "internal_error")
+		return
+	}
+	if n == 0 {
 		respondError(w, http.StatusNotFound, "user not found", "not_found")
 		return
 	}
