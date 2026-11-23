@@ -597,7 +597,7 @@ export interface paths {
         put?: never;
         /**
          * Compact Memories
-         * @description Drop superseded and expired memories, drop an older near-duplicate in the same scope when a newer body contains its text, and merge old low-confidence memories (without an expiry) of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
+         * @description Drop superseded and expired memories, fold copies (same kind, title, body and scope, ignoring case and spacing) into the newest one, and merge old low-confidence memories (without an expiry) of one kind and scope into one, bodies verbatim. Idempotent. Also runs automatically past 80% of the quota.
          */
         post: operations["compactMemories"];
         delete?: never;
