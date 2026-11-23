@@ -58,15 +58,6 @@ function snippet(body: string, words: string[], size = 220): string {
   return `${start > 0 ? '…' : ''}${cut}${start + size < body.length ? '…' : ''}`
 }
 
-function useDebounced<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), ms)
-    return () => clearTimeout(t)
-  }, [value, ms])
-  return debounced
-}
-
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))
 
@@ -80,9 +71,10 @@ export default function Memories() {
   const kind: MemoryKind | '' = kinds.includes(urlKind as MemoryKind) ? (urlKind as MemoryKind) : ''
   const [query, setQuery] = useState(q)
   const [repo, setRepo] = useState(r)
-  const typedQuery = useDebounced(query, SEARCH_DEBOUNCE_MS)
-  const typedRepo = useDebounced(repo, SEARCH_DEBOUNCE_MS)
-  const written = useRef({ q, r }) // what the inputs last put in the URL
+  const applied = useRef({ q, r }) // the search the URL holds, as the inputs last wrote or were reset to
+  const timer = useRef<ReturnType<typeof setTimeout>>()
+  const setParamsNow = useRef(setParams)
+  setParamsNow.current = setParams // react-router 6 hands a functional update the params of the render it came from
 
   const [memories, setMemories] = useState<Memory[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -102,25 +94,37 @@ export default function Memories() {
   // Results are stale while typing waits for the debounce or a search is in flight.
   const stale = searching || query.trim() !== q || repo.trim() !== r
 
-  // Typing, after the debounce, applies the search by writing it to the URL.
-  useEffect(() => {
-    written.current = { q: typedQuery.trim(), r: typedRepo.trim() }
-    setParams(prev => {
-      const next = new URLSearchParams(prev)
-      for (const [key, value] of [['q', typedQuery.trim()], ['repo', typedRepo.trim()]] as const) {
-        if (value) next.set(key, value)
-        else next.delete(key)
-      }
-      return next.toString() === prev.toString() ? prev : next
-    }, { replace: true })
-  }, [typedQuery, typedRepo, setParams])
+  // Typing applies the search after a pause, by writing it to the URL.
+  const type = (nextQuery: string, nextRepo: string) => {
+    setQuery(nextQuery)
+    setRepo(nextRepo)
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      applied.current = { q: nextQuery.trim(), r: nextRepo.trim() }
+      setParamsNow.current(prev => {
+        const next = new URLSearchParams(prev)
+        for (const [key, value] of [['q', applied.current.q], ['repo', applied.current.r]] as const) {
+          if (value) next.set(key, value)
+          else next.delete(key)
+        }
+        return next
+      }, { replace: true })
+    }, SEARCH_DEBOUNCE_MS)
+  }
+  useEffect(() => () => clearTimeout(timer.current), [])
 
-  // A URL change the inputs did not make (back/forward, a pasted link) shows in the inputs.
+  // A URL change the inputs did not make (back/forward, a pasted link) drops any pending edit and shows in both inputs.
   useEffect(() => {
-    if (q !== written.current.q) setQuery(q)
-    if (r !== written.current.r) setRepo(r)
-    written.current = { q, r }
+    if (q !== applied.current.q || r !== applied.current.r) {
+      clearTimeout(timer.current)
+      setQuery(q)
+      setRepo(r)
+    }
+    applied.current = { q, r }
   }, [q, r])
+
+  // A delete's or compaction's error belongs to the search it happened in.
+  useEffect(() => setActionError(''), [q, r, kind])
 
   useEffect(() => {
     const ctrl = new AbortController()
@@ -274,7 +278,7 @@ export default function Memories() {
           placeholder="Search memories  ( / or ⌘K )"
           autoComplete="off"
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={e => type(e.target.value, repo)}
           onKeyDown={onSearchKey}
           role="combobox"
           aria-expanded={memories.length > 0}
@@ -283,7 +287,7 @@ export default function Memories() {
           aria-autocomplete="list"
         />
         <TextInput id="memory-repo" label="Repository" placeholder="owner/name" autoComplete="off" value={repo}
-          onChange={e => setRepo(e.target.value)} />
+          onChange={e => type(query, e.target.value)} />
         <div>
           <label htmlFor="memory-kind" className="block text-xs font-medium text-dark-text-tertiary mb-1.5">Kind</label>
           <Select<string> id="memory-kind" value={kind}
@@ -299,7 +303,7 @@ export default function Memories() {
         {searching && <span>{loaded ? 'Searching…' : 'Loading memories…'}</span>}
       </div>
 
-      <FormError message={actionError || error} />
+      <FormError message={error || actionError} />
 
       {loaded && memories.length === 0 && !searching && (
         <p className="text-sm text-dark-text-tertiary">

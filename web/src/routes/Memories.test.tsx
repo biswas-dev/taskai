@@ -99,6 +99,9 @@ describe('Memories', () => {
     expect(screen.getByLabelText('Search')).toHaveValue('index')
     await waitFor(() => expect(mocked.getMemories).toHaveBeenLastCalledWith(
       { query: 'index', repo: '', kind: 'gotcha' }, expect.any(AbortSignal)))
+    await new Promise(r => setTimeout(r, 300)) // past the debounce, the link's search stays
+    expect(new URLSearchParams(location).get('q')).toBe('index')
+    expect(new URLSearchParams(location).get('kind')).toBe('gotcha')
     await userEvent.click(screen.getByRole('button', { name: 'back' }))
     expect(screen.getByLabelText('Search')).toHaveValue('arm')
     await waitFor(() => expect(mocked.getMemories).toHaveBeenLastCalledWith(
@@ -106,6 +109,28 @@ describe('Memories', () => {
     await new Promise(r => setTimeout(r, 300)) // past the debounce: the inputs must not write the old search back
     expect(new URLSearchParams(location).get('q')).toBe('arm')
     expect(new URLSearchParams(location).get('kind')).toBeNull()
+  })
+
+  it('applies an edit made right after a navigation, even back to the earlier value', async () => {
+    renderAt()
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(1))
+    await userEvent.click(screen.getByRole('button', { name: 'open link' }))
+    await userEvent.clear(screen.getByLabelText('Search'))
+    await waitFor(() => expect(new URLSearchParams(location).get('q')).toBeNull())
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenLastCalledWith(
+      { query: '', repo: '', kind: 'gotcha' }, expect.any(AbortSignal)))
+  })
+
+  it('drops a pending edit when the URL changes under it', async () => {
+    renderAt('/app/memories?q=arm')
+    await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(1))
+    await userEvent.type(screen.getByLabelText('Repository'), 'api')
+    await userEvent.click(screen.getByRole('button', { name: 'open link' }))
+    await new Promise(r => setTimeout(r, 300))
+    expect(screen.getByLabelText('Repository')).toHaveValue('')
+    expect(new URLSearchParams(location).get('q')).toBe('index')
+    expect(new URLSearchParams(location).get('repo')).toBeNull()
+    expect(mocked.getMemories).not.toHaveBeenCalledWith(expect.objectContaining({ repo: 'api' }), expect.anything())
   })
 
   it('applies a kind filter at once and records it in the URL', async () => {
@@ -215,6 +240,8 @@ describe('Memories', () => {
     await waitFor(() => expect(mocked.getMemories).toHaveBeenCalledTimes(2))
     expect(await screen.findByText('Partial index needs WHERE')).toBeInTheDocument()
     expect(screen.getByText('delete failed')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Search'), 'arm')
+    await waitFor(() => expect(screen.queryByText('delete failed')).not.toBeInTheDocument())
   })
 
   it('stays on a result when the selected last one is deleted', async () => {
