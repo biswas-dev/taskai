@@ -276,6 +276,18 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if code := share(friend); code != http.StatusOK {
 			t.Fatalf("share with a project collaborator: %d", code)
 		}
+		rec, r := ts.MakeAuthRequest(t, http.MethodPut, "/api/memories/shares", map[string]any{}, owner, nil)
+		ts.HandleSetMemoryShares(rec, r)
+		AssertStatusCode(t, rec.Code, http.StatusBadRequest)
+		rec, r = ts.MakeAuthRequest(t, http.MethodGet, "/api/memories/shares", nil, friend, nil)
+		ts.HandleGetMemoryShares(rec, r)
+		var shares struct {
+			SharedWithMe []MemoryShareUser `json:"shared_with_me"`
+		}
+		DecodeJSON(t, rec, &shares)
+		if len(shares.SharedWithMe) != 1 || shares.SharedWithMe[0].UserID != owner {
+			t.Fatalf("shared_with_me: %+v (a body without user_ids must not wipe shares)", shares)
+		}
 		if code, _ := get(friend, m.Memory.ID); code != http.StatusOK {
 			t.Fatalf("shared get %d", code)
 		}
@@ -288,7 +300,7 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if res := search(outsider, MemorySearchRequest{Query: "lint fmt"}); res.Total != 0 {
 			t.Fatalf("outsider search found %d", res.Total)
 		}
-		rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "lint", OwnerID: owner}, outsider, nil)
+		rec, r = ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "lint", OwnerID: owner}, outsider, nil)
 		ts.HandleSearchMemories(rec, r)
 		AssertStatusCode(t, rec.Code, http.StatusForbidden)
 
@@ -323,9 +335,12 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if res := search(owner, MemorySearchRequest{Query: "r_llback", Mode: "keyword"}); res.Total != 0 {
 			t.Fatal("underscore in a keyword query must not act as a wildcard")
 		}
-		rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "x", Mode: "semantic"}, owner, nil)
+		rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "rollback", Mode: "semantic"}, owner, nil)
 		ts.HandleSearchMemories(rec, r)
-		AssertStatusCode(t, rec.Code, http.StatusBadRequest)
+		AssertError(t, rec, http.StatusBadRequest, "mode must be", "invalid_request")
+		rec, r = ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/search", MemorySearchRequest{Query: "rollback", Files: make([]string, memoryMaxFiles+1)}, owner, nil)
+		ts.HandleSearchMemories(rec, r)
+		AssertError(t, rec, http.StatusBadRequest, "at most", "validation_error")
 		list := func(u int64, query string) (int, []Memory) {
 			rec, r := ts.MakeAuthRequest(t, http.MethodGet, "/api/memories?"+query, nil, u, nil)
 			ts.HandleListMemories(rec, r)
@@ -413,6 +428,14 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		n1.CreatedAt = &old
 		write(u, n1)
 		write(u, mem("Partial index gotcha again", "the github comment id index is partial so on conflict needs the where clause too"))
+		// A newer copy that expires does not absorb a permanent one.
+		tmp := time.Now().UTC().Add(24 * time.Hour)
+		k1 := mem("Rotate logs", "logrotate runs nightly at two")
+		k1.CreatedAt = &old
+		write(u, k1)
+		k2 := mem("Rotate logs", "logrotate runs nightly at two (this week)")
+		k2.ExpiresAt = &tmp
+		write(u, k2)
 		// Same words, opposite meaning: both stay.
 		p1 := mem("Copy data", "copy production data to staging")
 		p1.CreatedAt = &old
@@ -470,15 +493,14 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("expiry-only change: %+v", upd)
 		}
 
-		// The same lesson from a second hub is an alias; deleting it is not undone by either hub.
+		if code, _, body := write(u, func() MemoryWriteRequest { r := b; r.SupersedesOriginID = "2"; return r }()); code != http.StatusBadRequest {
+			t.Fatalf("self-supersede: %d %s", code, body)
+		}
+
+		// Deleting a memory with an origin is not undone when its hub sends it again.
 		c := mem("Staging is ARM64", "Staging and UAT are aarch64")
 		c.OriginHost, c.OriginID = "hub-a", "3"
 		_, cr, _ := write(u, c)
-		c2 := c
-		c2.OriginHost, c2.OriginID = "hub-b", "70"
-		if _, dup, _ := write(u, c2); dup.Outcome != "duplicate" || dup.Memory.ID != cr.Memory.ID {
-			t.Fatalf("second origin: %+v", dup)
-		}
 		sid := fmt.Sprint(cr.Memory.ID)
 		rec, r := ts.MakeAuthRequest(t, http.MethodDelete, "/api/memories/"+sid, nil, u, map[string]string{"id": sid})
 		ts.HandleDeleteMemory(rec, r)
@@ -486,10 +508,42 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if code, _ := get(u, cr.Memory.ID); code != http.StatusNotFound {
 			t.Fatalf("tombstone visible: %d", code)
 		}
-		for _, replay := range []MemoryWriteRequest{c, c2} {
-			if _, again, _ := write(u, replay); again.Outcome != "ignored" {
-				t.Fatalf("replay after delete from %s: %+v", replay.OriginHost, again)
-			}
+		if _, again, _ := write(u, c); again.Outcome != "ignored" {
+			t.Fatalf("replay after delete: %+v", again)
+		}
+		usage := func() MemoryUsage {
+			rec, r := ts.MakeAuthRequest(t, http.MethodGet, "/api/memories/usage", nil, u, nil)
+			ts.HandleMemoryUsage(rec, r)
+			AssertStatusCode(t, rec.Code, http.StatusOK)
+			var out MemoryUsage
+			DecodeJSON(t, rec, &out)
+			return out
+		}
+		if got := usage(); got.Count != 2 || got.ActiveCount != 1 {
+			t.Fatalf("usage should leave out the tombstone and count only active ones: %+v", got)
+		}
+
+		// An exact repeat that names what it supersedes still supersedes it.
+		d := mem("Old tip", "Restart the worker by hand")
+		_, dr, _ := write(u, d)
+		e := mem("New tip", "The worker restarts itself")
+		_, er, _ := write(u, e)
+		e.Supersedes = dr.Memory.ID
+		if _, rep, _ := write(u, e); rep.Outcome != "duplicate" || rep.Memory.ID != er.Memory.ID {
+			t.Fatalf("repeat with supersedes: %+v", rep)
+		}
+		if _, old := get(u, dr.Memory.ID); old.Status != "superseded" {
+			t.Fatalf("repeat did not supersede: %+v", old)
+		}
+
+		// An expired memory does not swallow a fresh write of the same lesson.
+		past := time.Now().UTC().Add(-time.Hour)
+		f := mem("Handoff", "Pick up the review")
+		f.ExpiresAt = &past
+		_, fr, _ := write(u, f)
+		f.ExpiresAt = nil
+		if _, fresh, _ := write(u, f); fresh.Outcome != "created" || fresh.Memory.ID == fr.Memory.ID {
+			t.Fatalf("fresh write after expiry: %+v", fresh)
 		}
 		if res := search(u, MemorySearchRequest{Query: "staging aarch64"}); res.Total != 0 {
 			t.Fatalf("deleted memory still searchable: %+v", res)
@@ -580,4 +634,22 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("%d rows after import + hub upsert, want 1", all)
 		}
 	})
+}
+
+func TestChunkMemories(t *testing.T) {
+	big := strings.Repeat("x", memoryMaxBody/2)
+	ms := []Memory{{Title: "a", Body: big}, {Title: "b", Body: big}, {Title: "c", Body: "small"}}
+	chunks := chunkMemories(ms)
+	if len(chunks) != 2 || len(chunks[0]) != 1 || len(chunks[1]) != 2 {
+		t.Fatalf("chunks: %d", len(chunks))
+	}
+	for _, c := range chunks {
+		size := len(memorySummaryHeader)
+		for _, m := range c {
+			size += len(memorySummaryEntry(m))
+		}
+		if size > memoryMaxBody {
+			t.Fatalf("chunk of %d bytes exceeds %d", size, memoryMaxBody)
+		}
+	}
 }

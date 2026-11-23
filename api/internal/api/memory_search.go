@@ -64,6 +64,10 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
 		return
 	}
+	if len(req.Files) > memoryMaxFiles {
+		respondError(w, http.StatusBadRequest, "at most 50 files", "validation_error")
+		return
+	}
 	words := memoryQueryWords(req.Query)
 	if len(words) == 0 {
 		respondError(w, http.StatusBadRequest, "query is required", "invalid_request")

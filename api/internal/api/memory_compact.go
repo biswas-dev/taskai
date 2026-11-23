@@ -16,7 +16,8 @@ import (
 //  1. superseded memories go (their successor holds the lesson);
 //  2. expired memories go;
 //  3. a near-duplicate in the same scope (70% of words shared, the hub's rule) gives way to a newer one, but only
-//     when the newer body contains the older body's text, so "copy prod to staging" never replaces its reverse;
+//     when the newer body contains the older body's text (so "copy prod to staging" never replaces its reverse) and
+//     the newer one lasts at least as long;
 //  4. old low-confidence memories of one kind in one scope, without an expiry, are merged into one memory with
 //     their bodies kept verbatim.
 // Rows with an origin become tombstones, so a hub re-sending them is ignored.
@@ -72,6 +73,11 @@ func memoryScopeKey(sc MemoryScope) string {
 		return fmt.Sprintf("r\x00%s\x00%d\x00%d", strings.ToLower(sc.Repo), sc.Issue, sc.PR)
 	}
 	return "f\x00" + sc.Folder
+}
+
+// outlives: a memory expiring at a lasts at least as long as one expiring at b (nil = never expires).
+func outlives(a, b *time.Time) bool {
+	return a == nil || b != nil && !a.Before(*b)
 }
 
 func queryIDs(ctx context.Context, q sqlQuerier, query string, args ...any) ([]int64, error) {
@@ -134,9 +140,10 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 
 	// Near-duplicates: newest first, so the newest of a group is kept.
 	type kept struct {
-		id    int64
-		words map[string]bool
-		body  string
+		id      int64
+		words   map[string]bool
+		body    string
+		expires *time.Time
 	}
 	byScope := map[string][]kept{}
 	var survivors []Memory
@@ -146,7 +153,8 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 		var dupOf int64
 		group := byScope[key]
 		for i := len(group) - 1; i >= 0 && i >= len(group)-memoryNearDupWindow; i-- {
-			if memoryJaccard(words, group[i].words) >= memoryNearDuplicate && strings.Contains(group[i].body, body) {
+			if memoryJaccard(words, group[i].words) >= memoryNearDuplicate && strings.Contains(group[i].body, body) &&
+				outlives(group[i].expires, m.ExpiresAt) {
 				dupOf = group[i].id
 				break
 			}
@@ -158,7 +166,7 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 			rep.DuplicatesMerged++
 			continue
 		}
-		byScope[key] = append(group, kept{m.ID, words, body})
+		byScope[key] = append(group, kept{m.ID, words, body, m.ExpiresAt})
 		survivors = append(survivors, m)
 	}
 
@@ -307,7 +315,7 @@ func (s *Server) maintainMemories(parent context.Context) {
 			s.logger.Error("Failed to scan memory usage", zap.Error(err))
 			break
 		}
-		if used*100 >= quota*memoryHighWater {
+		if float64(used)*100 >= float64(quota)*memoryHighWater {
 			over = append(over, owner)
 		}
 	}
@@ -330,28 +338,29 @@ func (s *Server) embedPendingMemories(ctx context.Context) {
 	if s.db.Driver != "postgres" || s.embeddingClient == nil {
 		return
 	}
+	var cursor int64 // a row that fails is retried on the next pass, not again in this one
 	for ctx.Err() == nil {
-		rows, err := s.db.QueryContext(ctx, `SELECT id, title, body FROM agent_memories
-			WHERE embedding IS NULL AND status <> 'compacted' ORDER BY id LIMIT `+strconv.Itoa(memoryEmbedBatch))
+		rows, err := s.db.QueryContext(ctx, `SELECT id, title, body, content_hash FROM agent_memories
+			WHERE embedding IS NULL AND status <> 'compacted' AND id > $1 ORDER BY id LIMIT `+strconv.Itoa(memoryEmbedBatch), cursor)
 		if err != nil {
 			s.logger.Error("Failed to list memories to embed", zap.Error(err))
 			return
 		}
 		var ids []int64
-		var texts []string
+		var texts, hashes []string
 		for rows.Next() {
 			var id int64
-			var title, body string
-			if err := rows.Scan(&id, &title, &body); err != nil {
+			var title, body, hash string
+			if err := rows.Scan(&id, &title, &body, &hash); err != nil {
 				rows.Close()
 				s.logger.Error("Failed to scan memory to embed", zap.Error(err))
 				return
 			}
 			text := title + "\n" + body
 			if len(text) > memoryEmbedInputChars {
-				text = text[:memoryEmbedInputChars]
+				text = strings.ToValidUTF8(text[:memoryEmbedInputChars], "")
 			}
-			ids, texts = append(ids, id), append(texts, text)
+			ids, texts, hashes = append(ids, id), append(texts, text), append(hashes, hash)
 		}
 		err = rows.Err()
 		rows.Close()
@@ -362,24 +371,24 @@ func (s *Server) embedPendingMemories(ctx context.Context) {
 		if len(ids) == 0 {
 			return
 		}
+		cursor = ids[len(ids)-1]
 		vectors, err := s.embeddingClient.EmbedBatch(ctx, texts)
 		if err != nil {
 			s.logger.Warn("Failed to embed memories (will retry)", zap.Error(err))
 			return
 		}
-		stored := 0
 		for i, id := range ids {
 			if i >= len(vectors) || vectors[i] == nil {
 				continue
 			}
-			if _, err := s.db.ExecContext(ctx, `UPDATE agent_memories SET embedding = $1::vector, embedded_at = $2 WHERE id = $3`,
-				float32SliceToVectorString(vectors[i]), time.Now().UTC(), id); err != nil {
+			// Only if the text is still what was embedded: an edit meanwhile clears the vector for the next pass.
+			if _, err := s.db.ExecContext(ctx, `UPDATE agent_memories SET embedding = $1::vector, embedded_at = $2
+				WHERE id = $3 AND content_hash = $4 AND status <> 'compacted'`,
+				float32SliceToVectorString(vectors[i]), time.Now().UTC(), id, hashes[i]); err != nil {
 				s.logger.Warn("Failed to store memory embedding", zap.Int64("memory_id", id), zap.Error(err))
-				continue
 			}
-			stored++
 		}
-		if len(ids) < memoryEmbedBatch || stored == 0 {
+		if len(ids) < memoryEmbedBatch {
 			return
 		}
 	}

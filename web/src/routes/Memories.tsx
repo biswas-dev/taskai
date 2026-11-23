@@ -66,13 +66,13 @@ export default function Memories() {
   }
 
   const remove = async (id: number) => {
-    const before = memories
     setMemories(ms => ms.filter(m => m.id !== id))
     setConfirmId(null)
     try {
       await api.deleteMemory(id)
     } catch (err) {
-      setMemories(before)
+      // Reload rather than restore a snapshot that other deletes or searches may have moved past.
+      await load()
       setError(err instanceof Error ? err.message : 'Failed to delete memory')
       return
     }

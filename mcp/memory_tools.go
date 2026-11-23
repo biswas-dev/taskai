@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -123,8 +124,8 @@ func registerMemoryTools(srv *gomcp.Server) {
 	gomcp.Register(srv, write("supersede_memory", "Save a new memory that replaces an outdated one (the old one is marked superseded and dropped from search)."),
 		func(ctx context.Context, in supersedeMemoryIn) (any, error) {
 			id, err := strconv.ParseInt(in.MemoryID, 10, 64)
-			if err != nil {
-				return nil, err
+			if err != nil || id <= 0 {
+				return nil, fmt.Errorf("memory_id must be a memory ID, got %q", in.MemoryID)
 			}
 			_, c := sess(ctx)
 			b := in.body()
