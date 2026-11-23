@@ -711,7 +711,7 @@ func main() {
 			r.Patch("/admin/users/{id}/profile", server.HandleUpdateUserProfile)
 			r.Post("/admin/users/{id}/reset-password", server.HandleAdminResetPassword)
 			r.Delete("/admin/users/{id}", server.HandleDeleteUser)
-			r.Put("/admin/users/{id}/memory-quota", server.HandleAdminSetMemoryQuota)
+			r.With(api.MemoryProtocol).Put("/admin/users/{id}/memory-quota", server.HandleAdminSetMemoryQuota)
 
 			// Admin email provider routes
 			r.Get("/admin/settings/email", server.HandleGetEmailProvider)

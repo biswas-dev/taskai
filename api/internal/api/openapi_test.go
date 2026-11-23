@@ -168,7 +168,7 @@ func buildTestRouter(server *Server) chi.Router {
 			r.Get("/admin/users", server.HandleGetUsers)
 			r.Get("/admin/users/{id}/activity", server.HandleGetUserActivity)
 			r.Patch("/admin/users/{id}/admin", server.HandleUpdateUserAdmin)
-			r.Put("/admin/users/{id}/memory-quota", server.HandleAdminSetMemoryQuota)
+			r.With(MemoryProtocol).Put("/admin/users/{id}/memory-quota", server.HandleAdminSetMemoryQuota)
 		})
 	})
 
