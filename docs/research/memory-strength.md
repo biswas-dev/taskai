@@ -295,6 +295,8 @@ Search latency on the same queries is p50 49 ms and p95 321 ms with `on`, and p5
 - LongMemEval on all 470 questions: we ran a stratified 222, because local embedding took about 15 texts per second.
 - Multi-user sharing: feedback is owner-only.
 - The SQLite path of similar-on-write (it is off there by design).
+- The re-rank tie rule and the single-slot rule changed after the eval runs (from the second cross-review). The eval used limits of 10 and 50, where the change matters only at exact relevance ties, so we did not rerun it.
+- Concurrent feedback and compaction: the owner lock orders them, but no test runs them in parallel.
 
 ## 7. Suggested go-draw diagrams for the blog post
 
