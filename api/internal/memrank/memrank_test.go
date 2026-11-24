@@ -106,6 +106,11 @@ func TestRerank(t *testing.T) {
 	if got := ids(Rerank(tie, Weights{Strength: 1, Confidence: 1}, 2)); got[0] != 1 {
 		t.Fatalf("tie: %v", got)
 	}
+	// Three equal candidates and two slots: the pin must not swap out a candidate of the same order.
+	eq := []Candidate{{ID: 1, Relevance: 0.05}, {ID: 2, Relevance: 0.05}, {ID: 3, Relevance: 0.05}}
+	if got := ids(Rerank(eq, Weights{Strength: 1}, 2)); got[0] != 3 || got[1] != 2 {
+		t.Fatalf("equal candidates: %v", got)
+	}
 	if Rerank(nil, Weights{Strength: 1}, 5) != nil {
 		t.Fatal("no candidates, no results")
 	}

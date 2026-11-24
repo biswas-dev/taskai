@@ -109,12 +109,6 @@ func Rerank(cands []Candidate, w Weights, limit int) []Candidate {
 	addLeg(cands, score, w.Strength, func(c Candidate) float64 { return c.Strength })
 	addLeg(cands, score, w.Confidence, func(c Candidate) float64 { return c.Confidence })
 
-	top := cands[0]
-	for _, c := range cands[1:] {
-		if c.Relevance > top.Relevance || c.Relevance == top.Relevance && score[c.ID] > score[top.ID] {
-			top = c
-		}
-	}
 	out := append([]Candidate(nil), cands...)
 	sort.SliceStable(out, func(i, j int) bool {
 		if score[out[i].ID] != score[out[j].ID] {
@@ -122,6 +116,12 @@ func Rerank(cands []Candidate, w Weights, limit int) []Candidate {
 		}
 		return out[i].ID > out[j].ID
 	})
+	top := out[0] // the most relevant candidate; among equals, the first in the final order
+	for _, c := range out[1:] {
+		if c.Relevance > top.Relevance {
+			top = c
+		}
+	}
 	out = out[:min(limit, len(out))]
 	if len(out) < 2 {
 		return out

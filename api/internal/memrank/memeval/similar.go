@@ -6,7 +6,19 @@ import (
 	"net/http"
 	"sort"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
+
+func dropProbes(ctx context.Context, owner int64) error {
+	conn, err := pgx.Connect(ctx, *dsn)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = conn.Close(ctx) }()
+	_, err = conn.Exec(ctx, `DELETE FROM agent_memories WHERE owner_id = $1 AND origin_id LIKE 'similar-check-%'`, owner)
+	return err
+}
 
 // runSimilar checks similar-on-write on the real server path (MEMORY_STRENGTH collect or on): it writes a new
 // value for existing settings of test world 4, then compares the returned candidates with the exact top 3 by
@@ -18,6 +30,9 @@ func runSimilar(ctx context.Context) error {
 	}
 	owner, err := ownerID(ctx, *dsn, "synth@memeval.local")
 	if err != nil {
+		return err
+	}
+	if err := dropProbes(ctx, owner); err != nil { // a rerun starts from the world alone
 		return err
 	}
 	w := newWorld(4, 0.5, 1500)
@@ -89,7 +104,12 @@ func runSimilar(ctx context.Context) error {
 		for _, q := range probes[:pi] {
 			cs = append(cs, cand{q.id, cosine(vecs[p.id], vecs[q.id])})
 		}
-		sort.Slice(cs, func(a, b int) bool { return cs[a].sim > cs[b].sim })
+		sort.Slice(cs, func(a, b int) bool { // as the server: similarity, then the newer id
+			if cs[a].sim != cs[b].sim {
+				return cs[a].sim > cs[b].sim
+			}
+			return cs[a].id > cs[b].id
+		})
 		var want []int64
 		for _, c := range cs[:min(3, len(cs))] {
 			if c.sim >= 0.80 {

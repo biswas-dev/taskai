@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -33,8 +35,13 @@ var (
 
 func main() {
 	flag.Parse()
-	if strings.Contains(*apiURL, "taskai.cc") {
-		logf("refusing to run against production")
+	// Local only: the eval writes test data, and the owner suite reads private memories.
+	if u, err := url.Parse(*apiURL); err != nil || !isLoopback(u.Hostname()) {
+		logf("refusing -api %q: the eval runs against a local API only", *apiURL)
+		os.Exit(2)
+	}
+	if u, err := url.Parse(*dsn); err != nil || !isLoopback(u.Hostname()) {
+		logf("refusing -dsn: the eval reads a local database only")
 		os.Exit(2)
 	}
 	ctx := context.Background()
@@ -57,6 +64,14 @@ func main() {
 		logf("memeval: %v", err)
 		os.Exit(1)
 	}
+}
+
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func loadWorld(ctx context.Context, c *client, owner int64, w *world) (loaded, error) {

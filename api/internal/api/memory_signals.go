@@ -198,78 +198,86 @@ func (s *Server) HandleMemoryFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	id := mem.ID
-	outcome, err := s.recordMemoryFeedback(ctx, id, userID, req.Signal, actor, time.Now().UTC().Truncate(time.Second))
-	if err == nil && outcome == "inactive" {
-		respondError(w, http.StatusBadRequest, "only an active memory takes feedback", "validation_error")
-		return
-	}
-	if err == nil {
-		mem, err = s.getMemory(ctx, s.db, id)
-	}
-	if err != nil {
-		s.logger.Error("Failed to record memory feedback", zap.Int64("memory_id", id), zap.Error(err))
+	outcome, saved, err := s.recordMemoryFeedback(ctx, mem, userID, req.Signal, actor, time.Now().UTC().Truncate(time.Second))
+	switch {
+	case err != nil:
+		s.logger.Error("Failed to record memory feedback", zap.Int64("memory_id", mem.ID), zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to record feedback", "internal_error")
 		return
+	case outcome == "inactive":
+		respondError(w, http.StatusBadRequest, "only an active memory takes feedback", "validation_error")
+		return
+	case outcome == "changed":
+		respondError(w, http.StatusConflict, "the memory changed since you read it; read it again", "conflict")
+		return
 	}
+	mem = saved
 	mem.Signals = mem.signals(time.Now().UTC())
 	respondJSON(w, http.StatusOK, MemoryFeedbackResponse{Memory: mem, Outcome: outcome})
 }
 
-// recordMemoryFeedback stores the signal and updates the counters in one transaction. "confirmed" and "wrong" are
-// votes: one per credential, so a retry or a loop cannot stack them. "useful" is spaced by memoryUseSpacing.
-func (s *Server) recordMemoryFeedback(ctx context.Context, memoryID, ownerID int64, signal, actor string, now time.Time) (string, error) {
+// recordMemoryFeedback stores the signal and updates the counters in one transaction, under the owner lock that
+// writes, deletes and compaction also take. "confirmed" and "wrong" are votes: one per credential, so a retry or a
+// loop cannot stack them. "useful" is spaced by memoryUseSpacing. The memory must still be active and hold the
+// text the caller read ("inactive" or "changed" otherwise). It returns the memory as committed.
+func (s *Server) recordMemoryFeedback(ctx context.Context, read Memory, ownerID int64, signal, actor string, now time.Time) (string, Memory, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return "", err
+		return "", Memory{}, err
 	}
 	defer tx.Rollback() //nolint:errcheck
-	// The owner lock orders feedback with compaction, which folds counters and vote rows.
 	if err := s.lockMemoryOwner(ctx, tx, ownerID); err != nil {
-		return "", err
+		return "", Memory{}, err
 	}
+	var status, hash string
+	err = tx.QueryRowContext(ctx, `SELECT status, content_hash FROM agent_memories WHERE id = $1`, read.ID).Scan(&status, &hash)
+	switch {
+	case errors.Is(err, sql.ErrNoRows) || err == nil && status != "active":
+		return "inactive", Memory{}, nil
+	case err != nil:
+		return "", Memory{}, err
+	case hash != memoryHash(read):
+		return "changed", Memory{}, nil // an upsert replaced the text: the signal judged the old one
+	}
+	outcome := "recorded"
 	if signal == "useful" {
-		// One conditional UPDATE: the row lock makes a parallel "useful" re-check the new last_used_at and skip.
 		res, err := tx.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + 1, last_used_at = $2
-			WHERE id = $1 AND status = 'active' AND (last_used_at IS NULL OR last_used_at <= $3)`, memoryID, now, now.Add(-memoryUseSpacing))
+			WHERE id = $1 AND (last_used_at IS NULL OR last_used_at <= $3)`, read.ID, now, now.Add(-memoryUseSpacing))
 		if err != nil {
-			return "", err
+			return "", Memory{}, err
 		}
-		if n, err := res.RowsAffected(); err != nil || n == 0 {
-			var status string
-			if err == nil {
-				err = tx.QueryRowContext(ctx, `SELECT status FROM agent_memories WHERE id = $1`, memoryID).Scan(&status)
+		if n, err := res.RowsAffected(); err != nil {
+			return "", Memory{}, err
+		} else if n == 0 {
+			outcome = "spaced"
+		} else if _, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
+			VALUES ($1, $2, $3, $4, $5)`, read.ID, ownerID, signal, actor, now); err != nil {
+			return "", Memory{}, err
+		}
+	} else {
+		res, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
+			VALUES ($1, $2, $3, $4, $5) ON CONFLICT (memory_id, signal, actor) WHERE signal <> 'useful' DO NOTHING`,
+			read.ID, ownerID, signal, actor, now)
+		if err != nil {
+			return "", Memory{}, err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return "", Memory{}, err
+		} else if n == 0 {
+			outcome = "duplicate"
+		} else {
+			set, args := `wrong_count = wrong_count + 1`, []any{read.ID}
+			if signal == "confirmed" {
+				set, args = `use_count = use_count + 1, last_used_at = $2, confirmed_count = confirmed_count + 1`, append(args, now)
 			}
-			if errors.Is(err, sql.ErrNoRows) || err == nil && status != "active" {
-				return "inactive", nil
+			if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET `+set+` WHERE id = $1`, args...); err != nil {
+				return "", Memory{}, err
 			}
-			return "spaced", err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
-			VALUES ($1, $2, $3, $4, $5)`, memoryID, ownerID, signal, actor, now); err != nil {
-			return "", err
-		}
-		return "recorded", tx.Commit()
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
-		VALUES ($1, $2, $3, $4, $5) ON CONFLICT (memory_id, signal, actor) WHERE signal <> 'useful' DO NOTHING`,
-		memoryID, ownerID, signal, actor, now)
+	mem, err := s.getMemory(ctx, tx, read.ID)
 	if err != nil {
-		return "", err
+		return "", Memory{}, err
 	}
-	if n, err := res.RowsAffected(); err != nil || n == 0 {
-		return "duplicate", err
-	}
-	set, args := `wrong_count = wrong_count + 1`, []any{memoryID}
-	if signal == "confirmed" {
-		set, args = `use_count = use_count + 1, last_used_at = $2, confirmed_count = confirmed_count + 1`, append(args, now)
-	}
-	res, err = tx.ExecContext(ctx, `UPDATE agent_memories SET `+set+` WHERE id = $1 AND status = 'active'`, args...)
-	if err != nil {
-		return "", err
-	}
-	if n, err := res.RowsAffected(); err != nil || n == 0 {
-		return "inactive", err // superseded or removed since the request was checked; the vote is rolled back
-	}
-	return "recorded", tx.Commit()
+	return outcome, mem, tx.Commit()
 }
