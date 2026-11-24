@@ -10,16 +10,16 @@ The recommendation, in five lines:
 
 1. Keep the flat store and its hybrid search. It finds the right memory (recall@10 0.94 in our synthetic world). The errors are in the order of the results, and most are **stale** memories.
 2. Fix staleness first. A store that shows the writer **similar older memories on write**, so the writer can supersede them, raised hit@1 from 0.748 to 0.794 with no feedback at all. An oracle that supersedes every update reaches 0.838.
-3. Strength plus belief, as a bounded re-rank, add about 4 hit@1 points with good feedback (better on 5 of 5 seeds), about 2 points with noisy feedback, and 6.9 points on top of similar-on-write. They help most when the same facts are asked again and again.
-4. The belief score is **not calibrated** without labels (ECE 0.115). Platt scaling on labelled feedback brings it to 0.036, but only when the feedback behaves as in training (0.096 under a shift).
+3. Strength plus belief, as a bounded re-rank, add about 4.5 hit@1 points with good feedback (better on 5 of 5 seeds), about 2 points with noisy feedback, and about 2 more on top of similar-on-write. They help most when the same facts are asked again and again.
+4. The belief score is **not calibrated** without labels (ECE 0.114). Platt scaling on labelled feedback brings it to 0.035, but only when the feedback behaves as in training (0.092 under a shift).
 5. Ship similar-on-write and the feedback counters first: they are cheap and they collect the labels. Turn the re-rank on only after real feedback confirms a gain.
 
 | Variant (synthetic world, held-out seeds) | hit@1 | MRR | stale top-1 |
 |---|---|---|---|
 | Flat (current search) | 0.748 | 0.826 | 10.7% |
-| + strength and belief re-rank | 0.791 | 0.850 | 8.0% |
-| + similar on write (writer acts 90%) | 0.794 | — | 5.7% |
-| + both of the above | 0.817 | — | 4.4% |
+| + strength and belief re-rank | 0.793 | 0.851 | 8.0% |
+| + similar on write (writer acts 90%) | 0.794 | — | 5.6% |
+| + both of the above | 0.816 | — | 4.3% |
 | Oracle supersede (upper bound) | 0.838 | 0.880 | 1.0% |
 
 The sections below give the research with citations, the design, the experiments, the risks and what we did not do.
@@ -46,13 +46,14 @@ The full report, with a primary source for each claim, is in the research notes 
 
 ## 2. Design (additive to protocol 1)
 
-All parts are behind `MEMORY_STRENGTH=on`. With the flag off, the API and MCP behave as before.
+All parts are behind `MEMORY_STRENGTH`. With the flag off (the default), the API and MCP behave as before.
 
 | Part | What it does | Why |
 |---|---|---|
 | Strength | ACT-R base-level activation, Petrov's hybrid approximation: the last use exact, older uses spread over the memory's life. d = 0.5, time in days, minimum age 1 hour. The write counts as the first use. | Evidence above. Three columns (`use_count`, `last_used_at`, `created_at`) and no use log are enough. |
 | Belief | Beta-Bernoulli posterior (confirmed + a·2)/(confirmed + wrong + 2), with a = 0.6 / 0.7 / 0.8 for stated low / medium / high. | The smallest evidence model. Named `belief`, not `confidence`, because it is not calibrated. |
-| Feedback | `POST /api/memories/{id}/feedback {useful \| confirmed \| wrong}`, MCP `memory_feedback`. Owner only. | The only source of signal. Search results never count as use. |
+| Feedback | `POST /api/memories/{id}/feedback {useful \| confirmed \| wrong}`, MCP `memory_feedback`. Owner only, active memories only. | The only source of signal. Search results never count as use. |
+| Staged flag | `MEMORY_STRENGTH=off` (default), `collect` (feedback, signals, similar-on-write; flat search) or `on` (also the re-rank). | Lets the store collect labels before the re-rank changes any result. |
 | Vote rules | `confirmed` and `wrong`: one vote per memory, signal and credential. `useful`: at most once an hour per memory. New text resets the votes and keeps the uses. A replay keeps everything. | Stops loops and retries from stacking votes. Votes judged the old text. |
 | Re-rank | Search fetches a pool of at least 50 relevance candidates and adds strength and belief as two extra RRF legs with weights 0.5 and 0.25. The most relevant candidate always stays in the results. | Bounded: a signal can reorder relevant memories, never add an irrelevant one or hide the best match. |
 | Similar on write | A write that creates or changes a memory returns up to 3 active memories of the same repo with cosine ≥ 0.80. | The cheapest measured fix for stale results. Nothing is merged automatically. |
@@ -89,29 +90,32 @@ Held-out seeds 4-8, 7,500 queries, one feedback credential (as the server counts
 |---|---|---|---|---|---|---|---|---|
 | flat | 0.748 | 0.926 | 0.943 | 0.826 | 0.743 | 0.781 | 0.107 | 0.087 |
 | recency only (no feedback) | 0.762 | 0.925 | 0.941 | 0.831 | 0.761 | 0.770 | 0.052 | 0.077 |
-| strength w=0.25 | 0.767 | 0.928 | 0.943 | 0.836 | 0.763 | 0.791 | 0.095 | 0.081 |
+| strength w=0.1 | 0.761 | 0.927 | 0.943 | 0.833 | 0.757 | 0.787 | 0.098 | 0.083 |
 | belief w=0.25 | 0.769 | 0.927 | 0.942 | 0.837 | 0.768 | 0.778 | 0.097 | 0.074 |
-| strength 0.5 + belief 0.25 | **0.791** | 0.929 | 0.942 | 0.850 | 0.793 | 0.783 | 0.080 | 0.065 |
+| strength 0.5 + belief 0.25 | **0.793** | 0.928 | 0.942 | 0.851 | 0.794 | 0.786 | 0.080 | 0.066 |
 | oracle supersede | 0.838 | 0.933 | 0.940 | 0.880 | 0.839 | 0.832 | 0.010 | 0.081 |
-| oracle supersede + both | 0.850 | 0.934 | 0.940 | 0.886 | 0.854 | 0.822 | 0.009 | 0.069 |
+| oracle supersede + both | 0.850 | 0.934 | 0.940 | 0.886 | 0.854 | 0.820 | 0.009 | 0.069 |
 
 Paired change in hit@1 against flat, per test seed:
 
 | variant | mean | min | max | seeds better |
 |---|---|---|---|---|
 | recency only | +0.014 | -0.007 | +0.031 | 3/5 |
-| strength w=0.25 | +0.019 | +0.016 | +0.023 | 5/5 |
+| strength w=0.1 | +0.013 | +0.005 | +0.021 | 5/5 |
 | belief w=0.25 | +0.021 | +0.011 | +0.034 | 5/5 |
-| both | +0.044 | +0.031 | +0.064 | 5/5 |
+| both | +0.045 | +0.031 | +0.065 | 5/5 |
 | oracle supersede | +0.090 | +0.062 | +0.119 | 5/5 |
-| oracle supersede + both | +0.102 | +0.077 | +0.131 | 5/5 |
+| oracle supersede + both | +0.102 | +0.077 | +0.127 | 5/5 |
+
+**How the weights were chosen.** A grid of 0.1, 0.25, 0.5 and 1 for each weight, scored on train seeds 1-3. The best pair on train was strength 0.5 + belief 0.5 (hit@1 0.780); strength 0.5 + belief 0.25 scored 0.776, inside the seed noise. We ship belief 0.25. Be aware that we made this choice after we saw the noisy-feedback results, where belief 0.5 keeps no gain (held-out 0.789 with good feedback, 0.751 with noisy feedback, against 0.793 and 0.766 for belief 0.25). Both are reported. Weights of 1 or more hurt (strength 1 + belief 0.25: 0.746 on train).
 
 What this shows:
 
 - Recall@5 and recall@10 do not move: the signals reorder, they do not find more. The gain is all in the first position.
-- On the first ask of a setting (no feedback yet), the re-rank is neutral (0.783 against 0.781). It does no harm there.
+- On the first ask of a setting (no feedback yet), the re-rank is neutral (0.786 against 0.781). It does no harm there.
+- The re-rank is bounded by design: a signal leg adds at most weight/61 to a relevance score, so it reorders near-ties only. Two copies of one text that are one rank apart in two relevance legs do not swap.
 - Recency alone halves stale answers but promotes new distractors (top-1 "other" 5.9% → 11.0%), and is not reliably better (3 of 5 seeds).
-- Effects below about 2 points are within seed noise; the 4.4-point gain of both signals is not.
+- Effects below about 2 points are within seed noise; the 4.5-point gain of both signals is not.
 
 **Noisy feedback.** A mis-specified agent confirms less, catches fewer errors and cites more wrong memories:
 
@@ -119,35 +123,37 @@ What this shows:
 |---|---|---|
 | flat | 0.748 | 0.748 |
 | belief w=0.25 | 0.769 | 0.751 |
-| both | 0.791 | 0.768 |
+| both | 0.793 | 0.766 |
 
 The gain depends on feedback quality. Belief alone almost vanishes under noise.
 
-**Credentials.** One vote per credential barely matters here: both signals score 0.791 with 1 credential, 0.789 with 3, 0.786 with no cap.
+**Credentials.** One vote per credential barely matters here: both signals score 0.793 with 1 credential, 0.789 with 3, 0.785 with no cap.
 
 **Need distribution.** The share of queries that repeat a recently asked setting (rho) decides the value of strength:
 
 | variant | rho 0 | 0.25 | 0.5 | 0.75 | 0.9 |
 |---|---|---|---|---|---|
 | flat | 0.744 | 0.746 | 0.748 | 0.779 | 0.794 |
-| strength w=0.25 | 0.755 | 0.758 | 0.767 | 0.799 | 0.835 |
-| both | 0.770 | 0.781 | 0.791 | 0.817 | 0.851 |
+| belief w=0.25 | 0.767 | 0.773 | 0.769 | 0.795 | 0.813 |
+| both | 0.767 | 0.779 | 0.793 | 0.817 | 0.851 |
 | oracle supersede | 0.835 | 0.835 | 0.838 | 0.860 | 0.883 |
+| oracle supersede + both | 0.832 | 0.839 | 0.850 | 0.869 | 0.898 |
 
-When queries do not repeat (rho 0), strength adds about 1 point; when they repeat a lot (0.9), about 4. Agents that work on the same repository for days are near the right side.
+When queries do not repeat (rho 0), the re-rank adds about 2 points; when they repeat a lot (0.9), about 6. Agents that work on the same repository for days are near the right side.
 
 Caution: the simulator decides how feedback relates to truth, so it cannot prove the gain in real use. It shows the size of the gain under stated assumptions and where it disappears.
 
 ### 3.2 Similar memories on write
 
-At each write, the store shows the writer earlier same-scope memories above a cosine threshold. The simulated writer supersedes a shown memory that states another value of the same setting with probability *act*. A wrong write can retire a right memory; that cost is in the numbers.
+At each write, the store shows the writer the 3 nearest earlier memories of the same scope, if they are above a cosine threshold (as the API does). The simulated writer supersedes a shown memory that states another value of the same setting with probability *act*. A wrong write can retire a right memory; that cost is in the numbers.
 
 | threshold | act | flat hit@1 | flat stale | both hit@1 | both stale |
 |---|---|---|---|---|---|
-| 0.80 | 0.5 | 0.778 | 0.075 | 0.800 | 0.062 |
-| 0.80 | 0.9 | 0.794 | 0.057 | 0.817 | 0.044 |
-| 0.85 | 0.9 | 0.778 | 0.074 | 0.802 | 0.060 |
-| 0.90 | 0.9 | 0.763 | 0.091 | 0.794 | 0.072 |
+| 0.80 | 0.5 | 0.772 | 0.080 | 0.800 | 0.063 |
+| 0.80 | 0.9 | 0.794 | 0.056 | 0.816 | 0.043 |
+| 0.85 | 0.5 | 0.765 | 0.090 | 0.797 | 0.069 |
+| 0.85 | 0.9 | 0.779 | 0.075 | 0.804 | 0.059 |
+| 0.90 | 0.9 | 0.763 | 0.090 | 0.796 | 0.069 |
 
 Quality of the candidates (3,914 writes):
 
@@ -165,22 +171,29 @@ Same-setting memories in the top 5, test seeds:
 
 | scorer | feedback | ECE (15 bins) | Brier | AUC |
 |---|---|---|---|---|
-| stated level only | same agent | 0.128 | 0.239 | 0.504 |
-| Beta posterior (what the server returns) | same agent | 0.115 | 0.216 | 0.634 |
-| Beta + Platt (fit on train seeds) | same agent | 0.036 | 0.202 | 0.634 |
+| stated level only | same agent | 0.128 | 0.239 | 0.505 |
+| Beta posterior (what the server returns) | same agent | 0.114 | 0.215 | 0.634 |
+| Beta + Platt (fit on train seeds) | same agent | 0.035 | 0.203 | 0.634 |
 | stated level only | noisy agent | 0.128 | 0.239 | 0.504 |
-| Beta posterior | noisy agent | 0.116 | 0.232 | 0.543 |
-| Beta + Platt (fit on train seeds) | noisy agent | 0.096 | 0.238 | 0.543 |
+| Beta posterior | noisy agent | 0.115 | 0.232 | 0.543 |
+| Beta + Platt (fit on train seeds) | noisy agent | 0.092 | 0.237 | 0.543 |
 
-Reliability of Beta + Platt, same agent:
+Reliability, same agent. Raw Beta posterior (as the server returns it):
 
 | bin | n | mean score | observed right |
 |---|---|---|---|
-| 0.0-0.2 | 75 | 0.198 | 0.307 |
-| 0.2-0.4 | 1,605 | 0.271 | 0.249 |
-| 0.4-0.6 | 1,185 | 0.486 | 0.667 |
-| 0.6-0.8 | 12,236 | 0.710 | 0.691 |
-| 0.8-1.0 | 1,646 | 0.836 | 0.908 |
+| 0.4-0.6 | 1,716 | 0.530 | 0.260 |
+| 0.6-0.8 | 1,308 | 0.689 | 0.674 |
+| 0.8-1.0 | 13,715 | 0.808 | 0.717 |
+
+Beta + Platt:
+
+| bin | n | mean score | observed right |
+|---|---|---|---|
+| 0.2-0.4 | 1,736 | 0.273 | 0.262 |
+| 0.4-0.6 | 1,173 | 0.487 | 0.674 |
+| 0.6-0.8 | 12,227 | 0.707 | 0.692 |
+| 0.8-1.0 | 1,603 | 0.832 | 0.910 |
 
 The stated level carries no information (AUC 0.50). The evidence adds some (0.63). A calibrated number needs a calibrator fitted on labelled feedback, and the fit does not survive a change in agent behaviour. So the server returns the raw posterior as `belief` and calls it uncalibrated.
 
@@ -192,7 +205,7 @@ The stated level carries no information (AUC 0.50). The evidence adds some (0.63
 
 ## 4. Recommendation
 
-1. **Now**: turn on similar-on-write and the feedback endpoint for the owner's account only. Teach the agents (hub, MCP clients) to send `useful` for a memory they used and `wrong` for one they found false, and to supersede what `similar` shows.
+1. **Now**: set `MEMORY_STRENGTH=collect` (similar-on-write, feedback and signals; search stays flat). Teach the agents (hub, MCP clients) to send `useful` for a memory they used and `wrong` for one they found false, and to supersede what `similar` shows.
 2. **After about 500 labelled signals**: rerun this eval on real feedback (hit@1 on queries whose answer the agent marked). Turn the re-rank on if it beats flat by more than the seed noise (about 2 points). Fit Platt on the labels before any client treats `belief` as a probability.
 3. **Keep**: flat store, hybrid RRF, verbatim compaction, explicit supersede.
 4. **Next research**: client-side citation reports (an automatic `useful`), bi-temporal valid time on supersede, and an NLI check on similar-on-write candidates if writers ignore them.
