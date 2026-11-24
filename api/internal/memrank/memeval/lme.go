@@ -67,6 +67,12 @@ func lmeWrites(q lmeQuestion) []memWrite {
 		for part := 0; len(text) > 0; part++ {
 			body := cut(text, 7900)
 			text = text[len(body):]
+			if strings.TrimSpace(body) == "" || body == "" && len(text) > 0 { // nothing to store, or a cut inside a rune
+				if body == "" {
+					text = text[1:]
+				}
+				continue
+			}
 			out = append(out, memWrite{Kind: "fact", Title: title, Body: body, Scope: memScope{Repo: lmeRepo(q)},
 				OriginHost: "memeval-lme", OriginID: fmt.Sprintf("%s/%s/%d", q.ID, q.SessionIDs[i], part), CreatedAt: &created})
 		}
