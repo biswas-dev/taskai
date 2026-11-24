@@ -185,7 +185,7 @@ func registerMemoryTools(srv *gomcp.Server) {
 			return c.send(ctx, http.MethodDelete, "/api/memories/"+id, nil)
 		})
 
-	gomcp.Register(srv, write("memory_feedback", "Tell your memory store how a memory did: useful, confirmed or wrong. Useful and confirmed make it stronger; confirmed and wrong change its belief score. Send it only for a memory you actually used or checked. Needs MEMORY_STRENGTH on the server."),
+	gomcp.Register(srv, write("memory_feedback", "Tell your memory store how a memory did: useful, confirmed or wrong. Useful and confirmed make it stronger; confirmed and wrong change its belief score. Send it only for a memory you actually used or checked. Needs MEMORY_STRENGTH collect or on at the server."),
 		func(ctx context.Context, in memoryFeedbackIn) (any, error) {
 			id, err := memoryID(in.MemoryID)
 			if err != nil {

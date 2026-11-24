@@ -106,7 +106,7 @@ Removed rows that have an origin leave a tombstone, so a client re-sending them 
 
 ## Strength and belief (optional)
 
-A server with `MEMORY_STRENGTH=on` adds two numbers to each memory and uses them to order search results. They are additive: the protocol version stays `1`, and clients that do not know them ignore them. The evidence and the eval behind them are in [research/memory-strength.md](research/memory-strength.md).
+A server can add two numbers to each memory. `MEMORY_STRENGTH=collect` turns on the numbers, feedback and similar-on-write, and keeps search in relevance order. `MEMORY_STRENGTH=on` also uses the numbers to order search results. The default is `off`. They are additive: the protocol version stays `1`, and clients that do not know them ignore them. The evidence and the eval behind them are in [research/memory-strength.md](research/memory-strength.md).
 
 | Field (`signals`) | Meaning |
 |---|---|
@@ -122,7 +122,7 @@ Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}`
 | `confirmed` | You checked that it is still true. | One more use and one confirmation. One vote per credential (`duplicate`). |
 | `wrong` | It is false or outdated. | One wrong vote. One vote per credential. Supersede it if you know the new value. |
 
-**Similar on write.** With the feature on (Postgres with embeddings), a write that creates or changes a memory answers with `similar`: up to 3 active memories of the same repo whose text is close (cosine 0.80 or more). They may say the same thing or the opposite. If the new memory replaces one of them, supersede it. The store never merges or changes them by itself.
+**Similar on write.** With `collect` or `on` (Postgres with embeddings), a write that creates or changes a memory answers with `similar`: up to 3 active memories of the same repo whose text is close (cosine 0.80 or more). They may say the same thing or the opposite. If the new memory replaces one of them, supersede it. The store never merges or changes them by itself.
 
 The rules:
 

@@ -85,6 +85,8 @@ type Memory struct {
 	// Signals is set only with MEMORY_STRENGTH on (docs/memory-protocol.md, "Strength and confidence").
 	Signals *MemorySignals `json:"signals,omitempty"`
 	use     memoryUse
+	// newText: this write created the memory or changed its text (set by upsertMemory only).
+	newText bool
 }
 
 // memoryUse is the stored evidence behind Signals.
@@ -640,6 +642,7 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 	if err != nil {
 		return Memory{}, "", err
 	}
+	mem.newText = !found || oldHash != m.hash
 	return mem, outcome, tx.Commit()
 }
 

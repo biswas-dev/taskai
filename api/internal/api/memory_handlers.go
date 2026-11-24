@@ -72,12 +72,14 @@ func (s *Server) HandleWriteMemory(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("Failed to read memory usage", zap.Int64("user_id", userID), zap.Error(err))
 	}
+	ms := []Memory{mem}
+	s.withSignals(ms)
+	resp := MemoryWriteResponse{Memory: ms[0], Outcome: outcome, Usage: usage}
 	status := http.StatusOK
 	if outcome == "created" {
 		status = http.StatusCreated
 	}
-	resp := MemoryWriteResponse{Memory: mem, Outcome: outcome, Usage: usage}
-	if outcome == "created" || outcome == "updated" {
+	if mem.newText {
 		resp.Similar = s.similarMemories(ctx, mem)
 	}
 	respondJSON(w, status, resp)

@@ -147,7 +147,6 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 			survivors = append(survivors, group...)
 			continue
 		}
-		survivors = append(survivors, group[keep])
 		for i, m := range group {
 			if i == keep {
 				continue
@@ -155,11 +154,13 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 			if err := foldMemoryUse(ctx, tx, group[keep].ID, m); err != nil {
 				return rep, err
 			}
+			group[keep].use = group[keep].use.fold(m.use) // the summary step below must see the folded evidence
 			if err := s.removeMemories(ctx, tx, []int64{m.ID}, group[keep].ID, now); err != nil {
 				return rep, err
 			}
 			rep.DuplicatesMerged++
 		}
+		survivors = append(survivors, group[keep])
 	}
 
 	// Old low-confidence clusters (one scope, one kind) merge into memories of at most memoryMaxBody.
@@ -203,6 +204,17 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 // inUse: a memory someone confirmed, or found useful within memorySummariseAfter, is not "old and low": keep it whole.
 func (m Memory) inUse(now time.Time) bool {
 	return m.use.confirmed > 0 || m.use.lastUsed != nil && m.use.lastUsed.After(now.Add(-memorySummariseAfter))
+}
+
+// fold is the in-memory twin of foldMemoryUse.
+func (u memoryUse) fold(g memoryUse) memoryUse {
+	u.count += g.count - 1
+	u.confirmed += g.confirmed
+	u.wrong += g.wrong
+	if g.lastUsed != nil && (u.lastUsed == nil || g.lastUsed.After(*u.lastUsed)) {
+		u.lastUsed = g.lastUsed
+	}
+	return u
 }
 
 // foldMemoryUse adds a removed copy's uses and votes to the copy that is kept, so folding loses no evidence.

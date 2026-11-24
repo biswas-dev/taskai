@@ -62,9 +62,9 @@ type Config struct {
 
 	// Embeddings (Ollama) — empty URL disables embeddings (graceful degradation)
 	OllamaURL      string
-	// MemoryStrength turns on memory strength and confidence: feedback, signals and re-ranked search
-	// (MEMORY_STRENGTH=on). Off by default until the owner approves (docs/research/memory-strength.md).
-	MemoryStrength bool
+	// MemoryStrength stages memory strength and belief (docs/research/memory-strength.md): "off" (default),
+	// "collect" (feedback, signals and similar-on-write; search stays flat) or "on" (also re-ranked search).
+	MemoryStrength string
 	EmbeddingModel string
 
 	// Blog sync (pulls posts from anshumanbiswas.com, serves at /blog/)
@@ -110,7 +110,7 @@ func Load() *Config {
 
 		OllamaURL:      getEnv("OLLAMA_URL", ""),
 		EmbeddingModel: getEnv("EMBEDDING_MODEL", "all-minilm:l6-v2"),
-		MemoryStrength: getEnv("MEMORY_STRENGTH", "off") == "on",
+		MemoryStrength: getEnv("MEMORY_STRENGTH", "off"),
 
 		BlogSyncSourceURL: getEnv("BLOG_SYNC_SOURCE_URL", "https://anshumanbiswas.com"),
 		BlogSyncTag:       getEnv("BLOG_SYNC_TAG", "TaskAI"),

@@ -119,7 +119,7 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	// With strength on, fetch a wider pool of relevant candidates and re-rank it (memory_signals.go).
 	fetch := req.Limit
-	if s.config.MemoryStrength {
+	if s.memoryRerank() {
 		fetch = min(max(req.Limit*3, 50), 150) // the eval tuned the weights on a pool of 50
 	}
 	var results []Memory
@@ -143,8 +143,10 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to search memories", "internal_error")
 		return
 	}
-	if s.config.MemoryStrength {
+	if s.memoryRerank() {
 		results = rerankMemories(results, req.Limit, time.Now().UTC())
+	} else {
+		s.withSignals(results)
 	}
 	respondJSON(w, http.StatusOK, MemorySearchResponse{Results: results, Total: len(results), Mode: mode})
 }

@@ -36,6 +36,14 @@ var memoryWeights = memrank.Weights{Strength: 0.5, Confidence: 0.25}
 // strength (Pavlik and Anderson 2005) and a loop must not inflate it.
 const memoryUseSpacing = time.Hour
 
+// memoryCollect: feedback, signals and similar-on-write are on (MEMORY_STRENGTH=collect or on).
+func (s *Server) memoryCollect() bool {
+	return s.config.MemoryStrength == "collect" || s.config.MemoryStrength == "on"
+}
+
+// memoryRerank: search is re-ranked by strength and belief (MEMORY_STRENGTH=on).
+func (s *Server) memoryRerank() bool { return s.config.MemoryStrength == "on" }
+
 func (m Memory) signals(now time.Time) *MemorySignals {
 	last := m.CreatedAt
 	if m.use.lastUsed != nil {
@@ -50,7 +58,7 @@ func (m Memory) signals(now time.Time) *MemorySignals {
 
 // withSignals sets Signals on each memory when the feature is on.
 func (s *Server) withSignals(ms []Memory) {
-	if !s.config.MemoryStrength {
+	if !s.memoryCollect() {
 		return
 	}
 	now := time.Now().UTC()
@@ -103,7 +111,7 @@ const (
 // similarMemories finds up to 3 active memories of the same owner and repo whose text is close to mem's, so the
 // writer can supersede what mem replaces. It is best effort: without embeddings, or past the timeout, it is empty.
 func (s *Server) similarMemories(ctx context.Context, mem Memory) []MemorySimilar {
-	if !s.config.MemoryStrength || s.db.Driver != "postgres" || s.embeddingClient == nil || mem.Status != "active" {
+	if !s.memoryCollect() || s.db.Driver != "postgres" || s.embeddingClient == nil || mem.Status != "active" {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, memorySimilarTimeout)
@@ -152,7 +160,7 @@ type MemoryFeedbackResponse struct {
 
 // HandleMemoryFeedback records a signal on one of the caller's memories (POST /api/memories/{id}/feedback).
 func (s *Server) HandleMemoryFeedback(w http.ResponseWriter, r *http.Request) {
-	if !s.config.MemoryStrength {
+	if !s.memoryCollect() {
 		respondError(w, http.StatusNotFound, "memory feedback is not enabled", "not_found")
 		return
 	}
@@ -184,6 +192,10 @@ func (s *Server) HandleMemoryFeedback(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	outcome, err := s.recordMemoryFeedback(ctx, mem.ID, userID, req.Signal, actor, time.Now().UTC().Truncate(time.Second))
+	if err == nil && outcome == "inactive" {
+		respondError(w, http.StatusBadRequest, "only an active memory takes feedback", "validation_error")
+		return
+	}
 	if err == nil {
 		mem, err = s.getMemory(ctx, s.db, mem.ID)
 	}
@@ -207,7 +219,7 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, memoryID, ownerID int
 	if signal == "useful" {
 		// One conditional UPDATE: the row lock makes a parallel "useful" re-check the new last_used_at and skip.
 		res, err := tx.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + 1, last_used_at = $2
-			WHERE id = $1 AND (last_used_at IS NULL OR last_used_at <= $3)`, memoryID, now, now.Add(-memoryUseSpacing))
+			WHERE id = $1 AND status = 'active' AND (last_used_at IS NULL OR last_used_at <= $3)`, memoryID, now, now.Add(-memoryUseSpacing))
 		if err != nil {
 			return "", err
 		}
@@ -233,8 +245,12 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, memoryID, ownerID int
 	if signal == "confirmed" {
 		set, args = `use_count = use_count + 1, last_used_at = $2, confirmed_count = confirmed_count + 1`, append(args, now)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET `+set+` WHERE id = $1`, args...); err != nil {
+	res, err = tx.ExecContext(ctx, `UPDATE agent_memories SET `+set+` WHERE id = $1 AND status = 'active'`, args...)
+	if err != nil {
 		return "", err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return "inactive", err // superseded or removed since the request was checked; the vote is rolled back
 	}
 	return "recorded", tx.Commit()
 }

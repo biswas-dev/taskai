@@ -27,6 +27,8 @@ var (
 	ownerIn  = flag.String("owner", "", "path to a private JSON export of memories (owner suite)")
 	limitQ   = flag.Int("max", 0, "lme: all knowledge-update questions and at most this many of each other type (0: all)")
 	cacheDir = flag.String("cache", ".", "directory for cached search results (synth)")
+	forceS   = flag.Float64("both-s", 0, "synth: use this strength weight for the combined variant instead of the train choice")
+	forceC   = flag.Float64("both-c", 0, "synth: use this belief weight for the combined variant instead of the train choice")
 )
 
 func main() {
@@ -170,6 +172,9 @@ func runSynth(ctx context.Context) error {
 		}
 	}
 	both := best["both"]
+	if *forceS > 0 || *forceC > 0 {
+		both = variant{name: fmt.Sprintf("both s=%g c=%g (fixed)", *forceS, *forceC), w: memrank.Weights{Strength: *forceS, Confidence: *forceC}}
+	}
 	withSup := both
 	withSup.name, withSup.supersede = "supersede + "+both.name, true
 	chosen := []variant{vs[0], vs[1], {name: "supersede (oracle)", supersede: true}, best["strength"], best["confidence"], both, withSup}

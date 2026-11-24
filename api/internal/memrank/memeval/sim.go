@@ -151,8 +151,9 @@ func simulate(l loaded, v variant, fb feedback, fbSeed int) simResult {
 			if r.Float64() < fb.useRight {
 				use(i, now)
 			}
-			if r.Float64() < fb.confirmRight && cast(i, "confirmed") {
-				use(i, now)
+			if r.Float64() < fb.confirmRight && cast(i, "confirmed") { // the server adds a use for every accepted vote
+				uses[i].Uses++
+				uses[i].LastUsed = now
 				ev[i].Confirmed++
 			}
 			if r.Float64() < fb.falseWrong && cast(i, "wrong") {
@@ -253,11 +254,24 @@ func assisted(l loaded, vecs map[int64][]float32, threshold, act float64, seed i
 		if m.slot.svc < 0 {
 			continue
 		}
+		// As the API: the 3 nearest active memories of the scope, then those above the threshold.
+		type cand struct {
+			o   *synthMem
+			sim float64
+		}
+		var near []cand
 		for _, o := range order[:i] {
-			if o.slot != m.slot || o.value == m.value || o.superseded != 0 && o.superseded <= m.created {
+			if o.superseded == 0 || o.superseded > m.created {
+				near = append(near, cand{o, cosine(vecs[m.id], vecs[o.id])})
+			}
+		}
+		sort.Slice(near, func(a, b int) bool { return near[a].sim > near[b].sim })
+		for _, c := range near[:min(3, len(near))] {
+			o := c.o
+			if c.sim < threshold || o.slot != m.slot || o.value == m.value {
 				continue
 			}
-			if cosine(vecs[m.id], vecs[o.id]) >= threshold && r.Float64() < act {
+			if r.Float64() < act {
 				o.superseded = m.created
 			}
 		}

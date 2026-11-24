@@ -17,6 +17,7 @@ import (
 	"taskai/internal/config"
 	"taskai/internal/db"
 	"taskai/internal/embeddings"
+	"taskai/internal/memrank"
 )
 
 func TestNormalizeMemory(t *testing.T) {
@@ -884,8 +885,8 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("signals with the flag off: %+v", m.Signals)
 		}
 
-		ts.config.MemoryStrength = true
-		defer func() { ts.config.MemoryStrength = false }()
+		ts.config.MemoryStrength = "on"
+		defer func() { ts.config.MemoryStrength = "off" }()
 		steps := []struct{ signal, want string }{
 			{"useful", "recorded"}, {"useful", "spaced"}, {"confirmed", "recorded"}, {"confirmed", "duplicate"}, {"wrong", "recorded"},
 		}
@@ -947,25 +948,98 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		feedback(c, older.Memory.ID, "confirmed")
 		old := time.Now().UTC().Add(-100 * 24 * time.Hour)
 		var lows []int64
-		for i := range 4 {
+		for i := range 5 {
 			lr := mem(fmt.Sprintf("Old note %d", i), fmt.Sprintf("An old low note number %d", i))
 			lr.Confidence, lr.CreatedAt = "low", &old
 			_, lw, _ := write(c, lr)
 			lows = append(lows, lw.Memory.ID)
 		}
 		feedback(c, lows[0], "confirmed")
+		feedback(c, lows[1], "useful") // used recently: in use, so kept whole too
 		if rep := compact(c); rep.DuplicatesMerged != 1 || rep.LowConfidenceSummarised != 3 {
 			t.Fatalf("compaction: %+v", rep)
 		}
 		if _, m := get(c, newer.Memory.ID); m.Status != "active" || m.Signals.Uses != 3 || m.Signals.Confirmed != 1 {
 			t.Fatalf("kept copy %s: %+v", m.Status, m.Signals)
 		}
-		if _, m := get(c, lows[0]); m.Status != "active" {
-			t.Fatalf("a confirmed old note must not be merged: %s", m.Status)
+		for _, keep := range lows[:2] {
+			if _, m := get(c, keep); m.Status != "active" {
+				t.Fatalf("a confirmed or recently used old note must not be merged: %s", m.Status)
+			}
+		}
+
+		// The evidence of a folded copy protects the kept copy in the same compaction run.
+		d := user("signals-fold")
+		var kept int64
+		for i, origin := range []string{"a", "b"} {
+			dr := mem("Old copy", "An old low note kept twice")
+			dr.Confidence, dr.CreatedAt, dr.OriginHost, dr.OriginID = "low", &old, "hub-d", origin
+			_, dw, _ := write(d, dr)
+			if i == 0 {
+				feedback(d, dw.Memory.ID, "confirmed") // the older copy, which the fold removes
+			}
+			kept = dw.Memory.ID
+		}
+		for i := range 2 {
+			lr := mem(fmt.Sprintf("Other old note %d", i), fmt.Sprintf("Another old low note %d", i))
+			lr.Confidence, lr.CreatedAt = "low", &old
+			write(d, lr)
+		}
+		if rep := compact(d); rep.DuplicatesMerged != 1 || rep.LowConfidenceSummarised != 0 {
+			t.Fatalf("fold then summary: %+v", rep)
+		}
+		if _, m := get(d, kept); m.Status != "active" || m.Signals.Confirmed != 1 {
+			t.Fatalf("kept copy after fold: %s %+v", m.Status, m.Signals)
 		}
 		res := search(u, MemorySearchRequest{Query: "staging deploy port", Limit: 1})
 		if len(res.Results) != 1 || res.Results[0].Signals == nil {
 			t.Fatalf("re-ranked search: %+v", res.Results)
+		}
+
+		// Two copies of one text rank by id when flat; evidence reorders them when re-ranked.
+		e := user("signals-rerank")
+		twin := mem("Feature flag name", "The rollout flag is called fast-path")
+		twin.OriginHost, twin.OriginID = "hub-e", "1"
+		_, first, _ := write(e, twin)
+		twin.OriginID = "2"
+		_, second, _ := write(e, twin)
+		feedback(e, first.Memory.ID, "useful")
+		feedback(e, first.Memory.ID, "confirmed")
+		feedback(e, second.Memory.ID, "wrong")
+		q := MemorySearchRequest{Query: "rollout flag fast-path", Limit: 2}
+		ranked := search(e, q)
+		ts.config.MemoryStrength = "collect" // signals and feedback, but flat search
+		flat := search(e, q)
+		if len(flat.Results) != 2 || flat.Results[0].ID != second.Memory.ID || flat.Results[0].Signals == nil {
+			t.Fatalf("collect keeps the flat order with signals: %+v", flat.Results)
+		}
+		var cands []memrank.Candidate
+		for _, m := range flat.Results {
+			cands = append(cands, memrank.Candidate{ID: m.ID, Relevance: m.Rank, Strength: m.Signals.Strength, Confidence: m.Signals.Belief})
+		}
+		want := memrank.Rerank(cands, memoryWeights, 2)
+		if len(ranked.Results) != 2 || ranked.Results[0].ID != want[0].ID || ranked.Results[1].ID != want[1].ID {
+			t.Fatalf("re-ranked order %+v, want %+v", ranked.Results, want)
+		}
+		rec, lr := ts.MakeAuthRequest(t, http.MethodGet, "/api/memories", nil, e, nil)
+		ts.HandleListMemories(rec, lr)
+		var list struct{ Memories []Memory }
+		DecodeJSON(t, rec, &list)
+		if len(list.Memories) != 2 || list.Memories[0].Signals == nil {
+			t.Fatalf("list signals: %+v", list.Memories)
+		}
+		// A sharee reads but cannot vote; a superseded memory takes no feedback.
+		if _, err := ts.DB.ExecContext(ctx, `INSERT INTO memory_shares (owner_id, user_id) VALUES ($1, $2)`, e, friend); err != nil {
+			t.Fatal(err)
+		}
+		if code, _ := feedback(friend, first.Memory.ID, "useful"); code != http.StatusForbidden {
+			t.Fatalf("sharee feedback: %d", code)
+		}
+		repl := mem("Feature flag name", "The rollout flag is now called turbo")
+		repl.Supersedes = first.Memory.ID
+		write(e, repl)
+		if code, _ := feedback(e, first.Memory.ID, "confirmed"); code != http.StatusBadRequest {
+			t.Fatalf("feedback on a superseded memory: %d", code)
 		}
 	})
 }
