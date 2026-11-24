@@ -72,11 +72,17 @@ func (s *Server) HandleWriteMemory(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Warn("Failed to read memory usage", zap.Int64("user_id", userID), zap.Error(err))
 	}
+	ms := []Memory{mem}
+	s.withSignals(ms)
+	resp := MemoryWriteResponse{Memory: ms[0], Outcome: outcome, Usage: usage}
 	status := http.StatusOK
 	if outcome == "created" {
 		status = http.StatusCreated
 	}
-	respondJSON(w, status, MemoryWriteResponse{Memory: mem, Outcome: outcome, Usage: usage})
+	if mem.newText {
+		resp.Similar = s.similarMemories(ctx, mem)
+	}
+	respondJSON(w, status, resp)
 }
 
 // memoryFilter builds the WHERE clause shared by list and search. The caller's readable owners are always applied.
@@ -198,6 +204,7 @@ func (s *Server) HandleListMemories(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		var ms []Memory
 		if ms, err = scanMemories(rows, false); err == nil {
+			s.withSignals(ms)
 			respondJSON(w, http.StatusOK, map[string]any{"memories": ms, "limit": limit, "offset": offset})
 			return
 		}
@@ -243,7 +250,9 @@ func (s *Server) memoryFromPath(w http.ResponseWriter, r *http.Request) (mem Mem
 // HandleGetMemory returns one memory (GET /api/memories/{id}).
 func (s *Server) HandleGetMemory(w http.ResponseWriter, r *http.Request) {
 	if mem, _, _, ok := s.memoryFromPath(w, r); ok {
-		respondJSON(w, http.StatusOK, mem)
+		ms := []Memory{mem}
+		s.withSignals(ms)
+		respondJSON(w, http.StatusOK, ms[0])
 	}
 }
 

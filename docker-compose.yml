@@ -107,6 +107,9 @@ services:
       # Embeddings (Ollama) — empty = disabled; set to enable vector search
       - OLLAMA_URL=${OLLAMA_URL:-}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-all-minilm:l6-v2}
+      # Memory strength and belief (docs/research/memory-strength.md): off | collect | on.
+      # collect = feedback, signals and similar-on-write; search order unchanged.
+      - MEMORY_STRENGTH=${MEMORY_STRENGTH:-collect}
       # Datadog Unified Service Tags — required on the container for Version Tagging
       # and Deployment Tracking in Datadog. Must match dd-agent DD_SERVICE/DD_VERSION.
       - DD_SERVICE=taskai

@@ -571,6 +571,7 @@ func main() {
 				r.Post("/memories/import-wiki", server.HandleImportWikiMemories)
 				r.Get("/memories/{id}", server.HandleGetMemory)
 				r.Delete("/memories/{id}", server.HandleDeleteMemory)
+				r.Post("/memories/{id}/feedback", server.HandleMemoryFeedback)
 			})
 
 			// Task dependency routes

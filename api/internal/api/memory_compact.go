@@ -147,23 +147,27 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 			survivors = append(survivors, group...)
 			continue
 		}
-		survivors = append(survivors, group[keep])
 		for i, m := range group {
 			if i == keep {
 				continue
 			}
+			if err := foldMemoryUse(ctx, tx, group[keep].ID, m); err != nil {
+				return rep, err
+			}
+			group[keep].use = group[keep].use.fold(m.use) // the summary step below must see the folded evidence
 			if err := s.removeMemories(ctx, tx, []int64{m.ID}, group[keep].ID, now); err != nil {
 				return rep, err
 			}
 			rep.DuplicatesMerged++
 		}
+		survivors = append(survivors, group[keep])
 	}
 
 	// Old low-confidence clusters (one scope, one kind) merge into memories of at most memoryMaxBody.
 	clusters := map[string][]Memory{}
 	var order []string
 	for _, m := range survivors {
-		if m.Confidence != "low" || m.ExpiresAt != nil || m.CreatedAt.After(now.Add(-memorySummariseAfter)) {
+		if m.Confidence != "low" || m.ExpiresAt != nil || m.CreatedAt.After(now.Add(-memorySummariseAfter)) || m.inUse(now) {
 			continue
 		}
 		key := memoryScopeKey(m.Scope) + "\x00" + m.Kind
@@ -195,6 +199,43 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 	}
 	rep.BytesBefore, rep.BytesAfter, rep.FreedBytes = before.UsedBytes, after.UsedBytes, before.UsedBytes-after.UsedBytes
 	return rep, tx.Commit()
+}
+
+// inUse: a memory with votes (confirmed or wrong), or found useful within memorySummariseAfter, is not "old and
+// low": keep it whole, so a summary never resets its evidence.
+func (m Memory) inUse(now time.Time) bool {
+	return m.use.confirmed > 0 || m.use.wrong > 0 || m.use.lastUsed != nil && m.use.lastUsed.After(now.Add(-memorySummariseAfter))
+}
+
+// fold is the in-memory twin of foldMemoryUse.
+func (u memoryUse) fold(g memoryUse) memoryUse {
+	u.count += g.count - 1
+	u.confirmed += g.confirmed
+	u.wrong += g.wrong
+	if g.lastUsed != nil && (u.lastUsed == nil || g.lastUsed.After(*u.lastUsed)) {
+		u.lastUsed = g.lastUsed
+	}
+	return u
+}
+
+// foldMemoryUse moves a removed copy's feedback to the copy that is kept, so folding loses no evidence. Votes stay
+// one per credential: a vote the kept copy already has from the same credential is dropped, and the vote
+// counters are recounted from the rows.
+func foldMemoryUse(ctx context.Context, q sqlQuerier, keepID int64, gone Memory) error {
+	if gone.use.count <= 1 && gone.use.confirmed == 0 && gone.use.wrong == 0 {
+		return nil
+	}
+	if _, err := q.ExecContext(ctx, `UPDATE memory_feedback SET memory_id = $1 WHERE memory_id = $2
+		AND NOT EXISTS (SELECT 1 FROM memory_feedback k WHERE k.memory_id = $1 AND k.signal = memory_feedback.signal AND k.actor = memory_feedback.actor)`,
+		keepID, gone.ID); err != nil {
+		return err
+	}
+	_, err := q.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + $1,
+		confirmed_count = (SELECT COUNT(*) FROM memory_feedback WHERE memory_id = $3 AND signal = 'confirmed'),
+		wrong_count = (SELECT COUNT(*) FROM memory_feedback WHERE memory_id = $3 AND signal = 'wrong'),
+		last_used_at = CASE WHEN last_used_at IS NULL OR last_used_at < $2 THEN $2 ELSE last_used_at END
+		WHERE id = $3`, gone.use.count-1, gone.use.lastUsed, keepID)
+	return err
 }
 
 const memorySummaryHeader = "Merged by compaction from %d low-confidence notes, kept verbatim.\n\n"

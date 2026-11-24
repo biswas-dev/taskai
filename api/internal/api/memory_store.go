@@ -32,7 +32,8 @@ const (
 	memoryMaxShares      = 100
 	memoryMaxQuota       = int64(1) << 40 // 1 TiB
 	memoryCols           = `id, owner_id, kind, title, body, repo, issue, pr, folder, files, agent, provider, host, session,
-		confidence, supersedes, superseded_by, status, expires_at, origin_host, origin_id, size_bytes, created_at, updated_at`
+		confidence, supersedes, superseded_by, status, expires_at, origin_host, origin_id, size_bytes, created_at, updated_at,
+		use_count, last_used_at, confirmed_count, wrong_count`
 )
 
 var (
@@ -81,6 +82,17 @@ type Memory struct {
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
 	Rank         float64      `json:"rank,omitempty"`
+	// Signals is set only with MEMORY_STRENGTH on (docs/memory-protocol.md, "Strength and confidence").
+	Signals *MemorySignals `json:"signals,omitempty"`
+	use     memoryUse
+	// newText: this write created the memory or changed its text (set by upsertMemory only).
+	newText bool
+}
+
+// memoryUse is the stored evidence behind Signals.
+type memoryUse struct {
+	count, confirmed, wrong int
+	lastUsed                *time.Time
 }
 
 // MemoryWriteRequest creates or updates (by origin) a memory.
@@ -119,6 +131,9 @@ type MemoryWriteResponse struct {
 	Memory  Memory      `json:"memory"`
 	Outcome string      `json:"outcome"`
 	Usage   MemoryUsage `json:"usage"`
+	// Similar lists older memories that may say the same or the opposite (MEMORY_STRENGTH on, Postgres with
+	// embeddings). Supersede the ones this memory replaces; nothing is merged or changed automatically.
+	Similar []MemorySimilar `json:"similar,omitempty"`
 }
 
 // memoryRow is a validated write, ready to store.
@@ -305,7 +320,7 @@ func scanMemories(rows *sql.Rows, withRank bool) ([]Memory, error) {
 		dest := []any{&m.ID, &m.OwnerID, &m.Kind, &m.Title, &m.Body, &m.Scope.Repo, &m.Scope.Issue, &m.Scope.PR,
 			&m.Scope.Folder, &files, &m.Author.Agent, &m.Author.Provider, &m.Author.Host, &m.Author.Session,
 			&m.Confidence, &m.Supersedes, &m.SupersededBy, &m.Status, &m.ExpiresAt, &m.OriginHost, &m.OriginID,
-			&m.SizeBytes, &m.CreatedAt, &m.UpdatedAt}
+			&m.SizeBytes, &m.CreatedAt, &m.UpdatedAt, &m.use.count, &m.use.lastUsed, &m.use.confirmed, &m.use.wrong}
 		if withRank {
 			dest = append(dest, &m.Rank)
 		}
@@ -589,6 +604,9 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 		if err == nil && oldHash != m.hash {
 			err = s.clearMemoryEmbedding(ctx, tx, id)
 		}
+		if err == nil && oldHash != m.hash {
+			err = resetMemoryVotes(ctx, tx, id)
+		}
 	} else {
 		id, err = insertMemoryRow(ctx, tx, ownerID, m, supersedes)
 	}
@@ -624,6 +642,7 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 	if err != nil {
 		return Memory{}, "", err
 	}
+	mem.newText = !found || oldHash != m.hash
 	return mem, outcome, tx.Commit()
 }
 

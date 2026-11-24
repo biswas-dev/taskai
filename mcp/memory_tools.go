@@ -14,7 +14,7 @@ import (
 	gomcp "github.com/anchoo2kewl/go-mcp"
 )
 
-var memoryFields = []string{"id", "kind", "title", "body", "scope", "confidence", "status", "owner_id", "rank"}
+var memoryFields = []string{"id", "kind", "title", "body", "scope", "confidence", "status", "owner_id", "rank", "signals"}
 
 type searchMemoriesIn struct {
 	Query           string   `json:"query" jsonschema:"What you want to know; matched by meaning and by words"`
@@ -65,6 +65,12 @@ type supersedeMemoryIn struct {
 
 type memoryIDIn struct {
 	MemoryID string `json:"memory_id" jsonschema:"Memory ID"`
+}
+
+type memoryFeedbackIn struct {
+	MemoryID  string `json:"memory_id" jsonschema:"The memory the signal is about"`
+	Signal    string `json:"signal" jsonschema:"useful (it helped this task), confirmed (you checked it is still true) or wrong (it is false or outdated)"`
+	UpdatedAt string `json:"updated_at,omitempty" jsonschema:"Optional: the updated_at of the memory you judged; refused if it changed since"`
 }
 
 type setMemorySharesIn struct {
@@ -129,7 +135,7 @@ func registerMemoryTools(srv *gomcp.Server) {
 			return trim(in.Verbose, res, "memories"), err
 		})
 
-	gomcp.Register(srv, write("write_memory", "Save a lesson to your memories (fact, decision, gotcha, runbook, handoff). An exact repeat returns the one already kept. Small and verbatim; never a secret."),
+	gomcp.Register(srv, write("write_memory", "Save a lesson to your memories (fact, decision, gotcha, runbook, handoff). An exact repeat returns the one already kept. Small and verbatim; never a secret. If the answer lists similar memories that this one replaces, supersede them."),
 		func(ctx context.Context, in writeMemoryIn) (any, error) {
 			_, c := sess(ctx)
 			return c.send(ctx, http.MethodPost, "/api/memories", in.body())
@@ -178,6 +184,20 @@ func registerMemoryTools(srv *gomcp.Server) {
 			}
 			_, c := sess(ctx)
 			return c.send(ctx, http.MethodDelete, "/api/memories/"+id, nil)
+		})
+
+	gomcp.Register(srv, write("memory_feedback", "Tell your memory store how a memory did: useful, confirmed or wrong. Useful and confirmed make it stronger; confirmed and wrong change its belief score. Send it only for a memory you actually used or checked. Needs MEMORY_STRENGTH collect or on at the server."),
+		func(ctx context.Context, in memoryFeedbackIn) (any, error) {
+			id, err := memoryID(in.MemoryID)
+			if err != nil {
+				return nil, err
+			}
+			_, c := sess(ctx)
+			body := map[string]any{"signal": in.Signal}
+			if in.UpdatedAt != "" {
+				body["updated_at"] = in.UpdatedAt
+			}
+			return c.send(ctx, http.MethodPost, "/api/memories/"+id+"/feedback", body)
 		})
 
 	gomcp.Register(srv, read("memory_usage", "How much of your memory quota is used (bytes, count, warning past 80%)."),
