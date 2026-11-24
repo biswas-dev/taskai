@@ -1655,7 +1655,7 @@ paths:
     post:
       summary: Give Memory Feedback
       description: >-
-        Owner only, and only with MEMORY_STRENGTH collect or on (404 otherwise). useful and confirmed make a memory stronger;
+        Owner only, active and unexpired memories only, and only with MEMORY_STRENGTH collect or on (404 otherwise). useful and confirmed make a memory stronger;
         confirmed and wrong are evidence votes for its belief score, one per signal and credential (a repeat is
         duplicate). useful counts at most once an hour per memory (a repeat is spaced). Send it only for a memory
         you used or checked; being returned by search is not a signal.
@@ -1680,6 +1680,7 @@ paths:
               required: [signal]
               properties:
                 signal: {type: string, enum: [useful, confirmed, wrong]}
+                updated_at: {type: string, format: date-time, description: "Optional: the updated_at of the memory you judged; 409 if it changed since"}
       responses:
         "200":
           description: Whether the signal counted, and the memory with its signals
@@ -1691,7 +1692,7 @@ paths:
                   memory: {$ref: "#/components/schemas/Memory"}
                   outcome: {type: string, enum: [recorded, duplicate, spaced]}
         "409":
-          description: The memory's text changed since it was read; read it again before you judge it
+          description: The memory changed after the updated_at you sent; read it again before you judge it
           content:
             application/json:
               schema:

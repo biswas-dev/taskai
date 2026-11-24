@@ -68,8 +68,9 @@ type memoryIDIn struct {
 }
 
 type memoryFeedbackIn struct {
-	MemoryID string `json:"memory_id" jsonschema:"The memory the signal is about"`
-	Signal   string `json:"signal" jsonschema:"useful (it helped this task), confirmed (you checked it is still true) or wrong (it is false or outdated)"`
+	MemoryID  string `json:"memory_id" jsonschema:"The memory the signal is about"`
+	Signal    string `json:"signal" jsonschema:"useful (it helped this task), confirmed (you checked it is still true) or wrong (it is false or outdated)"`
+	UpdatedAt string `json:"updated_at,omitempty" jsonschema:"Optional: the updated_at of the memory you judged; refused if it changed since"`
 }
 
 type setMemorySharesIn struct {
@@ -192,7 +193,11 @@ func registerMemoryTools(srv *gomcp.Server) {
 				return nil, err
 			}
 			_, c := sess(ctx)
-			return c.send(ctx, http.MethodPost, "/api/memories/"+id+"/feedback", map[string]any{"signal": in.Signal})
+			body := map[string]any{"signal": in.Signal}
+			if in.UpdatedAt != "" {
+				body["updated_at"] = in.UpdatedAt
+			}
+			return c.send(ctx, http.MethodPost, "/api/memories/"+id+"/feedback", body)
 		})
 
 	gomcp.Register(srv, read("memory_usage", "How much of your memory quota is used (bytes, count, warning past 80%)."),

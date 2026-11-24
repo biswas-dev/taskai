@@ -201,9 +201,10 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 	return rep, tx.Commit()
 }
 
-// inUse: a memory someone confirmed, or found useful within memorySummariseAfter, is not "old and low": keep it whole.
+// inUse: a memory with votes (confirmed or wrong), or found useful within memorySummariseAfter, is not "old and
+// low": keep it whole, so a summary never resets its evidence.
 func (m Memory) inUse(now time.Time) bool {
-	return m.use.confirmed > 0 || m.use.lastUsed != nil && m.use.lastUsed.After(now.Add(-memorySummariseAfter))
+	return m.use.confirmed > 0 || m.use.wrong > 0 || m.use.lastUsed != nil && m.use.lastUsed.After(now.Add(-memorySummariseAfter))
 }
 
 // fold is the in-memory twin of foldMemoryUse.

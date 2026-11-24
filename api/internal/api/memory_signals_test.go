@@ -117,6 +117,19 @@ func testMemorySignals(t *testing.T, ts *TestServer, k memoryKit) {
 		if len(nr.Similar) == 0 || nr.Similar[0].ID != id || nr.Similar[0].Similarity < memorySimilarMin {
 			t.Fatalf("similar on write: %+v", nr.Similar)
 		}
+		// A replay of the same text shows nothing new; changed text looks again.
+		rp := mem("Deploy port note", "The staging deploy port is 9443 per the runbook")
+		rp.OriginHost, rp.OriginID = "hub-r", "1"
+		write(u, rp)
+		ts.embedPendingMemories(ctx)
+		rp.Author.Session = "replay"
+		if _, again, _ := write(u, rp); again.Outcome != "updated" || again.Similar != nil {
+			t.Fatalf("a replay must not look for similar memories: %q %+v", again.Outcome, again.Similar)
+		}
+		rp.Title, rp.Body = "Deploy port changed again", "The staging deploy listens on port 9443 now"
+		if _, changed, _ := write(u, rp); len(changed.Similar) == 0 {
+			t.Fatalf("changed text must look for similar memories: %+v", changed)
+		}
 	} else if nr.Similar != nil {
 		t.Fatalf("similar needs Postgres and embeddings: %+v", nr.Similar)
 	}
@@ -273,7 +286,67 @@ func testMemorySignals(t *testing.T, ts *TestServer, k memoryKit) {
 	_, read := get(g, chw.Memory.ID)
 	ch.Body = "Deploys go to eu-west-1"
 	write(g, ch)
-	if outcome, _, err := ts.recordMemoryFeedback(ctx, read, g, "wrong", "session", time.Now().UTC()); err != nil || outcome != "changed" {
-		t.Fatalf("feedback on replaced text: %q %v", outcome, err)
+	judge := func(at time.Time) int {
+		sid := fmt.Sprint(chw.Memory.ID)
+		rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/"+sid+"/feedback",
+			MemoryFeedbackRequest{Signal: "wrong", UpdatedAt: &at}, g, map[string]string{"id": sid})
+		ts.HandleMemoryFeedback(rec, r)
+		return rec.Code
+	}
+	if code := judge(read.UpdatedAt.Add(-time.Hour)); code != http.StatusConflict {
+		t.Fatalf("feedback with a stale updated_at: %d, want 409", code)
+	}
+	_, now := get(g, chw.Memory.ID)
+	if code := judge(now.UpdatedAt); code != http.StatusOK {
+		t.Fatalf("feedback with the current updated_at: %d", code)
+	}
+
+	// Old low notes with a wrong vote stay whole (a summary would reset the vote); expired memories take no feedback.
+	old = time.Now().UTC().Add(-100 * 24 * time.Hour)
+	o := user("signals-wrong-old")
+	var olds []int64
+	for i := range 3 {
+		lr := mem(fmt.Sprintf("Stale note %d", i), fmt.Sprintf("A stale low note %d", i))
+		lr.Confidence, lr.CreatedAt = "low", &old
+		_, lw, _ := write(o, lr)
+		olds = append(olds, lw.Memory.ID)
+	}
+	feedback(o, olds[0], "wrong")
+	if rep := compact(o); rep.LowConfidenceSummarised != 0 {
+		t.Fatalf("a wrong-voted note left 2 others, below a cluster: %+v", rep)
+	}
+	soon := time.Now().UTC().Add(time.Hour)
+	ex := mem("Temp token rule", "Tokens rotate daily this week")
+	ex.ExpiresAt = &soon
+	_, exw, _ := write(o, ex)
+	if _, err := ts.DB.ExecContext(ctx, `UPDATE agent_memories SET expires_at = $1 WHERE id = $2`, time.Now().UTC().Add(-time.Minute), exw.Memory.ID); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := feedback(o, exw.Memory.ID, "useful"); code != http.StatusBadRequest {
+		t.Fatalf("feedback on an expired memory: %d", code)
+	}
+
+	// A wrong-only copy folds into a kept copy that was used: the last use stays, the vote moves.
+	f := user("signals-fold-wrong")
+	fr := mem("Cron window", "Backups run at 02:00 UTC")
+	fr.OriginHost, fr.OriginID = "hub-f", "old"
+	_, fOld, _ := write(f, fr)
+	fr.OriginID = "new"
+	_, fNew, _ := write(f, fr)
+	feedback(f, fNew.Memory.ID, "useful")
+	feedback(f, fOld.Memory.ID, "wrong")
+	compact(f)
+	if _, m := get(f, fNew.Memory.ID); m.Signals.Wrong != 1 || m.Signals.Uses != 2 || m.Signals.LastUsedAt == nil {
+		t.Fatalf("wrong-only fold: %+v", m.Signals)
+	}
+
+	// An ignored write (a compacted origin) carries no signals.
+	ig := mem("Gone soon", "This memory is deleted and its origin remembered")
+	ig.OriginHost, ig.OriginID = "hub-i", "1"
+	_, igw, _ := write(f, ig)
+	srec, sr := ts.MakeAuthRequest(t, http.MethodDelete, "/api/memories/"+fmt.Sprint(igw.Memory.ID), nil, f, map[string]string{"id": fmt.Sprint(igw.Memory.ID)})
+	ts.HandleDeleteMemory(srec, sr)
+	if _, again, _ := write(f, ig); again.Outcome != "ignored" || again.Memory.Signals != nil {
+		t.Fatalf("ignored write: %q %+v", again.Outcome, again.Memory.Signals)
 	}
 }

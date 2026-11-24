@@ -114,7 +114,7 @@ A server can add two numbers to each memory. `MEMORY_STRENGTH=collect` turns on 
 | `belief` | An evidence score in (0, 1): a Beta-Bernoulli posterior of `confirmed` and `wrong` votes over a prior from the stated `confidence` level. It is not a calibrated probability until feedback labels exist to fit it. |
 | `uses`, `confirmed`, `wrong`, `last_used_at` | The evidence behind the two numbers. |
 
-Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback, and only on an active memory (400 otherwise). If an upsert changed the memory's text after you read it, the answer is 409: read it again before you judge it.
+Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback, and only on an active memory (400 otherwise). Send the `updated_at` of the memory you judged, and the answer is 409 if the memory changed since: read it again before you judge it.
 
 | `signal` | Send it when | Effect |
 |---|---|---|
@@ -127,7 +127,7 @@ Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}`
 The rules:
 
 - **Search is not use.** A memory that search returns gets no signal, or the strong would only get stronger.
-- **Re-rank, never hide.** Strength and belief reorder the memories that relevance found; they never add one. The most relevant memory always stays in the results.
+- **Re-rank, never hide.** Strength and belief reorder the memories that relevance found; they never add one. With a limit of 2 or more, the most relevant memory always stays in the results; a single slot goes to the best combined score.
 - **Evidence survives replays.** A replay from a hub keeps the counters. New text resets the votes, because they judged the old text; the uses stay. Compaction adds a folded copy's counters to the copy it keeps, and does not merge a memory that someone confirmed or used in the last 90 days.
 
 ## Errors
@@ -140,7 +140,7 @@ The rules:
 | 401 | `unauthorized` | Missing or bad credentials. |
 | 403 | `forbidden` | Not yours (for example, a sharee deleting), or not shared with you. |
 | 404 | `not_found` | No such memory you can see. |
-| 409 | `conflict` | Feedback only: the memory's text changed since you read it. |
+| 409 | `conflict` | Feedback only: the memory changed after the `updated_at` you sent. |
 | 413 | `memory_quota_exceeded` | Over quota, as above. |
 
 ## Quick start

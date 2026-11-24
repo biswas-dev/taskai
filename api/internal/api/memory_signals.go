@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -65,7 +64,9 @@ func (s *Server) withSignals(ms []Memory) {
 	}
 	now := time.Now().UTC()
 	for i := range ms {
-		ms[i].Signals = ms[i].signals(now)
+		if ms[i].ID > 0 && ms[i].Status != "compacted" { // a tombstone (an ignored write) has no evidence
+			ms[i].Signals = ms[i].signals(now)
+		}
 	}
 }
 
@@ -157,6 +158,8 @@ func (s *Server) similarMemories(ctx context.Context, mem Memory) []MemorySimila
 // MemoryFeedbackRequest is one signal about a memory.
 type MemoryFeedbackRequest struct {
 	Signal string `json:"signal"` // useful | confirmed | wrong
+	// UpdatedAt, if set, is the updated_at of the memory the caller judged; a changed memory answers 409.
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
 }
 
 // MemoryFeedbackResponse says whether the signal counted.
@@ -198,7 +201,7 @@ func (s *Server) HandleMemoryFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	outcome, saved, err := s.recordMemoryFeedback(ctx, mem, userID, req.Signal, actor, time.Now().UTC().Truncate(time.Second))
+	outcome, saved, err := s.recordMemoryFeedback(ctx, mem.ID, req.UpdatedAt, userID, req.Signal, actor, time.Now().UTC().Truncate(time.Second))
 	switch {
 	case err != nil:
 		s.logger.Error("Failed to record memory feedback", zap.Int64("memory_id", mem.ID), zap.Error(err))
@@ -208,7 +211,7 @@ func (s *Server) HandleMemoryFeedback(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "only an active memory takes feedback", "validation_error")
 		return
 	case outcome == "changed":
-		respondError(w, http.StatusConflict, "the memory changed since you read it; read it again", "conflict")
+		respondError(w, http.StatusConflict, "the memory changed after the updated_at you sent; read it again", "conflict")
 		return
 	}
 	mem = saved
@@ -218,9 +221,10 @@ func (s *Server) HandleMemoryFeedback(w http.ResponseWriter, r *http.Request) {
 
 // recordMemoryFeedback stores the signal and updates the counters in one transaction, under the owner lock that
 // writes, deletes and compaction also take. "confirmed" and "wrong" are votes: one per credential, so a retry or a
-// loop cannot stack them. "useful" is spaced by memoryUseSpacing. The memory must still be active and hold the
-// text the caller read ("inactive" or "changed" otherwise). It returns the memory as committed.
-func (s *Server) recordMemoryFeedback(ctx context.Context, read Memory, ownerID int64, signal, actor string, now time.Time) (string, Memory, error) {
+// loop cannot stack them. "useful" is spaced by memoryUseSpacing. The memory must still be active and unexpired
+// ("inactive") and, if the caller sent the updated_at it judged, unchanged since ("changed"). It returns the memory
+// as committed.
+func (s *Server) recordMemoryFeedback(ctx context.Context, id int64, judged *time.Time, ownerID int64, signal, actor string, now time.Time) (string, Memory, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", Memory{}, err
@@ -229,20 +233,19 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, read Memory, ownerID 
 	if err := s.lockMemoryOwner(ctx, tx, ownerID); err != nil {
 		return "", Memory{}, err
 	}
-	var status, hash string
-	err = tx.QueryRowContext(ctx, `SELECT status, content_hash FROM agent_memories WHERE id = $1`, read.ID).Scan(&status, &hash)
+	cur, err := s.getMemory(ctx, tx, id)
 	switch {
-	case errors.Is(err, sql.ErrNoRows) || err == nil && status != "active":
+	case errors.Is(err, errMemoryAccess) || err == nil && (cur.Status != "active" || cur.ExpiresAt != nil && !cur.ExpiresAt.After(now)):
 		return "inactive", Memory{}, nil
 	case err != nil:
 		return "", Memory{}, err
-	case hash != memoryHash(read):
-		return "changed", Memory{}, nil // an upsert replaced the text: the signal judged the old one
+	case judged != nil && !judged.Equal(cur.UpdatedAt):
+		return "changed", Memory{}, nil // an upsert replaced what the caller judged
 	}
 	outcome := "recorded"
 	if signal == "useful" {
 		res, err := tx.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + 1, last_used_at = $2
-			WHERE id = $1 AND (last_used_at IS NULL OR last_used_at <= $3)`, read.ID, now, now.Add(-memoryUseSpacing))
+			WHERE id = $1 AND (last_used_at IS NULL OR last_used_at <= $3)`, id, now, now.Add(-memoryUseSpacing))
 		if err != nil {
 			return "", Memory{}, err
 		}
@@ -251,13 +254,13 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, read Memory, ownerID 
 		} else if n == 0 {
 			outcome = "spaced"
 		} else if _, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
-			VALUES ($1, $2, $3, $4, $5)`, read.ID, ownerID, signal, actor, now); err != nil {
+			VALUES ($1, $2, $3, $4, $5)`, id, ownerID, signal, actor, now); err != nil {
 			return "", Memory{}, err
 		}
 	} else {
 		res, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
 			VALUES ($1, $2, $3, $4, $5) ON CONFLICT (memory_id, signal, actor) WHERE signal <> 'useful' DO NOTHING`,
-			read.ID, ownerID, signal, actor, now)
+			id, ownerID, signal, actor, now)
 		if err != nil {
 			return "", Memory{}, err
 		}
@@ -266,7 +269,7 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, read Memory, ownerID 
 		} else if n == 0 {
 			outcome = "duplicate"
 		} else {
-			set, args := `wrong_count = wrong_count + 1`, []any{read.ID}
+			set, args := `wrong_count = wrong_count + 1`, []any{id}
 			if signal == "confirmed" {
 				set, args = `use_count = use_count + 1, last_used_at = $2, confirmed_count = confirmed_count + 1`, append(args, now)
 			}
@@ -275,7 +278,7 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, read Memory, ownerID 
 			}
 		}
 	}
-	mem, err := s.getMemory(ctx, tx, read.ID)
+	mem, err := s.getMemory(ctx, tx, id)
 	if err != nil {
 		return "", Memory{}, err
 	}
