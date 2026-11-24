@@ -39,6 +39,7 @@ Over MCP, send `X-API-Key: <key>` to `https://mcp.taskai.cc/mcp`.
 | Share | `GET` / `PUT /api/memories/shares` | `get_memory_shares` / `set_memory_shares` |
 | Usage | `GET /api/memories/usage` | `memory_usage` |
 | Compact | `POST /api/memories/compact` | `compact_memories` |
+| Feedback (optional) | `POST /api/memories/{id}/feedback` | `memory_feedback` |
 
 ### Write and idempotency
 
@@ -102,6 +103,30 @@ Each user has 1 GiB by default; an admin can change it per user (`PUT /api/admin
 Similar text that isn't an exact copy is never merged: "Use X" and "Do not use X" overlap almost entirely. To replace a lesson, supersede it.
 
 Removed rows that have an origin leave a tombstone, so a client re-sending them gets `ignored`.
+
+## Strength and confidence (optional)
+
+A server with `MEMORY_STRENGTH=on` adds two numbers to each memory and uses them to order search results. They are additive: the protocol version stays `1`, and clients that do not know them ignore them. The evidence and the eval behind them are in [research/memory-strength.md](research/memory-strength.md).
+
+| Field (`signals`) | Meaning |
+|---|---|
+| `strength` | How much a memory is in use: ACT-R base-level activation, from its uses and how recent they are. It decays with time. The write counts as the first use. |
+| `confidence` | The probability that the memory is right: a Beta-Bernoulli posterior of `confirmed` and `wrong` votes over a prior from the stated `confidence` level. |
+| `uses`, `confirmed`, `wrong`, `last_used_at` | The evidence behind the two numbers. |
+
+Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback.
+
+| `signal` | Send it when | Effect |
+|---|---|---|
+| `useful` | The memory helped the task you did. | One more use. Counted at most once an hour per memory (`spaced`). |
+| `confirmed` | You checked that it is still true. | One more use and one confirmation. One vote per credential (`duplicate`). |
+| `wrong` | It is false or outdated. | One wrong vote. One vote per credential. Supersede it if you know the new value. |
+
+The rules:
+
+- **Search is not use.** A memory that search returns gets no signal, or the strong would only get stronger.
+- **Re-rank, never hide.** Strength and confidence reorder the memories that relevance found; they never add one. The most relevant memory always stays in the results.
+- **Evidence survives upserts.** A replay from a hub replaces the content, never the counters. Compaction adds a folded copy's counters to the copy it keeps, and does not merge a memory that someone confirmed or used in the last 90 days.
 
 ## Errors
 

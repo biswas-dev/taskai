@@ -90,6 +90,8 @@ func (f *fakeAPI) handler(t *testing.T) http.Handler {
 			reply(map[string]any{"shared_with": []any{}, "shared_with_me": []any{}})
 		case r.URL.Path == "/api/memories/6" && r.Method == "GET":
 			reply(map[string]any{"id": 6})
+		case r.URL.Path == "/api/memories/6/feedback" && r.Method == "POST":
+			reply(map[string]any{"outcome": "recorded", "memory": map[string]any{"id": 6}})
 		case r.URL.Path == "/api/memories/6" && r.Method == "DELETE":
 			w.WriteHeader(http.StatusNoContent)
 		case r.URL.Path == "/api/memories/usage" || r.URL.Path == "/api/memories/compact":
@@ -210,7 +212,7 @@ func TestToolListMatchesTheNodeServer(t *testing.T) {
 		add_dependency remove_dependency health_check list_project_members add_project_member get_wiki_sharing update_wiki_sharing
 		list_meetings get_meeting create_meeting update_meeting
 		search_memories list_memories write_memory supersede_memory delete_memory memory_usage compact_memories
-		get_memory get_memory_shares set_memory_shares`)
+		get_memory get_memory_shares set_memory_shares memory_feedback`)
 	have := map[string]bool{}
 	for _, n := range names {
 		have[n] = true
@@ -407,6 +409,10 @@ func TestMemoryListDeleteUsageCompact(t *testing.T) {
 	call(t, h, key, "set_memory_shares", map[string]any{"user_ids": []int64{4}})
 	if req := api.last("/api/memories/shares"); req.Method != http.MethodPut || fmt.Sprint(req.Body["user_ids"]) != "[4]" {
 		t.Fatalf("set shares: %+v", req)
+	}
+	call(t, h, key, "memory_feedback", map[string]any{"memory_id": "6", "signal": "confirmed"})
+	if req := api.last("/api/memories/6/feedback"); req.Method != http.MethodPost || req.Body["signal"] != "confirmed" {
+		t.Fatalf("feedback: %+v", req)
 	}
 	call(t, h, key, "memory_usage", map[string]any{})
 	call(t, h, key, "compact_memories", map[string]any{})
