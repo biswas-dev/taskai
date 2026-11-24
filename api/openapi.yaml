@@ -1690,6 +1690,12 @@ paths:
                 properties:
                   memory: {$ref: "#/components/schemas/Memory"}
                   outcome: {type: string, enum: [recorded, duplicate, spaced]}
+        "409":
+          description: The memory's text changed since it was read; read it again before you judge it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "400":
           description: Invalid request
           content:

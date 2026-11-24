@@ -114,7 +114,7 @@ A server can add two numbers to each memory. `MEMORY_STRENGTH=collect` turns on 
 | `belief` | An evidence score in (0, 1): a Beta-Bernoulli posterior of `confirmed` and `wrong` votes over a prior from the stated `confidence` level. It is not a calibrated probability until feedback labels exist to fit it. |
 | `uses`, `confirmed`, `wrong`, `last_used_at` | The evidence behind the two numbers. |
 
-Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback.
+Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback, and only on an active memory (400 otherwise). If an upsert changed the memory's text after you read it, the answer is 409: read it again before you judge it.
 
 | `signal` | Send it when | Effect |
 |---|---|---|
@@ -140,6 +140,7 @@ The rules:
 | 401 | `unauthorized` | Missing or bad credentials. |
 | 403 | `forbidden` | Not yours (for example, a sharee deleting), or not shared with you. |
 | 404 | `not_found` | No such memory you can see. |
+| 409 | `conflict` | Feedback only: the memory's text changed since you read it. |
 | 413 | `memory_quota_exceeded` | Over quota, as above. |
 
 ## Quick start
