@@ -9,8 +9,8 @@ The question: is a flat memory store useful, or must each memory get a strength 
 The recommendation, in five lines:
 
 1. Keep the flat store and its hybrid search. It finds the right memory (recall@10 0.94 in our synthetic world). The errors are in the order of the results, and most are **stale** memories.
-2. Fix staleness first. A store that shows the writer **similar older memories on write**, so the writer can supersede them, raised hit@1 from 0.748 to 0.794 with no feedback at all. An oracle that supersedes every update reaches 0.838.
-3. Strength plus belief, as a bounded re-rank, add about 4.5 hit@1 points with good feedback (better on 5 of 5 seeds), about 2 points with noisy feedback, and about 2 more on top of similar-on-write. They help most when the same facts are asked again and again. Without feedback, strength is recency. On LongMemEval, recency puts the newest of two answer sessions first in 81% of knowledge-update questions (flat: 53%). The cost is 0.9 hit@1 points on all questions, and 2.3 points on known-item queries in a real store.
+2. Fix staleness first. A store that shows the writer **similar older memories on write**, so the writer can supersede them, raised hit@1 from 0.748 to 0.772-0.794 with no feedback at all. The result depends on how often the writer acts (50% to 90%; threshold 0.80; one grid, run on the test seeds). An oracle that supersedes every update reaches 0.838.
+3. Strength plus belief, as a bounded re-rank, add about 4.5 hit@1 points with good feedback (better on 5 of 5 seeds), about 2 points with noisy feedback, and about 2 more on top of similar-on-write. They help most when the same facts are asked again and again. Without feedback, strength is recency. On LongMemEval, recency puts the newest of two answer sessions first in 58 of 72 knowledge-update questions (flat: 38 of 72). The cost is 2 of 222 questions at rank 1 overall, and 24 of 1,026 known-item queries in a real store.
 4. The belief score is **not calibrated** without labels (ECE 0.114). Platt scaling on labelled feedback brings it to 0.035, but only when the feedback behaves as in training (0.092 under a shift).
 5. Ship similar-on-write and the feedback counters first: they are cheap and they collect the labels. Turn the re-rank on only after real feedback confirms a gain.
 
@@ -18,8 +18,8 @@ The recommendation, in five lines:
 |---|---|---|---|
 | Flat (current search) | 0.748 | 0.826 | 10.7% |
 | + strength and belief re-rank | 0.793 | 0.851 | 8.0% |
-| + similar on write (writer acts 90%) | 0.794 | — | 5.6% |
-| + both of the above | 0.816 | — | 4.3% |
+| + similar on write (writer acts 50% / 90%) | 0.772 / 0.794 | — | 8.0% / 5.6% |
+| + both of the above (writer acts 90%) | 0.816 | — | 4.3% |
 | Oracle supersede (upper bound) | 0.838 | 0.880 | 1.0% |
 
 The server ranking equals the eval's ranking on 2,922 of 2,922 queries, and adds no measurable latency (p50 49 ms).
@@ -54,12 +54,12 @@ All parts are behind `MEMORY_STRENGTH`. With the flag off (the default), the API
 |---|---|---|
 | Strength | ACT-R base-level activation with Petrov's (2006) hybrid approximation at k = 1: the last use is exact, and the older uses are assumed evenly spread between the write and the last use. d = 0.5, time in days, minimum age 1 hour. The write counts as the first use. | Evidence above. Three columns (`use_count`, `last_used_at`, `created_at`) and no use log are enough. |
 | Belief | Beta-Bernoulli posterior (confirmed + a·2)/(confirmed + wrong + 2), with a = 0.6 / 0.7 / 0.8 for stated low / medium / high. | The smallest evidence model. Named `belief`, not `confidence`, because it is not calibrated. |
-| Feedback | `POST /api/memories/{id}/feedback {useful \| confirmed \| wrong}`, MCP `memory_feedback`. Owner only, active memories only. | The only source of signal. Search results never count as use. |
+| Feedback | `POST /api/memories/{id}/feedback {signal, updated_at?}` with signal `useful`, `confirmed` or `wrong`; MCP `memory_feedback`. Owner only; active, unexpired memories only. An optional `updated_at` (from `get_memory` or the REST memory) makes a changed memory answer 409. | The only source of signal. Search results never count as use. |
 | Staged flag | `MEMORY_STRENGTH=off` (default), `collect` (feedback, signals, similar-on-write; flat search) or `on` (also the re-rank). | Lets the store collect labels before the re-rank changes any result. |
 | Vote rules | `confirmed` and `wrong`: one vote per memory, signal and credential. `useful`: at most once an hour per memory. New text resets the votes and keeps the uses. A replay keeps everything. | Stops loops and retries from stacking votes. Votes judged the old text. |
 | Re-rank | Search fetches a pool of at least 50 relevance candidates and adds strength and belief as two extra RRF legs with weights 0.5 and 0.25. With a limit of 2 or more, the most relevant candidate always stays in the results; a single slot goes to the best combined score. | Bounded: a signal can reorder relevant memories, never add an irrelevant one or hide the best match. |
 | Similar on write | A write that creates or changes a memory returns up to 3 active memories of the same repo with cosine ≥ 0.80. | The cheapest measured fix for stale results. Nothing is merged automatically. |
-| Compaction | A folded copy's feedback rows move to the kept copy (still one vote per credential) and its counters are recounted. A memory that was confirmed, or used in the last 90 days, is not merged into a low-confidence summary. | Compaction must not lose evidence or bury memories in use. |
+| Compaction | A folded copy's feedback rows move to the kept copy (still one vote per credential) and its counters are recounted. A memory with any vote (confirmed or wrong), or used in the last 90 days, is not merged into a low-confidence summary. | Compaction must not lose evidence or bury memories in use. |
 
 Storage: four integer/timestamp columns (about 24 bytes per memory) and one `memory_feedback` row per signal.
 
@@ -297,6 +297,9 @@ Search latency on the same queries is p50 49 ms and p95 321 ms with `on`, and p5
 - The SQLite path of similar-on-write (it is off there by design).
 - The re-rank tie rule and the single-slot rule changed after the eval runs (from the second cross-review). The eval used limits of 10 and 50, where the change matters only at exact relevance ties, so we did not rerun it.
 - Concurrent feedback and compaction: the owner lock orders them, but no test runs them in parallel.
+- Measurements older than the last fixes: the parity check (2,922/2,922) and the similar check (36/40) ran before the re-rank tie rules changed and before similar-on-write stored its vector. In the similar check, the truth set included earlier probes that had no vector yet, so 36/40 probably understates the match.
+- CI does not run the Postgres tests (`TEST_POSTGRES_DSN` is not set there); they ran on a local pgvector database.
+- Whether `memory_feedback` rows count toward the quota: they do not today.
 
 ## 7. Suggested go-draw diagrams for the blog post
 
