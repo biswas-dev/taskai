@@ -858,6 +858,11 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("%d rows after import + hub upsert, want 1", all)
 		}
 	})
+
+	t.Run("strength and belief behind MEMORY_STRENGTH", func(t *testing.T) {
+		testMemorySignals(t, ts, memoryKit{user: user, write: write, mem: mem, get: get, search: search, compact: compact,
+			friend: friend, outsider: outsider})
+	})
 }
 
 func TestChunkMemories(t *testing.T) {

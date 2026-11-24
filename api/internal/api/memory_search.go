@@ -117,26 +117,36 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 	} else if mode == "" {
 		mode = "hybrid"
 	}
+	// With strength on, fetch a wider pool of relevant candidates and re-rank it (memory_signals.go).
+	fetch := req.Limit
+	if s.memoryRerank() {
+		fetch = min(max(req.Limit*3, 50), 150) // the eval tuned the weights on a pool of 50
+	}
 	var results []Memory
 	if mode == "hybrid" {
-		results, err = s.searchMemoriesHybrid(ctx, f, req.Query, words, req.Limit)
+		results, err = s.searchMemoriesHybrid(ctx, f, req.Query, words, fetch)
 		if errors.Is(err, errNoQueryVector) {
 			mode = "fts"
 		}
 	}
 	if mode == "fts" {
-		results, err = s.searchMemoriesFTS(ctx, f, words, req.Limit)
+		results, err = s.searchMemoriesFTS(ctx, f, words, fetch)
 		if err == nil && len(results) == 0 {
 			mode = "keyword" // partial words
 		}
 	}
 	if mode == "keyword" {
-		results, err = s.searchMemoriesKeyword(ctx, f, words, req.Limit)
+		results, err = s.searchMemoriesKeyword(ctx, f, words, fetch)
 	}
 	if err != nil {
 		s.logger.Error("Failed to search memories", zap.Int64("user_id", userID), zap.String("mode", mode), zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to search memories", "internal_error")
 		return
+	}
+	if s.memoryRerank() {
+		results = rerankMemories(results, req.Limit, time.Now().UTC())
+	} else {
+		s.withSignals(results)
 	}
 	respondJSON(w, http.StatusOK, MemorySearchResponse{Results: results, Total: len(results), Mode: mode})
 }

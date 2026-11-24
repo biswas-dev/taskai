@@ -39,6 +39,7 @@ Over MCP, send `X-API-Key: <key>` to `https://mcp.taskai.cc/mcp`.
 | Share | `GET` / `PUT /api/memories/shares` | `get_memory_shares` / `set_memory_shares` |
 | Usage | `GET /api/memories/usage` | `memory_usage` |
 | Compact | `POST /api/memories/compact` | `compact_memories` |
+| Feedback (optional) | `POST /api/memories/{id}/feedback` | `memory_feedback` |
 
 ### Write and idempotency
 
@@ -103,6 +104,32 @@ Similar text that isn't an exact copy is never merged: "Use X" and "Do not use X
 
 Removed rows that have an origin leave a tombstone, so a client re-sending them gets `ignored`.
 
+## Strength and belief (optional)
+
+A server can add two numbers to each memory. `MEMORY_STRENGTH=collect` turns on the numbers, feedback and similar-on-write, and keeps search in relevance order. `MEMORY_STRENGTH=on` also uses the numbers to order search results. The default is `off`. They are additive: the protocol version stays `1`, and clients that do not know them ignore them. The evidence and the eval behind them are in [research/memory-strength.md](research/memory-strength.md).
+
+| Field (`signals`) | Meaning |
+|---|---|
+| `strength` | How much a memory is in use: ACT-R base-level activation, from its uses and how recent they are. The write counts as the first use. For `fact`, `decision` and `handoff` it decays with time, because they describe a state that changes. A `gotcha` or `runbook` ranks as a 30-day-old memory that does not age further; only its uses raise it. |
+| `belief` | An evidence score in (0, 1): a Beta-Bernoulli posterior of `confirmed` and `wrong` votes over a prior from the stated `confidence` level. It is not a calibrated probability until feedback labels exist to fit it. |
+| `uses`, `confirmed`, `wrong`, `last_used_at` | The evidence behind the two numbers. |
+
+Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback, and only on an active, unexpired memory (400 otherwise). Send the `updated_at` of the memory you judged (from `GET /api/memories/{id}` or `get_memory`; trimmed MCP search results leave it out), and the answer is 409 if the memory changed since: read it again before you judge it. The check has a resolution of one second.
+
+| `signal` | Send it when | Effect |
+|---|---|---|
+| `useful` | The memory helped the task you did. | One more use. Counted at most once an hour per memory (`spaced`). Stored as a counter only, so it adds no storage. |
+| `confirmed` | You checked that it is still true. | One more use and one confirmation. One vote per credential (`duplicate`). |
+| `wrong` | It is false or outdated. | One wrong vote. One vote per credential. Supersede it if you know the new value. |
+
+**Similar on write.** With `collect` or `on` (Postgres with embeddings), a write that creates or changes a memory answers with `similar`: up to 3 active memories of the same repo whose text is close (cosine 0.80 or more). They may say the same thing or the opposite. If the new memory replaces one of them, supersede it. The store never merges or changes them by itself.
+
+The rules:
+
+- **Search is not use.** A memory that search returns gets no signal, or the strong would only get stronger.
+- **Re-rank, never hide.** Strength and belief reorder the memories that relevance found; they never add one. With a limit of 2 or more, the most relevant memory always stays in the results; a single slot goes to the best combined score.
+- **Evidence survives replays.** A replay from a hub keeps the counters. New text resets the votes, because they judged the old text; the uses stay. Compaction moves a folded copy's votes to the copy it keeps (still one vote per credential), and does not merge a memory that has any vote or was used in the last 90 days.
+
 ## Errors
 
 `{"error": "human readable", "code": "machine_code"}`:
@@ -113,6 +140,7 @@ Removed rows that have an origin leave a tombstone, so a client re-sending them 
 | 401 | `unauthorized` | Missing or bad credentials. |
 | 403 | `forbidden` | Not yours (for example, a sharee deleting), or not shared with you. |
 | 404 | `not_found` | No such memory you can see. |
+| 409 | `conflict` | Feedback only: the memory changed after the `updated_at` you sent. |
 | 413 | `memory_quota_exceeded` | Over quota, as above. |
 
 ## Quick start
