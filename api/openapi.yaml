@@ -4624,7 +4624,7 @@ components:
           type: object
           description: Only with MEMORY_STRENGTH collect or on. Clients that do not know it ignore it.
           properties:
-            strength: {type: number, description: "ACT-R base-level activation; higher is stronger, about 1.6 when just written"}
+            strength: {type: number, description: "ACT-R base-level activation; higher is stronger, about 1.6 when just written. Decays with age for fact, decision and handoff only."}
             belief: {type: number, description: "Evidence score in (0,1) from the stated confidence level and the confirmed/wrong votes. Not calibrated."}
             uses: {type: integer, description: The write counts as the first use}
             confirmed: {type: integer}

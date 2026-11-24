@@ -8,9 +8,8 @@ CREATE TABLE IF NOT EXISTS memory_feedback (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     memory_id  INTEGER NOT NULL REFERENCES agent_memories(id) ON DELETE CASCADE,
     owner_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    signal     TEXT NOT NULL CHECK (signal IN ('useful', 'confirmed', 'wrong')),
+    signal     TEXT NOT NULL CHECK (signal IN ('confirmed', 'wrong')),
     actor      TEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_feedback_vote ON memory_feedback(memory_id, signal, actor) WHERE signal <> 'useful';
-CREATE INDEX IF NOT EXISTS idx_memory_feedback_memory ON memory_feedback(memory_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_feedback_vote ON memory_feedback(memory_id, signal, actor);

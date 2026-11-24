@@ -225,8 +225,8 @@ func foldMemoryUse(ctx context.Context, q sqlQuerier, keepID int64, gone Memory)
 	if gone.use.count <= 1 && gone.use.confirmed == 0 && gone.use.wrong == 0 {
 		return nil
 	}
-	if _, err := q.ExecContext(ctx, `UPDATE memory_feedback SET memory_id = $1 WHERE memory_id = $2 AND (signal = 'useful'
-		OR NOT EXISTS (SELECT 1 FROM memory_feedback k WHERE k.memory_id = $1 AND k.signal = memory_feedback.signal AND k.actor = memory_feedback.actor))`,
+	if _, err := q.ExecContext(ctx, `UPDATE memory_feedback SET memory_id = $1 WHERE memory_id = $2
+		AND NOT EXISTS (SELECT 1 FROM memory_feedback k WHERE k.memory_id = $1 AND k.signal = memory_feedback.signal AND k.actor = memory_feedback.actor)`,
 		keepID, gone.ID); err != nil {
 		return err
 	}

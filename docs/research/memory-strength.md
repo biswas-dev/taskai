@@ -52,10 +52,11 @@ All parts are behind `MEMORY_STRENGTH`. With the flag off (the default), the API
 
 | Part | What it does | Why |
 |---|---|---|
-| Strength | ACT-R base-level activation with Petrov's (2006) hybrid approximation at k = 1: the last use is exact, and the older uses are assumed evenly spread between the write and the last use. d = 0.5, time in days, minimum age 1 hour. The write counts as the first use. | Evidence above. Three columns (`use_count`, `last_used_at`, `created_at`) and no use log are enough. |
+| Strength | For `fact`, `decision` and `handoff` (owner decision, 2026-11-24, after the recency results in 3.4 and 3.5): ACT-R base-level activation with Petrov's (2006) hybrid approximation at k = 1: the last use is exact, and the older uses are assumed evenly spread between the write and the last use. d = 0.5, time in days, minimum age 1 hour. The write counts as the first use. | Evidence above. Three columns (`use_count`, `last_used_at`, `created_at`) and no use log are enough. |
+| Steady strength | For `gotcha` and `runbook`: ln(uses) + the strength of a new memory. Age does not lower it. | These lessons stay true until superseded; age-based strength cost 24 of 1,026 known-item searches in the real store. |
 | Belief | Beta-Bernoulli posterior (confirmed + a·2)/(confirmed + wrong + 2), with a = 0.6 / 0.7 / 0.8 for stated low / medium / high. | The smallest evidence model. Named `belief`, not `confidence`, because it is not calibrated. |
 | Feedback | `POST /api/memories/{id}/feedback {signal, updated_at?}` with signal `useful`, `confirmed` or `wrong`; MCP `memory_feedback`. Owner only; active, unexpired memories only. An optional `updated_at` (from `get_memory` or the REST memory) makes a changed memory answer 409. | The only source of signal. Search results never count as use. |
-| Staged flag | `MEMORY_STRENGTH=off` (default), `collect` (feedback, signals, similar-on-write; flat search) or `on` (also the re-rank). | Lets the store collect labels before the re-rank changes any result. |
+| Staged flag | `MEMORY_STRENGTH=off` (code default), `collect` (feedback, signals, similar-on-write; flat search; the `docker-compose.yml` default) or `on` (also the re-rank). | Lets the store collect labels before the re-rank changes any result. |
 | Vote rules | `confirmed` and `wrong`: one vote per memory, signal and credential. `useful`: at most once an hour per memory. New text resets the votes and keeps the uses. A replay keeps everything. | Stops loops and retries from stacking votes. Votes judged the old text. |
 | Re-rank | Search fetches a pool of at least 50 relevance candidates and adds strength and belief as two extra RRF legs with weights 0.5 and 0.25. With a limit of 2 or more, the most relevant candidate always stays in the results; a single slot goes to the best combined score. | Bounded: a signal can reorder relevant memories, never add an irrelevant one or hide the best match. |
 | Similar on write | A write that creates or changes a memory returns up to 3 active memories of the same repo with cosine ≥ 0.80. | The cheapest measured fix for stale results. Nothing is merged automatically. |
@@ -262,16 +263,15 @@ The parity suite runs on a local API with `MEMORY_STRENGTH=on` and no feedback. 
 
 Search latency on the same queries is p50 49 ms and p95 321 ms with `on`, and p50 48 ms and p95 about 450 ms with flat search. The re-rank adds no latency that we can measure; the p95 is noise from the local machine. Every suite stayed far inside the 4 s context budget.
 
-**Storage.** Four columns (about 24 bytes) per memory, against a median memory of about 3.5 KB including its vector (under 1%). Each signal adds one `memory_feedback` row of about 60 bytes.
+**Storage.** Four columns (about 24 bytes) per memory, against a median memory of about 3.5 KB including its vector (under 1%). Each `confirmed` or `wrong` vote adds one `memory_feedback` row of about 60 bytes, at most one per memory, signal and credential. A `useful` signal only updates two columns, so repeated use adds no storage (owner decision, 2026-11-24).
 
 
 ## 4. Recommendation
 
-1. **Now**: set `MEMORY_STRENGTH=collect` (similar-on-write, feedback and signals; search stays flat). Teach the agents (hub, MCP clients) to send `useful` for a memory they used and `wrong` for one they found false, and to supersede what `similar` shows.
+1. **Now** (owner decision, 2026-11-24): `MEMORY_STRENGTH=collect` on every environment, as the default in `docker-compose.yml` (similar-on-write, feedback and signals; search stays flat). Similar-on-write needs embeddings, so it works only where `OLLAMA_URL` is set. Teach the agents (hub, MCP clients) to send `useful` for a memory they used and `wrong` for one they found false, and to supersede what `similar` shows.
 2. **After about 500 labelled signals**: rerun this eval on real feedback (hit@1 on queries whose answer the agent marked). Turn the re-rank on if it beats flat by more than the seed noise (about 2 points). Fit Platt on the labels before any client treats `belief` as a probability.
 3. **Keep**: flat store, hybrid RRF, verbatim compaction, explicit supersede.
 4. **Next research**:
-   - Apply recency only to kinds that change, such as facts and decisions about current state. On LongMemEval, recency fixes the order of updated facts. On the real store, it costs 2.3 points for old memories that users look for by their words.
    - Client-side citation reports, as an automatic `useful`.
    - Bi-temporal valid time on supersede.
    - An NLI check on similar-on-write candidates, if writers ignore them or if near-copies drown them.

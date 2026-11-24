@@ -45,13 +45,22 @@ func (s *Server) memoryCollect() bool {
 // memoryRerank: search is re-ranked by strength and belief (MEMORY_STRENGTH=on).
 func (s *Server) memoryRerank() bool { return s.config.MemoryStrength == "on" }
 
+// memoryAging are the kinds whose strength decays with age: they describe a state that changes. A gotcha or a
+// runbook stays true until superseded, so its strength counts uses only (owner decision, 2026-11-24; on
+// LongMemEval, age fixed the order of updated facts but cost 24 of 1,026 known-item searches in a real store).
+var memoryAging = map[string]bool{"fact": true, "decision": true, "handoff": true}
+
 func (m Memory) signals(now time.Time) *MemorySignals {
 	last := m.CreatedAt
 	if m.use.lastUsed != nil {
 		last = *m.use.lastUsed
 	}
+	strength := memrank.SteadyStrength(m.use.count)
+	if memoryAging[m.Kind] {
+		strength = memrank.Strength(memrank.Use{Created: m.CreatedAt, Uses: m.use.count, LastUsed: last}, now)
+	}
 	return &MemorySignals{
-		Strength: memrank.Strength(memrank.Use{Created: m.CreatedAt, Uses: m.use.count, LastUsed: last}, now),
+		Strength: strength,
 		Belief:   memrank.Confidence(memrank.Evidence{Prior: memrank.Prior(m.Confidence), Confirmed: float64(m.use.confirmed), Wrong: float64(m.use.wrong)}),
 		Uses:     m.use.count, Confirmed: m.use.confirmed, Wrong: m.use.wrong, LastUsedAt: m.use.lastUsed,
 	}
@@ -93,7 +102,7 @@ func resetMemoryVotes(ctx context.Context, q sqlQuerier, id int64) error {
 	if _, err := q.ExecContext(ctx, `UPDATE agent_memories SET confirmed_count = 0, wrong_count = 0 WHERE id = $1`, id); err != nil {
 		return err
 	}
-	_, err := q.ExecContext(ctx, `DELETE FROM memory_feedback WHERE memory_id = $1 AND signal <> 'useful'`, id)
+	_, err := q.ExecContext(ctx, `DELETE FROM memory_feedback WHERE memory_id = $1`, id)
 	return err
 }
 
@@ -245,7 +254,7 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, id int64, judged *tim
 		return "changed", Memory{}, nil // an upsert replaced what the caller judged
 	}
 	outcome := "recorded"
-	if signal == "useful" {
+	if signal == "useful" { // a counter only: no row, so repeated use cannot grow storage
 		res, err := tx.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + 1, last_used_at = $2
 			WHERE id = $1 AND (last_used_at IS NULL OR last_used_at <= $3)`, id, now, now.Add(-memoryUseSpacing))
 		if err != nil {
@@ -255,13 +264,10 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, id int64, judged *tim
 			return "", Memory{}, err
 		} else if n == 0 {
 			outcome = "spaced"
-		} else if _, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
-			VALUES ($1, $2, $3, $4, $5)`, id, ownerID, signal, actor, now); err != nil {
-			return "", Memory{}, err
 		}
 	} else {
 		res, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
-			VALUES ($1, $2, $3, $4, $5) ON CONFLICT (memory_id, signal, actor) WHERE signal <> 'useful' DO NOTHING`,
+			VALUES ($1, $2, $3, $4, $5) ON CONFLICT (memory_id, signal, actor) DO NOTHING`,
 			id, ownerID, signal, actor, now)
 		if err != nil {
 			return "", Memory{}, err

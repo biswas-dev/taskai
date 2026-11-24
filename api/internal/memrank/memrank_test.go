@@ -49,6 +49,15 @@ func TestStrength(t *testing.T) {
 	}
 }
 
+func TestSteadyStrength(t *testing.T) {
+	if got, want := SteadyStrength(1), Strength(Use{t0, 1, t0}, t0); math.Abs(got-want) > 1e-9 {
+		t.Fatalf("an unused steady memory is as strong as a new one: %v, want %v", got, want)
+	}
+	if !(SteadyStrength(4) > SteadyStrength(1)) || SteadyStrength(0) != SteadyStrength(1) {
+		t.Fatal("uses raise steady strength; 0 uses count as the write")
+	}
+}
+
 func TestConfidence(t *testing.T) {
 	tests := []struct {
 		name string

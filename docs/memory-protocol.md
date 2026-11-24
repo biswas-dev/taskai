@@ -110,7 +110,7 @@ A server can add two numbers to each memory. `MEMORY_STRENGTH=collect` turns on 
 
 | Field (`signals`) | Meaning |
 |---|---|
-| `strength` | How much a memory is in use: ACT-R base-level activation, from its uses and how recent they are. It decays with time. The write counts as the first use. |
+| `strength` | How much a memory is in use: ACT-R base-level activation, from its uses and how recent they are. The write counts as the first use. For `fact`, `decision` and `handoff` it decays with time, because they describe a state that changes. A `gotcha` or `runbook` does not lose strength with age; only its uses raise it. |
 | `belief` | An evidence score in (0, 1): a Beta-Bernoulli posterior of `confirmed` and `wrong` votes over a prior from the stated `confidence` level. It is not a calibrated probability until feedback labels exist to fit it. |
 | `uses`, `confirmed`, `wrong`, `last_used_at` | The evidence behind the two numbers. |
 
@@ -118,7 +118,7 @@ Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}`
 
 | `signal` | Send it when | Effect |
 |---|---|---|
-| `useful` | The memory helped the task you did. | One more use. Counted at most once an hour per memory (`spaced`). |
+| `useful` | The memory helped the task you did. | One more use. Counted at most once an hour per memory (`spaced`). Stored as a counter only, so it adds no storage. |
 | `confirmed` | You checked that it is still true. | One more use and one confirmation. One vote per credential (`duplicate`). |
 | `wrong` | It is false or outdated. | One wrong vote. One vote per credential. Supersede it if you know the new value. |
 

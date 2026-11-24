@@ -353,4 +353,29 @@ func testMemorySignals(t *testing.T, ts *TestServer, k memoryKit) {
 	if _, again, _ := write(f, ig); again.Outcome != "ignored" || again.Memory.Signals != nil {
 		t.Fatalf("ignored write: %q %+v", again.Outcome, again.Memory.Signals)
 	}
+
+	// Age lowers the strength of facts, decisions and handoffs only; a useful signal is a counter, not a row.
+	kinds := user("signals-kinds")
+	longAgo := time.Now().UTC().Add(-100 * 24 * time.Hour)
+	strengthOf := func(kind string) MemorySignals {
+		r := mem("Kind "+kind, "An old "+kind+" about the build")
+		r.Kind, r.CreatedAt = kind, &longAgo
+		_, w, _ := write(kinds, r)
+		_, m := get(kinds, w.Memory.ID)
+		return *m.Signals
+	}
+	if g := strengthOf("gotcha"); g.Strength != memrank.SteadyStrength(1) {
+		t.Fatalf("an old gotcha keeps the strength of a new memory: %v", g.Strength)
+	}
+	if f := strengthOf("fact"); !(f.Strength < memrank.SteadyStrength(1)) {
+		t.Fatalf("an old fact loses strength with age: %v", f.Strength)
+	}
+	_, used, _ := write(kinds, mem("Used once", "A memory that helped a task"))
+	if _, resp := feedback(kinds, used.Memory.ID, "useful"); resp.Outcome != "recorded" || resp.Memory.Signals.Uses != 2 {
+		t.Fatalf("useful: %q %+v", resp.Outcome, resp.Memory.Signals)
+	}
+	var rows int
+	if err := ts.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_feedback WHERE memory_id = $1`, used.Memory.ID).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("a useful signal must not add a row: %d %v", rows, err)
+	}
 }
