@@ -33,6 +33,17 @@ func TestStrength(t *testing.T) {
 	if got, want := Strength(Use{t0, 3, t0}, t0.Add(4*day)), math.Log(3)-0.5*math.Log(4); math.Abs(got-want) > 1e-9 {
 		t.Fatalf("massed uses: got %v want %v", got, want)
 	}
+	// Evenly spaced uses are the case the approximation assumes: it must stay close to the exact sum.
+	for _, n := range []int{2, 5, 10, 50} {
+		now := t0.Add(time.Duration(n) * day)
+		exact := 0.0
+		for j := range n { // uses on days 0 .. n-1, so ages 1 .. n days
+			exact += math.Pow(float64(n-j), -Decay)
+		}
+		if got := Strength(Use{t0, n, t0.Add(time.Duration(n-1) * day)}, now); math.Abs(got-math.Log(exact)) > 0.1 {
+			t.Fatalf("n=%d: approximation %v, exact %v", n, got, math.Log(exact))
+		}
+	}
 	if s := Strength(Use{t0, 1, t0}, t0); math.IsInf(s, 0) || math.IsNaN(s) {
 		t.Fatalf("a memory used now must be finite, got %v", s)
 	}

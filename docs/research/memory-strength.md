@@ -34,7 +34,7 @@ The full literature report, with a primary source for each claim, is [memory-str
 
 **Flat and verbatim stores do well.** In Mem0's own LoCoMo harness, full context (J 72.90) beat every memory system, and the flat Mem0 (66.88) came within 1.6 points of its graph variant ([Mem0](https://arxiv.org/html/2504.19413)). Agents that keep raw episodes doubled the accuracy of agents forced to consolidate ([Zhang et al. 2026](https://arxiv.org/abs/2605.12978)). This supports our rule that compaction never merges similar text.
 
-**The measured failures are stale and conflicting facts.** Systems omit most updates (52-98% omission on HaluMem) and rarely invent them (below 1.2%) ([HaluMem](https://arxiv.org/html/2511.03506v2)). Reader models follow stale notes (reliance 0.92-1.00), and resolving the conflict before the model reads gives near-ceiling accuracy ([Memory Trust Gap](https://arxiv.org/abs/2609.01852)). A plain last-write-wins rule solves 80.25% of MemoryAgentBench FactConsolidation ([arXiv 2610.09193](https://arxiv.org/pdf/2610.09193)). Zep invalidates old edges with validity intervals ([Zep](https://arxiv.org/html/2501.13956)).
+**The measured failures are stale and conflicting facts.** Systems omit most updates (52-98% omission on HaluMem) and rarely invent them (below 1.2%) ([HaluMem](https://arxiv.org/html/2511.03506v2)). Reader models follow stale notes (reliance 0.92-1.00 on the paper's benefit suite), and resolving the conflict before the model reads gives near-ceiling accuracy ([Memory Trust Gap](https://arxiv.org/abs/2609.01852)). A frozen last-write-wins rule answers 80.25% of MemoryAgentBench FactConsolidation questions (74.5% on held-out lists) ([arXiv 2610.09193](https://arxiv.org/pdf/2610.09193)). Zep invalidates old edges with validity intervals ([Zep](https://arxiv.org/html/2501.13956)).
 
 **ACT-R strength has evidence, but outside agent memory.** Base-level activation B = ln(Σ t_j^-d), d = 0.5, follows the statistics of need in the environment ([Anderson & Schooler 1991](https://dyurovsky.github.io/learning-humans-machines/class/13-class/papers/anderson1991.pdf)). On hashtag reuse it beat recency-only by about 3-5% and frequency-only by about 9-42% ([Kowald et al. 2017](https://ar5iv.arxiv.org/html/1701.01276)). Spaced uses count more than massed uses ([Pavlik & Anderson 2005](https://kilthub.cmu.edu/articles/journal_contribution/Practice_and_Forgetting_Effects_on_Vocabulary_Memory_An_Activation-Based_Model_of_the_Spacing_Effect/6617648)). FSRS and Half-Life Regression need a graded outcome per review, which a memory store does not have ([srs-benchmark](https://github.com/open-spaced-repetition/srs-benchmark), [Settles & Meeder 2016](https://aclanthology.org/P16-1174.pdf)).
 
@@ -52,7 +52,7 @@ All parts are behind `MEMORY_STRENGTH`. With the flag off (the default), the API
 
 | Part | What it does | Why |
 |---|---|---|
-| Strength | ACT-R base-level activation, Petrov's hybrid approximation: the last use exact, older uses spread over the memory's life. d = 0.5, time in days, minimum age 1 hour. The write counts as the first use. | Evidence above. Three columns (`use_count`, `last_used_at`, `created_at`) and no use log are enough. |
+| Strength | ACT-R base-level activation with Petrov's (2006) hybrid approximation at k = 1: the last use is exact, and the older uses are assumed evenly spread between the write and the last use. d = 0.5, time in days, minimum age 1 hour. The write counts as the first use. | Evidence above. Three columns (`use_count`, `last_used_at`, `created_at`) and no use log are enough. |
 | Belief | Beta-Bernoulli posterior (confirmed + a·2)/(confirmed + wrong + 2), with a = 0.6 / 0.7 / 0.8 for stated low / medium / high. | The smallest evidence model. Named `belief`, not `confidence`, because it is not calibrated. |
 | Feedback | `POST /api/memories/{id}/feedback {useful \| confirmed \| wrong}`, MCP `memory_feedback`. Owner only, active memories only. | The only source of signal. Search results never count as use. |
 | Staged flag | `MEMORY_STRENGTH=off` (default), `collect` (feedback, signals, similar-on-write; flat search) or `on` (also the re-rank). | Lets the store collect labels before the re-rank changes any result. |
@@ -65,7 +65,9 @@ Storage: four integer/timestamp columns (about 24 bytes per memory) and one `mem
 
 **What we skip, and why.**
 
-- An NLI model or an LLM judge for contradictions: no model in the stack, 77% transfer accuracy on dialogue, and 0.7 s per pair on CPU for a large model. Similar-on-write with the writer's judgment does the job now.
+- An NLI model or an LLM judge for contradictions: no model in the stack, 77% transfer accuracy on dialogue, and about 0.7 s per request on 16 CPU threads for a large model (search summary only). Similar-on-write with the writer's judgment does the job now.
+- A stored "contradicts" link: the request asked for "detect and link". We detect candidates and return them on write, but we do not store a link. Embeddings cannot tell a conflict from a restatement (at most 37% of shown pairs are conflicts), so a stored link would mostly be wrong. The writer turns a real conflict into a supersede link.
+- Age, kind and source in the belief prior: the prior uses only the stated level. We found no data to fit per-kind or per-source priors, and age is already in strength.
 - Source reliability (truth discovery): one owner's credentials are not independent sources. Revisit with sharing.
 - Bi-temporal `valid_from` / `invalid_at`: supersede already removes replaced memories from search. Add valid time when clients send it.
 - Automatic votes from citations: no client reports citations yet. Being returned by search is deliberately not a signal.
@@ -157,7 +159,7 @@ At each write, the store shows the writer the 3 nearest earlier memories of the 
 | 0.85 | 0.9 | 0.779 | 0.075 | 0.804 | 0.059 |
 | 0.90 | 0.9 | 0.763 | 0.090 | 0.796 | 0.069 |
 
-Quality of the candidates (3,914 writes):
+Quality of the candidates. This table counts all earlier same-scope pairs above the threshold, not only the 3 nearest that the API returns (3,914 writes):
 
 | threshold | shown per write | same fact (conflict or restatement) | conflict only | recall of conflicting pairs |
 |---|---|---|---|---|
@@ -243,7 +245,18 @@ With no use signal, `on` acts as recency. It costs 2.3 hit@1 points on queries t
 - **Conflict candidates:** pairs in the same repo with different text above a cosine threshold. At 0.80 there are 552 pairs, about 1.07 per memory. At 0.95 there are still 533, so most are near-copies. Two of the three known supersede pairs are above 0.80, and one is above 0.85. Similar-on-write would show about one memory per write in this store, and most of them would be restatements.
 
 
-### 3.6 Server parity and latency
+### 3.6 Similar on write through the real server
+
+On a local API with `collect`, 40 writes give a new value to settings of test world 4. Their `similar` lists were compared with the exact top 3 by cosine over the stored vectors.
+
+- **Match:** the lists match in 36 of 40 writes. One list was shorter than the truth. We did not inspect the other three differences.
+- **Fix found by this check:** before it, 2 of 40 lists were shorter. The query used the HNSW index, which takes about 40 nearest neighbours over all owners and filters by owner afterwards. The query now orders by the similarity expression, so it is an exact scan of the owner's rows.
+- **Latency:** a write that returns `similar` takes p50 45 ms and p95 88 ms, embedding included.
+- **Acting on `similar`:** the writer sends the same write again with `supersedes`. A test covers this with and without an origin.
+
+Note: the vector leg of hybrid search has the same pattern (`ORDER BY distance LIMIT pool` with an owner filter). On a server with many users, an HNSW scan can return few of one user's rows. This behaviour is pre-existing and out of scope here; pgvector 0.8 `hnsw.iterative_scan` would fix it.
+
+### 3.7 Server parity and latency
 
 The parity suite runs on a local API with `MEMORY_STRENGTH=on` and no feedback. For each of the 2,922 distinct queries of the test worlds, it compares the server's top 10 with the eval's re-rank of the flat top 50: **2,922/2,922 are equal**. With `collect`, which keeps search flat, only 1/2,922 is equal. This shows that the check can detect a difference.
 

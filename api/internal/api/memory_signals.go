@@ -127,7 +127,7 @@ func (s *Server) similarMemories(ctx context.Context, mem Memory) []MemorySimila
 	rows, err := s.db.QueryContext(ctx, `SELECT id, title, 1 - (embedding <=> $1::vector) AS sim FROM agent_memories
 		WHERE owner_id = $2 AND LOWER(repo) = LOWER($3) AND status = 'active' AND id <> $4 AND content_hash <> $5 AND embedding IS NOT NULL
 		AND (expires_at IS NULL OR expires_at > $6)
-		ORDER BY embedding <=> $1::vector LIMIT 3`,
+		ORDER BY sim DESC, id DESC LIMIT 3`, // exact over the owner's rows: an HNSW scan filters after its ~40 neighbours
 		float32SliceToVectorString(vec), mem.OwnerID, mem.Scope.Repo, mem.ID, memoryHash(mem), time.Now().UTC())
 	if err != nil {
 		s.logger.Warn("Failed to find similar memories", zap.Int64("memory_id", mem.ID), zap.Error(err))

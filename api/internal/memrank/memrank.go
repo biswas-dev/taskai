@@ -24,8 +24,9 @@ type Use struct {
 
 func days(d time.Duration) float64 { return max(d, minAge).Hours() / 24 }
 
-// Strength is ACT-R base-level activation B = ln(sum_j t_j^-d) with Petrov's (2006) hybrid approximation: the
-// latest use is exact and the n-1 older uses are spread evenly over the memory's life. Time is in days.
+// Strength is ACT-R base-level activation B = ln(sum_j t_j^-d) with Petrov's (2006) hybrid approximation (k = 1): the
+// latest use is exact and the n-1 older uses are assumed evenly spread between the write and the latest use.
+// Time is in days.
 // Higher is stronger; a memory written now and never used again has B = -d*ln(1/24) ~ 1.6.
 func Strength(u Use, now time.Time) float64 {
 	n := max(u.Uses, 1)

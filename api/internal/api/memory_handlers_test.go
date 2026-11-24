@@ -937,6 +937,22 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("similar needs Postgres and embeddings: %+v", nr.Similar)
 		}
 
+		// Acting on similar: send the same write again with supersedes, with or without an origin.
+		for _, origin := range []string{"", "act-1"} {
+			oldReq := mem("Queue name "+origin, "Jobs go to the queue named alpha "+origin)
+			_, older, _ := write(u, oldReq)
+			newReq := mem("Queue name "+origin, "Jobs go to the queue named beta "+origin)
+			newReq.OriginHost, newReq.OriginID = map[bool]string{true: "hub-act"}[origin != ""], origin
+			_, newer, _ := write(u, newReq)
+			newReq.Supersedes = older.Memory.ID
+			if _, again, _ := write(u, newReq); again.Memory.ID != newer.Memory.ID {
+				t.Fatalf("origin %q: the repeat must land on the same memory: %+v", origin, again)
+			}
+			if _, m := get(u, older.Memory.ID); m.Status != "superseded" {
+				t.Fatalf("origin %q: the shown memory must be superseded, got %s", origin, m.Status)
+			}
+		}
+
 		// Compaction folds a copy's evidence into the copy it keeps, and keeps a confirmed old note whole.
 		c := user("signals-compact")
 		copyReq := mem("Cache TTL", "The cache TTL is 300 seconds")

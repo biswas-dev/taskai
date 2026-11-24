@@ -22,7 +22,7 @@ var (
 	apiURL   = flag.String("api", "http://localhost:18080", "local TaskAI API")
 	dsn      = flag.String("dsn", "postgres://postgres:memeval@localhost:55433/taskai?sslmode=disable", "local Postgres of that API")
 	password = flag.String("password", "Memeval-pass-123", "password of the local eval users")
-	suite    = flag.String("suite", "synth", "synth | lme | owner | parity")
+	suite    = flag.String("suite", "synth", "synth | lme | owner | parity | similar")
 	lmePath  = flag.String("lme", "", "path to longmemeval_s_cleaned.json")
 	ownerIn  = flag.String("owner", "", "path to a private JSON export of memories (owner suite)")
 	limitQ   = flag.Int("max", 0, "lme: all knowledge-update questions and at most this many of each other type (0: all)")
@@ -48,6 +48,8 @@ func main() {
 		err = runOwner(ctx)
 	case "parity":
 		err = runParity(ctx)
+	case "similar":
+		err = runSimilar(ctx)
 	default:
 		err = fmt.Errorf("unknown suite %q", *suite)
 	}
