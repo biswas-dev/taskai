@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
+	"sort"
 	"time"
 
 	"taskai/internal/memrank"
@@ -231,4 +232,35 @@ func mapCalib(c calib, f func(float64) float64) calib {
 		out.p = append(out.p, f(p))
 	}
 	return out
+}
+
+// assisted models "similar memories on write": when a memory is written, the store shows the writer earlier
+// memories of the same scope within the cosine threshold, and the writer supersedes a shown memory that states
+// another value of the same slot with probability act. A wrong write can retire a right memory: that is kept.
+func assisted(l loaded, vecs map[int64][]float32, threshold, act float64, seed int) loaded {
+	r := rand.New(rand.NewPCG(uint64(seed), 13))
+	w := *l.w
+	w.mems = make([]*synthMem, len(l.w.mems))
+	byID := map[int64]*synthMem{}
+	for i, m := range l.w.mems {
+		c := *m
+		w.mems[i] = &c
+		byID[c.id] = &c
+	}
+	order := append([]*synthMem(nil), w.mems...)
+	sort.Slice(order, func(i, j int) bool { return order[i].created < order[j].created })
+	for i, m := range order {
+		if m.slot.svc < 0 {
+			continue
+		}
+		for _, o := range order[:i] {
+			if o.slot != m.slot || o.value == m.value || o.superseded != 0 && o.superseded <= m.created {
+				continue
+			}
+			if cosine(vecs[m.id], vecs[o.id]) >= threshold && r.Float64() < act {
+				o.superseded = m.created
+			}
+		}
+	}
+	return loaded{w: &w, byID: byID, hits: l.hits}
 }

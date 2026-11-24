@@ -4661,6 +4661,18 @@ components:
       properties:
         memory: {$ref: "#/components/schemas/Memory"}
         outcome: {type: string, enum: [created, updated, duplicate, ignored]}
+        similar:
+          type: array
+          description: >-
+            Only with MEMORY_STRENGTH on (Postgres with embeddings): up to 3 active memories of the same repo whose
+            text is close (cosine 0.80 or more). They may say the same or the opposite. Supersede the ones this
+            memory replaces; nothing is merged or changed automatically.
+          items:
+            type: object
+            properties:
+              id: {type: integer, format: int64}
+              title: {type: string}
+              similarity: {type: number}
         usage: {$ref: "#/components/schemas/MemoryUsage"}
     MemorySearchRequest:
       type: object

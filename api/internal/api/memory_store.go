@@ -129,6 +129,9 @@ type MemoryWriteResponse struct {
 	Memory  Memory      `json:"memory"`
 	Outcome string      `json:"outcome"`
 	Usage   MemoryUsage `json:"usage"`
+	// Similar lists older memories that may say the same or the opposite (MEMORY_STRENGTH on, Postgres with
+	// embeddings). Supersede the ones this memory replaces; nothing is merged or changed automatically.
+	Similar []MemorySimilar `json:"similar,omitempty"`
 }
 
 // memoryRow is a validated write, ready to store.

@@ -22,10 +22,10 @@ var (
 	apiURL   = flag.String("api", "http://localhost:18080", "local TaskAI API")
 	dsn      = flag.String("dsn", "postgres://postgres:memeval@localhost:55433/taskai?sslmode=disable", "local Postgres of that API")
 	password = flag.String("password", "Memeval-pass-123", "password of the local eval users")
-	suite    = flag.String("suite", "synth", "synth | lme | owner")
+	suite    = flag.String("suite", "synth", "synth | lme | owner | parity")
 	lmePath  = flag.String("lme", "", "path to longmemeval_s_cleaned.json")
 	ownerIn  = flag.String("owner", "", "path to a private JSON export of memories (owner suite)")
-	limitQ   = flag.Int("max", 0, "at most this many lme questions (0: all)")
+	limitQ   = flag.Int("max", 0, "lme: all knowledge-update questions and at most this many of each other type (0: all)")
 	cacheDir = flag.String("cache", ".", "directory for cached search results (synth)")
 )
 
@@ -44,6 +44,8 @@ func main() {
 		err = runLME(ctx)
 	case "owner":
 		err = runOwner(ctx)
+	case "parity":
+		err = runParity(ctx)
 	default:
 		err = fmt.Errorf("unknown suite %q", *suite)
 	}
@@ -263,7 +265,40 @@ func runSynth(ctx context.Context) error {
 		return err
 	}
 	fmt.Println("\nReliability on test seeds, Beta posterior (as the server returns it) and Beta + Platt:\n\n" + r.cal.reliability() + "\n" + mapCalib(r.cal, cal).reliability())
-	return conflictExperiment(ctx, owner, worlds, test)
+	if err := conflictExperiment(ctx, owner, worlds, test); err != nil {
+		return err
+	}
+
+	vecs, err := embeddings(ctx, *dsn, owner)
+	if err != nil {
+		return err
+	}
+	fmt.Println("\n## Similar memories on write (the writer supersedes a shown older value with probability act; test seeds)")
+	fmt.Println("\n| threshold | act | flat hit@1 | flat stale | both hit@1 | both stale |\n|---|---|---|---|---|---|")
+	for _, th := range []float64{0.8, 0.85, 0.9} {
+		for _, act := range []float64{0.5, 0.9} {
+			var fr, br []simResult
+			for _, sd := range test {
+				l, err := load(sd, 0.5)
+				if err != nil {
+					return err
+				}
+				a := assisted(l, vecs, th, act, sd)
+				fr = append(fr, simulate(a, vs[0], feedbackTrain, sd))
+				br = append(br, simulate(a, both, feedbackTrain, sd))
+			}
+			f, b := merge(fr), merge(br)
+			stale := func(r simResult) float64 {
+				n := 0
+				for _, v := range r.top1 {
+					n += v
+				}
+				return float64(r.top1["stale"]) / float64(max(n, 1))
+			}
+			fmt.Printf("| %.2f | %.1f | %.3f | %.3f | %.3f | %.3f |\n", th, act, f.all.frac(f.all.hit1), stale(f), b.all.frac(b.all.hit1), stale(b))
+		}
+	}
+	return nil
 }
 
 func synthTable(run func([]int, float64, variant, feedback) (simResult, error), seeds []int, rho float64, vs []variant, fb feedback) error {

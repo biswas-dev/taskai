@@ -122,6 +122,8 @@ Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}`
 | `confirmed` | You checked that it is still true. | One more use and one confirmation. One vote per credential (`duplicate`). |
 | `wrong` | It is false or outdated. | One wrong vote. One vote per credential. Supersede it if you know the new value. |
 
+**Similar on write.** With the feature on (Postgres with embeddings), a write that creates or changes a memory answers with `similar`: up to 3 active memories of the same repo whose text is close (cosine 0.80 or more). They may say the same thing or the opposite. If the new memory replaces one of them, supersede it. The store never merges or changes them by itself.
+
 The rules:
 
 - **Search is not use.** A memory that search returns gets no signal, or the strong would only get stronger.

@@ -76,7 +76,11 @@ func (s *Server) HandleWriteMemory(w http.ResponseWriter, r *http.Request) {
 	if outcome == "created" {
 		status = http.StatusCreated
 	}
-	respondJSON(w, status, MemoryWriteResponse{Memory: mem, Outcome: outcome, Usage: usage})
+	resp := MemoryWriteResponse{Memory: mem, Outcome: outcome, Usage: usage}
+	if outcome == "created" || outcome == "updated" {
+		resp.Similar = s.similarMemories(ctx, mem)
+	}
+	respondJSON(w, status, resp)
 }
 
 // memoryFilter builds the WHERE clause shared by list and search. The caller's readable owners are always applied.

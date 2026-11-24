@@ -134,7 +134,7 @@ func registerMemoryTools(srv *gomcp.Server) {
 			return trim(in.Verbose, res, "memories"), err
 		})
 
-	gomcp.Register(srv, write("write_memory", "Save a lesson to your memories (fact, decision, gotcha, runbook, handoff). An exact repeat returns the one already kept. Small and verbatim; never a secret."),
+	gomcp.Register(srv, write("write_memory", "Save a lesson to your memories (fact, decision, gotcha, runbook, handoff). An exact repeat returns the one already kept. Small and verbatim; never a secret. If the answer lists similar memories that this one replaces, supersede them."),
 		func(ctx context.Context, in writeMemoryIn) (any, error) {
 			_, c := sess(ctx)
 			return c.send(ctx, http.MethodPost, "/api/memories", in.body())

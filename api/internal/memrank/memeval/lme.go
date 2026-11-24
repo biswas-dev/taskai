@@ -89,30 +89,45 @@ func runLME(ctx context.Context) error {
 			keep = append(keep, q)
 		}
 	}
-	if *limitQ > 0 && len(keep) > *limitQ {
-		keep = keep[:*limitQ]
+	if *limitQ > 0 { // all knowledge-update questions, and the first limitQ of each other type
+		perType := map[string]int{}
+		var sub []lmeQuestion
+		for _, q := range keep {
+			if q.Type == "knowledge-update" || perType[q.Type] < *limitQ {
+				perType[q.Type]++
+				sub = append(sub, q)
+			}
+		}
+		keep = sub
 	}
-	c, err := login(*apiURL, "lme@memeval.local", *password)
-	if err != nil {
-		return err
+	// Ten owners: a write locks its owner and sums the owner's usage, so one owner with 40k memories is slow.
+	const owners = 10
+	clients := make([]*client, owners)
+	for k := range clients {
+		email := fmt.Sprintf("lme%d@memeval.local", k+1)
+		if clients[k], err = login(*apiURL, email, *password); err != nil {
+			return err
+		}
 	}
-	owner, err := ownerID(ctx, *dsn, "lme@memeval.local")
-	if err != nil {
-		return err
-	}
+	clientOf := func(i int) *client { return clients[i%owners] }
 	// session of each memory id, written with 8 workers (writes are idempotent by origin: a rerun is safe)
 	session := map[int64]string{}
 	created := map[int64]time.Time{}
 	var mu sync.Mutex
-	jobs := make(chan memWrite)
+	type job struct {
+		c *client
+		m memWrite
+	}
+	jobs := make(chan job)
 	var wg sync.WaitGroup
 	var writeErr error
 	for range 8 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for m := range jobs {
-				id, err := c.write(m)
+			for j := range jobs {
+				m := j.m
+				id, err := j.c.write(m)
 				mu.Lock()
 				if err != nil && writeErr == nil {
 					writeErr = err
@@ -125,7 +140,7 @@ func runLME(ctx context.Context) error {
 	}
 	for i, q := range keep {
 		for _, m := range lmeWrites(q) {
-			jobs <- m
+			jobs <- job{clientOf(i), m}
 		}
 		if i%50 == 0 {
 			logf("lme: wrote haystacks of %d/%d questions", i, len(keep))
@@ -136,8 +151,14 @@ func runLME(ctx context.Context) error {
 	if writeErr != nil {
 		return writeErr
 	}
-	if err := waitEmbedded(ctx, *dsn, owner); err != nil {
-		return err
+	for k := range owners {
+		owner, err := ownerID(ctx, *dsn, fmt.Sprintf("lme%d@memeval.local", k+1))
+		if err != nil {
+			return err
+		}
+		if err := waitEmbedded(ctx, *dsn, owner); err != nil {
+			return err
+		}
 	}
 
 	vs := []variant{{name: "flat"}}
@@ -156,8 +177,8 @@ func runLME(ctx context.Context) error {
 	}
 	var lat []time.Duration
 	modes := map[string]int{}
-	for _, q := range keep {
-		hits, mode, d, err := c.search(q.Question, lmeRepo(q), 50)
+	for qi, q := range keep {
+		hits, mode, d, err := clientOf(qi).search(q.Question, lmeRepo(q), 50)
 		if err != nil {
 			return err
 		}

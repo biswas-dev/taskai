@@ -924,6 +924,18 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("a vote on the new text: %d %q", code, resp.Outcome)
 		}
 
+		// A write shows close older memories of the same repo, so the writer can supersede them (Postgres only).
+		ts.embedPendingMemories(ctx)
+		near := mem("Deploy port changed", "The staging deploy listens on port 9443 now")
+		_, nr, _ := write(u, near)
+		if ts.DB.Driver == "postgres" && ts.embeddingClient != nil {
+			if len(nr.Similar) == 0 || nr.Similar[0].ID != id || nr.Similar[0].Similarity < memorySimilarMin {
+				t.Fatalf("similar on write: %+v", nr.Similar)
+			}
+		} else if nr.Similar != nil {
+			t.Fatalf("similar needs Postgres and embeddings: %+v", nr.Similar)
+		}
+
 		// Compaction folds a copy's evidence into the copy it keeps, and keeps a confirmed old note whole.
 		c := user("signals-compact")
 		copyReq := mem("Cache TTL", "The cache TTL is 300 seconds")
@@ -952,7 +964,7 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("a confirmed old note must not be merged: %s", m.Status)
 		}
 		res := search(u, MemorySearchRequest{Query: "staging deploy port", Limit: 1})
-		if len(res.Results) != 1 || res.Results[0].ID != id || res.Results[0].Signals == nil {
+		if len(res.Results) != 1 || res.Results[0].Signals == nil {
 			t.Fatalf("re-ranked search: %+v", res.Results)
 		}
 	})

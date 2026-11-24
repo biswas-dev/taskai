@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -29,7 +30,7 @@ type MemorySignals struct {
 }
 
 // memoryWeights are the re-rank weights the offline eval chose (docs/research/memory-strength.md).
-var memoryWeights = memrank.Weights{Strength: 0.5, Confidence: 0.5}
+var memoryWeights = memrank.Weights{Strength: 0.5, Confidence: 0.25}
 
 // memoryUseSpacing: a "useful" signal counts at most once an hour per memory, since massed uses add little
 // strength (Pavlik and Anderson 2005) and a loop must not inflate it.
@@ -83,6 +84,59 @@ func resetMemoryVotes(ctx context.Context, q sqlQuerier, id int64) error {
 	}
 	_, err := q.ExecContext(ctx, `DELETE FROM memory_feedback WHERE memory_id = $1 AND signal <> 'useful'`, id)
 	return err
+}
+
+// MemorySimilar is an older memory close to a new one.
+type MemorySimilar struct {
+	ID         int64   `json:"id"`
+	Title      string  `json:"title"`
+	Similarity float64 `json:"similarity"` // cosine of the two embeddings
+}
+
+const (
+	// memorySimilarMin: in the eval, showing same-scope memories above this cosine to the writer, who then
+	// supersedes the outdated ones, cut stale answers the most of the thresholds tried (0.80 to 0.90).
+	memorySimilarMin     = 0.80
+	memorySimilarTimeout = time.Second
+)
+
+// similarMemories finds up to 3 active memories of the same owner and repo whose text is close to mem's, so the
+// writer can supersede what mem replaces. It is best effort: without embeddings, or past the timeout, it is empty.
+func (s *Server) similarMemories(ctx context.Context, mem Memory) []MemorySimilar {
+	if !s.config.MemoryStrength || s.db.Driver != "postgres" || s.embeddingClient == nil || mem.Status != "active" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, memorySimilarTimeout)
+	defer cancel()
+	text := mem.Title + "\n" + mem.Body
+	if len(text) > memoryEmbedInputChars {
+		text = strings.ToValidUTF8(text[:memoryEmbedInputChars], "")
+	}
+	vec, err := s.embeddingClient.Embed(ctx, text)
+	if err != nil || vec == nil {
+		return nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, title, 1 - (embedding <=> $1::vector) AS sim FROM agent_memories
+		WHERE owner_id = $2 AND LOWER(repo) = LOWER($3) AND status = 'active' AND id <> $4 AND content_hash <> $5 AND embedding IS NOT NULL
+		AND (expires_at IS NULL OR expires_at > $6)
+		ORDER BY embedding <=> $1::vector LIMIT 3`,
+		float32SliceToVectorString(vec), mem.OwnerID, mem.Scope.Repo, mem.ID, memoryHash(mem), time.Now().UTC())
+	if err != nil {
+		s.logger.Warn("Failed to find similar memories", zap.Int64("memory_id", mem.ID), zap.Error(err))
+		return nil
+	}
+	defer rows.Close()
+	var out []MemorySimilar
+	for rows.Next() {
+		var m MemorySimilar
+		if err := rows.Scan(&m.ID, &m.Title, &m.Similarity); err != nil {
+			return out
+		}
+		if m.Similarity >= memorySimilarMin {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // MemoryFeedbackRequest is one signal about a memory.
