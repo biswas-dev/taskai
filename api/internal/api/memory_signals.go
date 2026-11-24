@@ -18,11 +18,11 @@ import (
 
 // MemorySignals is what a client sees of a memory's use and evidence.
 type MemorySignals struct {
-	Strength   float64    `json:"strength"`   // ACT-R activation: higher is stronger; ~1.6 when just written
+	Strength float64 `json:"strength"` // ACT-R activation: higher is stronger; ~1.6 when just written
 	// Belief is an evidence score in (0,1): confirmed and wrong votes over a prior from the stated confidence level.
 	// It is NOT calibrated until feedback labels exist to fit it (docs/research/memory-strength.md).
-	Belief float64 `json:"belief"`
-	Uses       int        `json:"uses"`       // the write counts as the first use
+	Belief     float64    `json:"belief"`
+	Uses       int        `json:"uses"` // the write counts as the first use
 	Confirmed  int        `json:"confirmed"`
 	Wrong      int        `json:"wrong"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
@@ -41,9 +41,9 @@ func (m Memory) signals(now time.Time) *MemorySignals {
 		last = *m.use.lastUsed
 	}
 	return &MemorySignals{
-		Strength:   memrank.Strength(memrank.Use{Created: m.CreatedAt, Uses: m.use.count, LastUsed: last}, now),
-		Belief: memrank.Confidence(memrank.Evidence{Prior: memrank.Prior(m.Confidence), Confirmed: float64(m.use.confirmed), Wrong: float64(m.use.wrong)}),
-		Uses:       m.use.count, Confirmed: m.use.confirmed, Wrong: m.use.wrong, LastUsedAt: m.use.lastUsed,
+		Strength: memrank.Strength(memrank.Use{Created: m.CreatedAt, Uses: m.use.count, LastUsed: last}, now),
+		Belief:   memrank.Confidence(memrank.Evidence{Prior: memrank.Prior(m.Confidence), Confirmed: float64(m.use.confirmed), Wrong: float64(m.use.wrong)}),
+		Uses:     m.use.count, Confirmed: m.use.confirmed, Wrong: m.use.wrong, LastUsedAt: m.use.lastUsed,
 	}
 }
 
