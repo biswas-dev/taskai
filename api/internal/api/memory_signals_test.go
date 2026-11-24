@@ -365,9 +365,9 @@ func testMemorySignals(t *testing.T, ts *TestServer, k memoryKit) {
 		return *m.Signals
 	}
 	if g := strengthOf("gotcha"); g.Strength != memrank.SteadyStrength(1) {
-		t.Fatalf("an old gotcha keeps the strength of a new memory: %v", g.Strength)
+		t.Fatalf("an old gotcha stops ageing at SteadyAge: %v", g.Strength)
 	}
-	if f := strengthOf("fact"); !(f.Strength < memrank.SteadyStrength(1)) {
+	if f := strengthOf("fact"); !(f.Strength < memrank.SteadyStrength(1)) { // 100 days is past SteadyAge
 		t.Fatalf("an old fact loses strength with age: %v", f.Strength)
 	}
 	_, used, _ := write(kinds, mem("Used once", "A memory that helped a task"))

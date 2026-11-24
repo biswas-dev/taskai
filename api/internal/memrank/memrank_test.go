@@ -50,8 +50,11 @@ func TestStrength(t *testing.T) {
 }
 
 func TestSteadyStrength(t *testing.T) {
-	if got, want := SteadyStrength(1), Strength(Use{t0, 1, t0}, t0); math.Abs(got-want) > 1e-9 {
-		t.Fatalf("an unused steady memory is as strong as a new one: %v, want %v", got, want)
+	if got, want := SteadyStrength(1), Strength(Use{t0, 1, t0}, t0.Add(SteadyAge)); math.Abs(got-want) > 1e-9 {
+		t.Fatalf("an unused steady memory ranks as one of SteadyAge: %v, want %v", got, want)
+	}
+	if fresh := Strength(Use{t0, 1, t0}, t0.Add(2*time.Hour)); !(SteadyStrength(1) < fresh) {
+		t.Fatal("an unused steady memory must not outrank a fact written two hours ago")
 	}
 	if !(SteadyStrength(4) > SteadyStrength(1)) || SteadyStrength(0) != SteadyStrength(1) {
 		t.Fatal("uses raise steady strength; 0 uses count as the write")

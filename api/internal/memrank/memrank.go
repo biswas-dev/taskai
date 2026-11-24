@@ -46,10 +46,13 @@ func Strength(u Use, now time.Time) float64 {
 	return math.Log(sum)
 }
 
-// SteadyStrength is strength without age, for lessons that do not go out of date (a gotcha, a runbook): a memory
-// never used has the strength of one just written, and each use adds ln(uses). Time does not lower it.
+// SteadyAge is the age at which a lesson that does not go out of date (a gotcha, a runbook) stops ageing: it ranks
+// as a memory of this age for ever, so it neither falls behind with time nor outranks new facts.
+const SteadyAge = 30 * 24 * time.Hour
+
+// SteadyStrength is strength without further decay: ln(uses) - d*ln(SteadyAge in days).
 func SteadyStrength(uses int) float64 {
-	return math.Log(float64(max(uses, 1))) - Decay*math.Log(days(minAge))
+	return math.Log(float64(max(uses, 1))) - Decay*math.Log(days(SteadyAge))
 }
 
 // Evidence is what confidence needs: a prior belief that the memory is right, and the weighted confirmations and
