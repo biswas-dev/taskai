@@ -14,6 +14,22 @@ type variant struct {
 	name        string
 	w           memrank.Weights
 	recencyOnly bool // strength from the write time only: no use signal
+	supersede   bool // oracle validity: every update supersedes the older memories of its slot
+}
+
+// actors is how many distinct credentials give feedback. The server counts one confirmed and one wrong vote per
+// credential (memory_feedback), so with one API key each count is 0 or 1. 0 means no cap (an idealised store).
+var actors = 1
+
+// replacedBy: a change of the memory's slot after it was written and by t, so a writer that always supersedes
+// would have retired it.
+func replacedBy(w *world, m *synthMem, t float64) bool {
+	for _, c := range w.history[m.slot] {
+		if c.at > m.created && c.at <= t {
+			return true
+		}
+	}
+	return false
 }
 
 type loaded struct {
@@ -43,12 +59,40 @@ func simulate(l loaded, v variant, fb feedback, fbSeed int) simResult {
 	}
 	r := rand.New(rand.NewPCG(uint64(fbSeed), 11))
 	res := simResult{top1: map[string]int{}}
+	type vote struct {
+		idx, actor int
+		signal     string
+	}
+	voted := map[vote]bool{}
+	// cast applies the server's rule: one vote per memory, signal and credential.
+	cast := func(i int, signal string) bool {
+		k := vote{i, 0, signal}
+		if actors > 0 {
+			k.actor = r.IntN(actors)
+		} else {
+			k.actor = len(voted) // every vote distinct
+		}
+		if voted[k] {
+			return false
+		}
+		voted[k] = true
+		return true
+	}
+	use := func(i int, now time.Time) { // "useful" counts at most once an hour, as on the server
+		if now.Sub(uses[i].LastUsed) >= time.Hour {
+			uses[i].Uses++
+			uses[i].LastUsed = now
+		}
+	}
 	for _, q := range w.queries {
 		now := at(q.at)
 		var cands []memrank.Candidate
 		for _, h := range l.hits(q.text) {
 			m := l.byID[h.ID]
 			if m == nil || m.created > q.at || m.superseded != 0 && m.superseded <= q.at {
+				continue
+			}
+			if v.supersede && m.slot.svc >= 0 && replacedBy(w, m, q.at) {
 				continue
 			}
 			u := uses[m.idx]
@@ -104,22 +148,21 @@ func simulate(l loaded, v variant, fb feedback, fbSeed int) simResult {
 		i := top.idx
 		if gold[top.id] {
 			if r.Float64() < fb.useRight {
-				uses[i].Uses++
-				uses[i].LastUsed = now
+				use(i, now)
 			}
-			if r.Float64() < fb.confirmRight {
-				uses[i].Uses++
-				uses[i].LastUsed = now
+			if r.Float64() < fb.confirmRight && cast(i, "confirmed") {
+				use(i, now)
 				ev[i].Confirmed++
 			}
-			if r.Float64() < fb.falseWrong {
+			if r.Float64() < fb.falseWrong && cast(i, "wrong") {
 				ev[i].Wrong++
 			}
 		} else if r.Float64() < fb.detectWrong {
-			ev[i].Wrong++
+			if cast(i, "wrong") {
+				ev[i].Wrong++
+			}
 		} else if r.Float64() < fb.useWrong {
-			uses[i].Uses++
-			uses[i].LastUsed = now
+			use(i, now)
 		}
 	}
 	return res

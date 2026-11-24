@@ -6,9 +6,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -24,6 +26,7 @@ var (
 	lmePath  = flag.String("lme", "", "path to longmemeval_s_cleaned.json")
 	ownerIn  = flag.String("owner", "", "path to a private JSON export of memories (owner suite)")
 	limitQ   = flag.Int("max", 0, "at most this many lme questions (0: all)")
+	cacheDir = flag.String("cache", ".", "directory for cached search results (synth)")
 )
 
 func main() {
@@ -53,7 +56,7 @@ func main() {
 func loadWorld(ctx context.Context, c *client, owner int64, w *world) (loaded, error) {
 	byID := map[int64]*synthMem{}
 	for _, m := range w.mems {
-		id, err := c.write(m.write)
+		id, err := c.write(m.write) // idempotent by origin: a rerun gets the same ids back
 		if err != nil {
 			return loaded{}, err
 		}
@@ -63,30 +66,41 @@ func loadWorld(ctx context.Context, c *client, owner int64, w *world) (loaded, e
 	if err := waitEmbedded(ctx, *dsn, owner); err != nil {
 		return loaded{}, err
 	}
+	// Search results are cached on disk, so a rerun of the simulation does not depend on the API's load.
+	path := filepath.Join(*cacheDir, fmt.Sprintf("hits-%s.json", strings.ReplaceAll(w.repo, "/", "_")))
 	cache := map[string][]hit{}
+	if raw, err := os.ReadFile(path); err == nil {
+		_ = json.Unmarshal(raw, &cache)
+	}
 	return loaded{w: w, byID: byID, hits: func(text string) []hit {
 		if h, ok := cache[text]; ok {
 			return h
 		}
 		h, mode, _, err := c.search(text, w.repo, 50)
-		if err != nil || mode != "hybrid" {
+		if err != nil || mode != "hybrid" { // a fallback would silently change the baseline
 			logf("search %q: mode %s err %v", text, mode, err)
+			os.Exit(1)
 		}
 		cache[text] = h
+		if raw, err := json.Marshal(cache); err == nil {
+			_ = os.WriteFile(path, raw, 0o600)
+		}
 		return h
 	}}, nil
 }
 
+var grid = []float64{0.1, 0.25, 0.5, 1}
+
 func synthVariants() []variant {
 	vs := []variant{{name: "flat"}, {name: "recency only", w: memrank.Weights{Strength: 1}, recencyOnly: true}}
-	for _, x := range []float64{0.5, 1, 2} {
+	for _, x := range grid {
 		vs = append(vs, variant{name: fmt.Sprintf("strength w=%g", x), w: memrank.Weights{Strength: x}})
 	}
-	for _, x := range []float64{0.5, 1, 2} {
+	for _, x := range grid {
 		vs = append(vs, variant{name: fmt.Sprintf("confidence w=%g", x), w: memrank.Weights{Confidence: x}})
 	}
-	for _, s := range []float64{0.5, 1, 2} {
-		for _, c := range []float64{0.5, 1, 2} {
+	for _, s := range grid {
+		for _, c := range grid {
 			vs = append(vs, variant{name: fmt.Sprintf("both s=%g c=%g", s, c), w: memrank.Weights{Strength: s, Confidence: c}})
 		}
 	}
@@ -121,20 +135,24 @@ func runSynth(ctx context.Context) error {
 		worlds[seed] = l
 		return l, err
 	}
-	run := func(seeds []int, rho float64, v variant, fb feedback) (simResult, error) {
+	perSeed := func(seeds []int, rho float64, v variant, fb feedback) ([]simResult, error) {
 		var rs []simResult
 		for _, s := range seeds {
 			l, err := load(s, rho)
 			if err != nil {
-				return simResult{}, err
+				return nil, err
 			}
 			rs = append(rs, simulate(l, v, fb, s))
 		}
-		return merge(rs), nil
+		return rs, nil
+	}
+	run := func(seeds []int, rho float64, v variant, fb feedback) (simResult, error) {
+		rs, err := perSeed(seeds, rho, v, fb)
+		return merge(rs), err
 	}
 
 	vs := synthVariants()
-	fmt.Println("## Synthetic world: weight selection on train seeds 1-3 (rho 0.5)")
+	fmt.Printf("## Synthetic world: weight selection on train seeds 1-3 (rho 0.5, %d feedback credential(s))\n", actors)
 	fmt.Println("\n| variant | n | hit@1 | recall@5 | recall@10 | MRR |\n|---|---|---|---|---|---|")
 	best := map[string]variant{}
 	bestHit := map[string]float64{}
@@ -149,7 +167,10 @@ func runSynth(ctx context.Context) error {
 			best[fam], bestHit[fam] = v, h
 		}
 	}
-	chosen := []variant{vs[0], vs[1], best["strength"], best["confidence"], best["both"]}
+	both := best["both"]
+	withSup := both
+	withSup.name, withSup.supersede = "supersede + "+both.name, true
+	chosen := []variant{vs[0], vs[1], {name: "supersede (oracle)", supersede: true}, best["strength"], best["confidence"], both, withSup}
 
 	fmt.Println("\n## Synthetic world: held-out test seeds 4-8, rho 0.5, same feedback model")
 	if err := synthTable(run, test, 0.5, chosen, feedbackTrain); err != nil {
@@ -159,6 +180,47 @@ func runSynth(ctx context.Context) error {
 	if err := synthTable(run, test, 0.5, chosen, feedbackShift); err != nil {
 		return err
 	}
+
+	fmt.Println("\n## Paired hit@1 change against flat, per test seed (same feedback model)")
+	fmt.Println("\n| variant | mean | min | max | seeds better |\n|---|---|---|---|---|")
+	flatRs, err := perSeed(test, 0.5, vs[0], feedbackTrain)
+	if err != nil {
+		return err
+	}
+	for _, v := range chosen[1:] {
+		rs, err := perSeed(test, 0.5, v, feedbackTrain)
+		if err != nil {
+			return err
+		}
+		mean, lo, hi, better := 0.0, 1.0, -1.0, 0
+		for i, r := range rs {
+			d := r.all.frac(r.all.hit1) - flatRs[i].all.frac(flatRs[i].all.hit1)
+			mean += d / float64(len(rs))
+			lo, hi = min(lo, d), max(hi, d)
+			if d > 0 {
+				better++
+			}
+		}
+		fmt.Printf("| %s | %+.3f | %+.3f | %+.3f | %d/%d |\n", v.name, mean, lo, hi, better, len(rs))
+	}
+
+	fmt.Println("\n## Feedback credentials (hit@1 on test seeds; the server counts one vote per credential)")
+	fmt.Println("\n| variant | 1 credential | 3 credentials | no cap |\n|---|---|---|---|")
+	saved := actors
+	for _, v := range []variant{best["confidence"], both} {
+		row := "| " + v.name
+		for _, a := range []int{1, 3, 0} {
+			actors = a
+			r, err := run(test, 0.5, v, feedbackTrain)
+			if err != nil {
+				return err
+			}
+			row += fmt.Sprintf(" | %.3f", r.all.frac(r.all.hit1))
+		}
+		fmt.Println(row + " |")
+	}
+	actors = saved
+
 	fmt.Println("\n## Need-distribution sweep (hit@1 on test seeds; rho = share of queries that revisit a recent slot)")
 	fmt.Println("\n| variant | rho 0 | rho 0.25 | rho 0.5 | rho 0.75 | rho 0.9 |\n|---|---|---|---|---|---|")
 	for _, v := range chosen {
@@ -174,18 +236,18 @@ func runSynth(ctx context.Context) error {
 	}
 
 	// Calibration: fit Platt on train seeds, evaluate on test seeds (and on the shifted feedback).
-	trainR, err := run(train, 0.5, best["both"], feedbackTrain)
+	trainR, err := run(train, 0.5, both, feedbackTrain)
 	if err != nil {
 		return err
 	}
 	cal := platt(trainR.cal)
-	fmt.Println("\n## Calibration of confidence (same-slot memories in the top 5; variant " + best["both"].name + ")")
+	fmt.Println("\n## Calibration of the evidence score (same-slot memories in the top 5; variant " + both.name + ")")
 	fmt.Println("\n| scorer | feedback | n | ECE (15 bins) | Brier | AUC |\n|---|---|---|---|---|---|")
 	for _, f := range []struct {
 		name string
 		fb   feedback
 	}{{"train model", feedbackTrain}, {"mis-specified", feedbackShift}} {
-		r, err := run(test, 0.5, best["both"], f.fb)
+		r, err := run(test, 0.5, both, f.fb)
 		if err != nil {
 			return err
 		}
@@ -195,11 +257,12 @@ func runSynth(ctx context.Context) error {
 		}{{"stated level only", r.stated}, {"Beta posterior", r.cal}, {"Beta + Platt (fit on train)", mapCalib(r.cal, cal)}} {
 			fmt.Printf("| %s | %s | %d | %.3f | %.3f | %.3f |\n", s.name, f.name, len(s.c.p), s.c.ece(15), s.c.brier(), s.c.auc())
 		}
-		if f.name == "train model" {
-			fmt.Println("\nReliability, Beta + Platt, test seeds:\n\n" + mapCalib(r.cal, cal).reliability())
-			fmt.Println("| scorer | feedback | n | ECE (15 bins) | Brier | AUC |\n|---|---|---|---|---|---|")
-		}
 	}
+	r, err := run(test, 0.5, both, feedbackTrain)
+	if err != nil {
+		return err
+	}
+	fmt.Println("\nReliability on test seeds, Beta posterior (as the server returns it) and Beta + Platt:\n\n" + r.cal.reliability() + "\n" + mapCalib(r.cal, cal).reliability())
 	return conflictExperiment(ctx, owner, worlds, test)
 }
 
