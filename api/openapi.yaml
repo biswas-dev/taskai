@@ -1651,6 +1651,59 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/memories/{id}/feedback:
+    post:
+      summary: Give Memory Feedback
+      description: >-
+        Owner only, and only with MEMORY_STRENGTH on (404 otherwise). useful and confirmed make a memory stronger;
+        confirmed and wrong are evidence votes for its confidence, one per signal and credential (a repeat is
+        duplicate). useful counts at most once an hour per memory (a repeat is spaced). Send it only for a memory
+        you used or checked; being returned by search is not a signal.
+      tags: [Memories]
+      operationId: memoryFeedback
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signal]
+              properties:
+                signal: {type: string, enum: [useful, confirmed, wrong]}
+      responses:
+        "200":
+          description: Whether the signal counted, and the memory with its signals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memory: {$ref: "#/components/schemas/Memory"}
+                  outcome: {type: string, enum: [recorded, duplicate, spaced]}
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/admin/users/{id}/memory-quota:
     put:
       summary: Set Memory Quota
@@ -4560,6 +4613,16 @@ components:
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         rank: {type: number, description: Search results only}
+        signals:
+          type: object
+          description: Only with MEMORY_STRENGTH on. Clients that do not know it ignore it.
+          properties:
+            strength: {type: number, description: "ACT-R base-level activation; higher is stronger, about 1.6 when just written"}
+            confidence: {type: number, description: "Probability the memory is right, from the stated level and the evidence votes"}
+            uses: {type: integer, description: The write counts as the first use}
+            confirmed: {type: integer}
+            wrong: {type: integer}
+            last_used_at: {type: string, format: date-time}
     MemoryList:
       type: object
       properties:

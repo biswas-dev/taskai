@@ -198,6 +198,7 @@ func (s *Server) HandleListMemories(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		var ms []Memory
 		if ms, err = scanMemories(rows, false); err == nil {
+			s.withSignals(ms)
 			respondJSON(w, http.StatusOK, map[string]any{"memories": ms, "limit": limit, "offset": offset})
 			return
 		}
@@ -243,7 +244,9 @@ func (s *Server) memoryFromPath(w http.ResponseWriter, r *http.Request) (mem Mem
 // HandleGetMemory returns one memory (GET /api/memories/{id}).
 func (s *Server) HandleGetMemory(w http.ResponseWriter, r *http.Request) {
 	if mem, _, _, ok := s.memoryFromPath(w, r); ok {
-		respondJSON(w, http.StatusOK, mem)
+		ms := []Memory{mem}
+		s.withSignals(ms)
+		respondJSON(w, http.StatusOK, ms[0])
 	}
 }
 

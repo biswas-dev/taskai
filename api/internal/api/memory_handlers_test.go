@@ -858,6 +858,66 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 			t.Fatalf("%d rows after import + hub upsert, want 1", all)
 		}
 	})
+
+	t.Run("strength and confidence behind MEMORY_STRENGTH", func(t *testing.T) {
+		u := user("signals")
+		feedback := func(who, id int64, signal string) (int, MemoryFeedbackResponse) {
+			t.Helper()
+			sid := fmt.Sprint(id)
+			rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/"+sid+"/feedback", MemoryFeedbackRequest{Signal: signal}, who, map[string]string{"id": sid})
+			ts.HandleMemoryFeedback(rec, r)
+			var resp MemoryFeedbackResponse
+			if rec.Code == http.StatusOK {
+				DecodeJSON(t, rec, &resp)
+			}
+			return rec.Code, resp
+		}
+		req := mem("Deploy port", "The staging deploy listens on port 8443")
+		req.OriginHost, req.OriginID = "hub-s", "1"
+		_, created, _ := write(u, req)
+		id := created.Memory.ID
+
+		if code, _ := feedback(u, id, "useful"); code != http.StatusNotFound {
+			t.Fatalf("feedback with the flag off: %d, want 404", code)
+		}
+		if _, m := get(u, id); m.Signals != nil {
+			t.Fatalf("signals with the flag off: %+v", m.Signals)
+		}
+
+		ts.config.MemoryStrength = true
+		defer func() { ts.config.MemoryStrength = false }()
+		steps := []struct{ signal, want string }{
+			{"useful", "recorded"}, {"useful", "spaced"}, {"confirmed", "recorded"}, {"confirmed", "duplicate"}, {"wrong", "recorded"},
+		}
+		for _, st := range steps {
+			if code, resp := feedback(u, id, st.signal); code != http.StatusOK || resp.Outcome != st.want {
+				t.Fatalf("%s: %d %q, want %q", st.signal, code, resp.Outcome, st.want)
+			}
+		}
+		if code, _ := feedback(u, id, "liked"); code != http.StatusBadRequest {
+			t.Fatalf("bad signal: %d", code)
+		}
+		if code, _ := feedback(outsider, id, "wrong"); code != http.StatusNotFound {
+			t.Fatalf("outsider feedback: %d", code)
+		}
+		// An upsert by origin replaces the content, never the evidence.
+		req.Body = "The staging deploy listens on port 9443"
+		if _, resp, _ := write(u, req); resp.Outcome != "updated" {
+			t.Fatalf("upsert: %+v", resp)
+		}
+		_, m := get(u, id)
+		sig := m.Signals
+		if sig == nil || sig.Uses != 3 || sig.Confirmed != 1 || sig.Wrong != 1 || sig.LastUsedAt == nil {
+			t.Fatalf("signals after feedback and upsert: %+v", sig)
+		}
+		if want := (1 + 0.7*2) / 4.0; sig.Confidence < want-1e-9 || sig.Confidence > want+1e-9 {
+			t.Fatalf("confidence %v, want %v", sig.Confidence, want)
+		}
+		res := search(u, MemorySearchRequest{Query: "staging deploy port", Limit: 1})
+		if len(res.Results) != 1 || res.Results[0].ID != id || res.Results[0].Signals == nil {
+			t.Fatalf("re-ranked search: %+v", res.Results)
+		}
+	})
 }
 
 func TestChunkMemories(t *testing.T) {

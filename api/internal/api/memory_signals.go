@@ -1,0 +1,170 @@
+package api
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	"go.uber.org/zap"
+
+	"taskai/internal/memrank"
+)
+
+// Memory strength and confidence (MEMORY_STRENGTH=on; docs/research/memory-strength.md). Strength rises when a
+// memory is useful or confirmed and decays with time (ACT-R base-level activation). Confidence is the
+// Beta-Bernoulli posterior of confirmations and wrong votes over a prior from the stated level. Search re-ranks
+// its relevance candidates with both, and never drops the most relevant one.
+
+// MemorySignals is what a client sees of a memory's use and evidence.
+type MemorySignals struct {
+	Strength   float64    `json:"strength"`   // ACT-R activation: higher is stronger; ~1.6 when just written
+	Confidence float64    `json:"confidence"` // probability the memory is right, in (0,1)
+	Uses       int        `json:"uses"`       // the write counts as the first use
+	Confirmed  int        `json:"confirmed"`
+	Wrong      int        `json:"wrong"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// memoryWeights are the re-rank weights the offline eval chose (docs/research/memory-strength.md).
+var memoryWeights = memrank.Weights{Strength: 0.5, Confidence: 0.5}
+
+// memoryUseSpacing: a "useful" signal counts at most once an hour per memory, since massed uses add little
+// strength (Pavlik and Anderson 2005) and a loop must not inflate it.
+const memoryUseSpacing = time.Hour
+
+func (m Memory) signals(now time.Time) *MemorySignals {
+	last := m.CreatedAt
+	if m.use.lastUsed != nil {
+		last = *m.use.lastUsed
+	}
+	return &MemorySignals{
+		Strength:   memrank.Strength(memrank.Use{Created: m.CreatedAt, Uses: m.use.count, LastUsed: last}, now),
+		Confidence: memrank.Confidence(memrank.Evidence{Prior: memrank.Prior(m.Confidence), Confirmed: float64(m.use.confirmed), Wrong: float64(m.use.wrong)}),
+		Uses:       m.use.count, Confirmed: m.use.confirmed, Wrong: m.use.wrong, LastUsedAt: m.use.lastUsed,
+	}
+}
+
+// withSignals sets Signals on each memory when the feature is on.
+func (s *Server) withSignals(ms []Memory) {
+	if !s.config.MemoryStrength {
+		return
+	}
+	now := time.Now().UTC()
+	for i := range ms {
+		ms[i].Signals = ms[i].signals(now)
+	}
+}
+
+// rerankMemories orders relevance candidates by relevance, strength and confidence, and keeps limit.
+func rerankMemories(cands []Memory, limit int, now time.Time) []Memory {
+	byID := make(map[int64]Memory, len(cands))
+	rc := make([]memrank.Candidate, len(cands))
+	for i, m := range cands {
+		m.Signals = m.signals(now)
+		byID[m.ID] = m
+		rc[i] = memrank.Candidate{ID: m.ID, Relevance: m.Rank, Strength: m.Signals.Strength, Confidence: m.Signals.Confidence}
+	}
+	ranked := memrank.Rerank(rc, memoryWeights, limit)
+	out := make([]Memory, len(ranked))
+	for i, c := range ranked {
+		out[i] = byID[c.ID]
+	}
+	return out
+}
+
+// MemoryFeedbackRequest is one signal about a memory.
+type MemoryFeedbackRequest struct {
+	Signal string `json:"signal"` // useful | confirmed | wrong
+}
+
+// MemoryFeedbackResponse says whether the signal counted.
+type MemoryFeedbackResponse struct {
+	Memory  Memory `json:"memory"`
+	Outcome string `json:"outcome"` // recorded | duplicate (this credential already voted) | spaced (used within the hour)
+}
+
+// HandleMemoryFeedback records a signal on one of the caller's memories (POST /api/memories/{id}/feedback).
+func (s *Server) HandleMemoryFeedback(w http.ResponseWriter, r *http.Request) {
+	if !s.config.MemoryStrength {
+		respondError(w, http.StatusNotFound, "memory feedback is not enabled", "not_found")
+		return
+	}
+	mem, userID, owner, ok := s.memoryFromPath(w, r)
+	if !ok {
+		return
+	}
+	var req MemoryFeedbackRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body", "invalid_request")
+		return
+	}
+	if req.Signal != "useful" && req.Signal != "confirmed" && req.Signal != "wrong" {
+		respondError(w, http.StatusBadRequest, "signal must be useful, confirmed or wrong", "validation_error")
+		return
+	}
+	if !owner { // sharees read; only the owner's credentials shape the owner's store
+		respondError(w, http.StatusForbidden, "only the owner can give feedback on a memory", "forbidden")
+		return
+	}
+	if mem.Status != "active" {
+		respondError(w, http.StatusBadRequest, "only an active memory takes feedback", "validation_error")
+		return
+	}
+	actor := "session"
+	if key := GetApiKeyID(r); key > 0 {
+		actor = fmt.Sprintf("key:%d", key)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	outcome, err := s.recordMemoryFeedback(ctx, mem.ID, userID, req.Signal, actor, time.Now().UTC().Truncate(time.Second))
+	if err == nil {
+		mem, err = s.getMemory(ctx, s.db, mem.ID)
+	}
+	if err != nil {
+		s.logger.Error("Failed to record memory feedback", zap.Int64("memory_id", mem.ID), zap.Error(err))
+		respondError(w, http.StatusInternalServerError, "failed to record feedback", "internal_error")
+		return
+	}
+	mem.Signals = mem.signals(time.Now().UTC())
+	respondJSON(w, http.StatusOK, MemoryFeedbackResponse{Memory: mem, Outcome: outcome})
+}
+
+// recordMemoryFeedback stores the signal and updates the counters in one transaction. "confirmed" and "wrong" are
+// votes: one per credential, so a retry or a loop cannot stack them. "useful" is spaced by memoryUseSpacing.
+func (s *Server) recordMemoryFeedback(ctx context.Context, memoryID, ownerID int64, signal, actor string, now time.Time) (string, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	if signal == "useful" {
+		var last *time.Time
+		if err := tx.QueryRowContext(ctx, `SELECT last_used_at FROM agent_memories WHERE id = $1`, memoryID).Scan(&last); err != nil {
+			return "", err
+		}
+		if last != nil && now.Sub(*last) < memoryUseSpacing {
+			return "spaced", nil
+		}
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
+		VALUES ($1, $2, $3, $4, $5) ON CONFLICT (memory_id, signal, actor) WHERE signal <> 'useful' DO NOTHING`,
+		memoryID, ownerID, signal, actor, now)
+	if err != nil {
+		return "", err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return "duplicate", err
+	}
+	set, args := `wrong_count = wrong_count + 1`, []any{memoryID}
+	if signal != "wrong" {
+		set, args = `use_count = use_count + 1, last_used_at = $2`, append(args, now)
+		if signal == "confirmed" {
+			set += `, confirmed_count = confirmed_count + 1`
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET `+set+` WHERE id = $1`, args...); err != nil {
+		return "", err
+	}
+	return "recorded", tx.Commit()
+}

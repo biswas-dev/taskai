@@ -32,7 +32,8 @@ const (
 	memoryMaxShares      = 100
 	memoryMaxQuota       = int64(1) << 40 // 1 TiB
 	memoryCols           = `id, owner_id, kind, title, body, repo, issue, pr, folder, files, agent, provider, host, session,
-		confidence, supersedes, superseded_by, status, expires_at, origin_host, origin_id, size_bytes, created_at, updated_at`
+		confidence, supersedes, superseded_by, status, expires_at, origin_host, origin_id, size_bytes, created_at, updated_at,
+		use_count, last_used_at, confirmed_count, wrong_count`
 )
 
 var (
@@ -81,6 +82,15 @@ type Memory struct {
 	CreatedAt    time.Time    `json:"created_at"`
 	UpdatedAt    time.Time    `json:"updated_at"`
 	Rank         float64      `json:"rank,omitempty"`
+	// Signals is set only with MEMORY_STRENGTH on (docs/memory-protocol.md, "Strength and confidence").
+	Signals *MemorySignals `json:"signals,omitempty"`
+	use     memoryUse
+}
+
+// memoryUse is the stored evidence behind Signals.
+type memoryUse struct {
+	count, confirmed, wrong int
+	lastUsed                *time.Time
 }
 
 // MemoryWriteRequest creates or updates (by origin) a memory.
@@ -305,7 +315,7 @@ func scanMemories(rows *sql.Rows, withRank bool) ([]Memory, error) {
 		dest := []any{&m.ID, &m.OwnerID, &m.Kind, &m.Title, &m.Body, &m.Scope.Repo, &m.Scope.Issue, &m.Scope.PR,
 			&m.Scope.Folder, &files, &m.Author.Agent, &m.Author.Provider, &m.Author.Host, &m.Author.Session,
 			&m.Confidence, &m.Supersedes, &m.SupersededBy, &m.Status, &m.ExpiresAt, &m.OriginHost, &m.OriginID,
-			&m.SizeBytes, &m.CreatedAt, &m.UpdatedAt}
+			&m.SizeBytes, &m.CreatedAt, &m.UpdatedAt, &m.use.count, &m.use.lastUsed, &m.use.confirmed, &m.use.wrong}
 		if withRank {
 			dest = append(dest, &m.Rank)
 		}

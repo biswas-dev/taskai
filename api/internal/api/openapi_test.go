@@ -122,6 +122,7 @@ func buildTestRouter(server *Server) chi.Router {
 				r.Post("/memories/import-wiki", server.HandleImportWikiMemories)
 				r.Get("/memories/{id}", server.HandleGetMemory)
 				r.Delete("/memories/{id}", server.HandleDeleteMemory)
+				r.Post("/memories/{id}/feedback", server.HandleMemoryFeedback)
 			})
 			r.Get("/projects/{id}/github", server.HandleGetProjectGitHubSettings)
 			r.Patch("/projects/{id}/github", server.HandleUpdateProjectGitHubSettings)

@@ -152,6 +152,9 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 			if i == keep {
 				continue
 			}
+			if err := foldMemoryUse(ctx, tx, group[keep].ID, m); err != nil {
+				return rep, err
+			}
 			if err := s.removeMemories(ctx, tx, []int64{m.ID}, group[keep].ID, now); err != nil {
 				return rep, err
 			}
@@ -163,7 +166,7 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 	clusters := map[string][]Memory{}
 	var order []string
 	for _, m := range survivors {
-		if m.Confidence != "low" || m.ExpiresAt != nil || m.CreatedAt.After(now.Add(-memorySummariseAfter)) {
+		if m.Confidence != "low" || m.ExpiresAt != nil || m.CreatedAt.After(now.Add(-memorySummariseAfter)) || m.inUse(now) {
 			continue
 		}
 		key := memoryScopeKey(m.Scope) + "\x00" + m.Kind
@@ -195,6 +198,23 @@ func (s *Server) compactMemories(ctx context.Context, ownerID int64) (MemoryComp
 	}
 	rep.BytesBefore, rep.BytesAfter, rep.FreedBytes = before.UsedBytes, after.UsedBytes, before.UsedBytes-after.UsedBytes
 	return rep, tx.Commit()
+}
+
+// inUse: a memory someone confirmed, or found useful within memorySummariseAfter, is not "old and low": keep it whole.
+func (m Memory) inUse(now time.Time) bool {
+	return m.use.confirmed > 0 || m.use.lastUsed != nil && m.use.lastUsed.After(now.Add(-memorySummariseAfter))
+}
+
+// foldMemoryUse adds a removed copy's uses and votes to the copy that is kept, so folding loses no evidence.
+// shortcut: a credential that voted on both copies counts twice; dedupe through memory_feedback if that matters.
+func foldMemoryUse(ctx context.Context, q sqlQuerier, keepID int64, gone Memory) error {
+	if gone.use.count <= 1 && gone.use.confirmed == 0 && gone.use.wrong == 0 {
+		return nil
+	}
+	_, err := q.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + $1, confirmed_count = confirmed_count + $2,
+		wrong_count = wrong_count + $3, last_used_at = CASE WHEN last_used_at IS NULL OR last_used_at < $4 THEN $4 ELSE last_used_at END
+		WHERE id = $5`, gone.use.count-1, gone.use.confirmed, gone.use.wrong, gone.use.lastUsed, keepID)
+	return err
 }
 
 const memorySummaryHeader = "Merged by compaction from %d low-confidence notes, kept verbatim.\n\n"
