@@ -96,6 +96,16 @@ func TestRerank(t *testing.T) {
 	if len(got) != 2 || got[1] != 1 {
 		t.Fatalf("the most relevant memory must never be hidden, got %v", got)
 	}
+	// One slot: the combined score decides, so evidence can lift a near-tie above the most relevant memory.
+	if got := ids(Rerank(cands, Weights{Strength: 1, Confidence: 1}, 1)); len(got) != 1 || got[0] != 2 {
+		t.Fatalf("a single slot goes to the best combined score, got %v", got)
+	}
+	// Equal relevance: the pinned candidate is the one with the better signals, not the higher id.
+	tie := []Candidate{{ID: 1, Relevance: 0.05, Strength: 3, Confidence: 0.9}, {ID: 2, Relevance: 0.05, Strength: -3, Confidence: 0.2},
+		{ID: 3, Relevance: 0.049, Strength: 3, Confidence: 0.9}}
+	if got := ids(Rerank(tie, Weights{Strength: 1, Confidence: 1}, 2)); got[0] != 1 {
+		t.Fatalf("tie: %v", got)
+	}
 	if Rerank(nil, Weights{Strength: 1}, 5) != nil {
 		t.Fatal("no candidates, no results")
 	}

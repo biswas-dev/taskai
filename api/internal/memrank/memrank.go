@@ -96,7 +96,8 @@ type Candidate struct {
 const rrfK = 60
 
 // Rerank orders candidates by relevance plus the weighted strength and confidence legs, and keeps the first
-// limit. The most relevant candidate is always kept, so a weak or doubted memory is demoted, never hidden.
+// limit. With room for two or more, the most relevant candidate is always kept, so a weak or doubted memory is
+// demoted, never hidden. A single slot goes to the best combined score.
 func Rerank(cands []Candidate, w Weights, limit int) []Candidate {
 	if len(cands) == 0 || limit <= 0 {
 		return nil
@@ -110,7 +111,7 @@ func Rerank(cands []Candidate, w Weights, limit int) []Candidate {
 
 	top := cands[0]
 	for _, c := range cands[1:] {
-		if c.Relevance > top.Relevance || c.Relevance == top.Relevance && c.ID > top.ID {
+		if c.Relevance > top.Relevance || c.Relevance == top.Relevance && score[c.ID] > score[top.ID] {
 			top = c
 		}
 	}
@@ -122,6 +123,9 @@ func Rerank(cands []Candidate, w Weights, limit int) []Candidate {
 		return out[i].ID > out[j].ID
 	})
 	out = out[:min(limit, len(out))]
+	if len(out) < 2 {
+		return out
+	}
 	for _, c := range out {
 		if c.ID == top.ID {
 			return out

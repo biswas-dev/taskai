@@ -30,6 +30,9 @@ func runSimilar(ctx context.Context) error {
 		m.id = id
 		byID[id] = m
 	}
+	if err := waitEmbedded(ctx, *dsn, owner); err != nil { // the world must be embedded before probing
+		return err
+	}
 	type probe struct {
 		id      int64
 		similar []int64
@@ -70,10 +73,6 @@ func runSimilar(ctx context.Context) error {
 	vecs, err := embeddings(ctx, *dsn, owner)
 	if err != nil {
 		return err
-	}
-	probeIDs := map[int64]bool{}
-	for _, p := range probes {
-		probeIDs[p.id] = true
 	}
 	var exact, fewer, nonEmpty int
 	var lat []time.Duration

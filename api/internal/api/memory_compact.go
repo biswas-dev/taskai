@@ -217,15 +217,23 @@ func (u memoryUse) fold(g memoryUse) memoryUse {
 	return u
 }
 
-// foldMemoryUse adds a removed copy's uses and votes to the copy that is kept, so folding loses no evidence.
-// shortcut: a credential that voted on both copies counts twice; dedupe through memory_feedback if that matters.
+// foldMemoryUse moves a removed copy's feedback to the copy that is kept, so folding loses no evidence. Votes stay
+// one per credential: a vote the kept copy already has from the same credential is dropped, and the vote
+// counters are recounted from the rows.
 func foldMemoryUse(ctx context.Context, q sqlQuerier, keepID int64, gone Memory) error {
 	if gone.use.count <= 1 && gone.use.confirmed == 0 && gone.use.wrong == 0 {
 		return nil
 	}
-	_, err := q.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + $1, confirmed_count = confirmed_count + $2,
-		wrong_count = wrong_count + $3, last_used_at = CASE WHEN last_used_at IS NULL OR last_used_at < $4 THEN $4 ELSE last_used_at END
-		WHERE id = $5`, gone.use.count-1, gone.use.confirmed, gone.use.wrong, gone.use.lastUsed, keepID)
+	if _, err := q.ExecContext(ctx, `UPDATE memory_feedback SET memory_id = $1 WHERE memory_id = $2 AND (signal = 'useful'
+		OR NOT EXISTS (SELECT 1 FROM memory_feedback k WHERE k.memory_id = $1 AND k.signal = memory_feedback.signal AND k.actor = memory_feedback.actor))`,
+		keepID, gone.ID); err != nil {
+		return err
+	}
+	_, err := q.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + $1,
+		confirmed_count = (SELECT COUNT(*) FROM memory_feedback WHERE memory_id = $3 AND signal = 'confirmed'),
+		wrong_count = (SELECT COUNT(*) FROM memory_feedback WHERE memory_id = $3 AND signal = 'wrong'),
+		last_used_at = CASE WHEN last_used_at IS NULL OR last_used_at < $2 THEN $2 ELSE last_used_at END
+		WHERE id = $3`, gone.use.count-1, gone.use.lastUsed, keepID)
 	return err
 }
 

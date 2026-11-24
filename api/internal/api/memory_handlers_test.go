@@ -862,16 +862,23 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 
 	t.Run("strength and confidence behind MEMORY_STRENGTH", func(t *testing.T) {
 		u := user("signals")
-		feedback := func(who, id int64, signal string) (int, MemoryFeedbackResponse) {
+		feedbackAs := func(who, id, apiKey int64, signal string) (int, MemoryFeedbackResponse) {
 			t.Helper()
 			sid := fmt.Sprint(id)
 			rec, r := ts.MakeAuthRequest(t, http.MethodPost, "/api/memories/"+sid+"/feedback", MemoryFeedbackRequest{Signal: signal}, who, map[string]string{"id": sid})
+			if apiKey > 0 {
+				r = r.WithContext(context.WithValue(r.Context(), ApiKeyIDKey, apiKey))
+			}
 			ts.HandleMemoryFeedback(rec, r)
 			var resp MemoryFeedbackResponse
 			if rec.Code == http.StatusOK {
 				DecodeJSON(t, rec, &resp)
 			}
 			return rec.Code, resp
+		}
+		feedback := func(who, id int64, signal string) (int, MemoryFeedbackResponse) {
+			t.Helper()
+			return feedbackAs(who, id, 0, signal)
 		}
 		req := mem("Deploy port", "The staging deploy listens on port 8443")
 		req.OriginHost, req.OriginID = "hub-s", "1"
@@ -895,6 +902,19 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 				t.Fatalf("%s: %d %q, want %q", st.signal, code, resp.Outcome, st.want)
 			}
 		}
+		// Each credential has its own vote; "useful" counts again once the hour has passed.
+		if _, resp := feedbackAs(u, id, 7, "wrong"); resp.Outcome != "recorded" {
+			t.Fatalf("a vote from an API key: %q", resp.Outcome)
+		}
+		if _, resp := feedbackAs(u, id, 7, "wrong"); resp.Outcome != "duplicate" {
+			t.Fatalf("a repeat from the same API key: %q", resp.Outcome)
+		}
+		if _, err := ts.DB.ExecContext(ctx, `UPDATE agent_memories SET last_used_at = $1 WHERE id = $2`, time.Now().UTC().Add(-2*time.Hour), id); err != nil {
+			t.Fatal(err)
+		}
+		if _, resp := feedback(u, id, "useful"); resp.Outcome != "recorded" || resp.Memory.Signals.Uses != 4 || resp.Memory.Signals.Wrong != 2 {
+			t.Fatalf("useful after the spacing: %q %+v", resp.Outcome, resp.Memory.Signals)
+		}
 		if code, _ := feedback(u, id, "liked"); code != http.StatusBadRequest {
 			t.Fatalf("bad signal: %d", code)
 		}
@@ -908,17 +928,17 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		}
 		_, m := get(u, id)
 		sig := m.Signals
-		if sig == nil || sig.Uses != 3 || sig.Confirmed != 1 || sig.Wrong != 1 || sig.LastUsedAt == nil {
+		if sig == nil || sig.Uses != 4 || sig.Confirmed != 1 || sig.Wrong != 2 || sig.LastUsedAt == nil {
 			t.Fatalf("signals after feedback and replay: %+v", sig)
 		}
-		if want := (1 + 0.7*2) / 4.0; sig.Belief < want-1e-9 || sig.Belief > want+1e-9 {
+		if want := (1 + 0.7*2) / 5.0; sig.Belief < want-1e-9 || sig.Belief > want+1e-9 {
 			t.Fatalf("belief %v, want %v", sig.Belief, want)
 		}
 		req.Body = "The staging deploy listens on port 9443"
 		if _, resp, _ := write(u, req); resp.Outcome != "updated" {
 			t.Fatalf("new text: %+v", resp)
 		}
-		if _, m := get(u, id); m.Signals.Uses != 3 || m.Signals.Confirmed != 0 || m.Signals.Wrong != 0 {
+		if _, m := get(u, id); m.Signals.Uses != 4 || m.Signals.Confirmed != 0 || m.Signals.Wrong != 0 {
 			t.Fatalf("signals after new text: %+v", m.Signals)
 		}
 		if code, resp := feedback(u, id, "confirmed"); code != http.StatusOK || resp.Outcome != "recorded" {
@@ -977,6 +997,9 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		}
 		if _, m := get(c, newer.Memory.ID); m.Status != "active" || m.Signals.Uses != 3 || m.Signals.Confirmed != 1 {
 			t.Fatalf("kept copy %s: %+v", m.Status, m.Signals)
+		}
+		if _, resp := feedback(c, newer.Memory.ID, "confirmed"); resp.Outcome != "duplicate" || resp.Memory.Signals.Confirmed != 1 {
+			t.Fatalf("the vote moved with the fold, so the same credential cannot vote again: %q %+v", resp.Outcome, resp.Memory.Signals)
 		}
 		for _, keep := range lows[:2] {
 			if _, m := get(c, keep); m.Status != "active" {

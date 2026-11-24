@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -124,6 +126,11 @@ func (s *Server) similarMemories(ctx context.Context, mem Memory) []MemorySimila
 	if err != nil || vec == nil {
 		return nil
 	}
+	// Keep the vector: the next write sees this memory at once, and the worker need not embed it again.
+	if _, err := s.db.ExecContext(ctx, `UPDATE agent_memories SET embedding = $1::vector, embedded_at = $2
+		WHERE id = $3 AND content_hash = $4 AND embedding IS NULL`, float32SliceToVectorString(vec), time.Now().UTC(), mem.ID, memoryHash(mem)); err != nil {
+		s.logger.Warn("Failed to store memory embedding", zap.Int64("memory_id", mem.ID), zap.Error(err))
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, title, 1 - (embedding <=> $1::vector) AS sim FROM agent_memories
 		WHERE owner_id = $2 AND LOWER(repo) = LOWER($3) AND status = 'active' AND id <> $4 AND content_hash <> $5 AND embedding IS NOT NULL
 		AND (expires_at IS NULL OR expires_at > $6)
@@ -191,16 +198,17 @@ func (s *Server) HandleMemoryFeedback(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	outcome, err := s.recordMemoryFeedback(ctx, mem.ID, userID, req.Signal, actor, time.Now().UTC().Truncate(time.Second))
+	id := mem.ID
+	outcome, err := s.recordMemoryFeedback(ctx, id, userID, req.Signal, actor, time.Now().UTC().Truncate(time.Second))
 	if err == nil && outcome == "inactive" {
 		respondError(w, http.StatusBadRequest, "only an active memory takes feedback", "validation_error")
 		return
 	}
 	if err == nil {
-		mem, err = s.getMemory(ctx, s.db, mem.ID)
+		mem, err = s.getMemory(ctx, s.db, id)
 	}
 	if err != nil {
-		s.logger.Error("Failed to record memory feedback", zap.Int64("memory_id", mem.ID), zap.Error(err))
+		s.logger.Error("Failed to record memory feedback", zap.Int64("memory_id", id), zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "failed to record feedback", "internal_error")
 		return
 	}
@@ -216,6 +224,10 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, memoryID, ownerID int
 		return "", err
 	}
 	defer tx.Rollback() //nolint:errcheck
+	// The owner lock orders feedback with compaction, which folds counters and vote rows.
+	if err := s.lockMemoryOwner(ctx, tx, ownerID); err != nil {
+		return "", err
+	}
 	if signal == "useful" {
 		// One conditional UPDATE: the row lock makes a parallel "useful" re-check the new last_used_at and skip.
 		res, err := tx.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + 1, last_used_at = $2
@@ -224,6 +236,13 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, memoryID, ownerID int
 			return "", err
 		}
 		if n, err := res.RowsAffected(); err != nil || n == 0 {
+			var status string
+			if err == nil {
+				err = tx.QueryRowContext(ctx, `SELECT status FROM agent_memories WHERE id = $1`, memoryID).Scan(&status)
+			}
+			if errors.Is(err, sql.ErrNoRows) || err == nil && status != "active" {
+				return "inactive", nil
+			}
 			return "spaced", err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)

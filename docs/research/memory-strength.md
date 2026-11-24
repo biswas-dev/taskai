@@ -57,9 +57,9 @@ All parts are behind `MEMORY_STRENGTH`. With the flag off (the default), the API
 | Feedback | `POST /api/memories/{id}/feedback {useful \| confirmed \| wrong}`, MCP `memory_feedback`. Owner only, active memories only. | The only source of signal. Search results never count as use. |
 | Staged flag | `MEMORY_STRENGTH=off` (default), `collect` (feedback, signals, similar-on-write; flat search) or `on` (also the re-rank). | Lets the store collect labels before the re-rank changes any result. |
 | Vote rules | `confirmed` and `wrong`: one vote per memory, signal and credential. `useful`: at most once an hour per memory. New text resets the votes and keeps the uses. A replay keeps everything. | Stops loops and retries from stacking votes. Votes judged the old text. |
-| Re-rank | Search fetches a pool of at least 50 relevance candidates and adds strength and belief as two extra RRF legs with weights 0.5 and 0.25. The most relevant candidate always stays in the results. | Bounded: a signal can reorder relevant memories, never add an irrelevant one or hide the best match. |
+| Re-rank | Search fetches a pool of at least 50 relevance candidates and adds strength and belief as two extra RRF legs with weights 0.5 and 0.25. With a limit of 2 or more, the most relevant candidate always stays in the results; a single slot goes to the best combined score. | Bounded: a signal can reorder relevant memories, never add an irrelevant one or hide the best match. |
 | Similar on write | A write that creates or changes a memory returns up to 3 active memories of the same repo with cosine ≥ 0.80. | The cheapest measured fix for stale results. Nothing is merged automatically. |
-| Compaction | A folded copy's counters go to the kept copy. A memory that was confirmed, or used in the last 90 days, is not merged into a low-confidence summary. | Compaction must not lose evidence or bury memories in use. |
+| Compaction | A folded copy's feedback rows move to the kept copy (still one vote per credential) and its counters are recounted. A memory that was confirmed, or used in the last 90 days, is not merged into a low-confidence summary. | Compaction must not lose evidence or bury memories in use. |
 
 Storage: four integer/timestamp columns (about 24 bytes per memory) and one `memory_feedback` row per signal.
 
