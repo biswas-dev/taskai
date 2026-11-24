@@ -10,7 +10,7 @@ The recommendation, in five lines:
 
 1. Keep the flat store and its hybrid search. It finds the right memory (recall@10 0.94 in our synthetic world). The errors are in the order of the results, and most are **stale** memories.
 2. Fix staleness first. A store that shows the writer **similar older memories on write**, so the writer can supersede them, raised hit@1 from 0.748 to 0.794 with no feedback at all. An oracle that supersedes every update reaches 0.838.
-3. Strength plus belief, as a bounded re-rank, add about 4.5 hit@1 points with good feedback (better on 5 of 5 seeds), about 2 points with noisy feedback, and about 2 more on top of similar-on-write. They help most when the same facts are asked again and again.
+3. Strength plus belief, as a bounded re-rank, add about 4.5 hit@1 points with good feedback (better on 5 of 5 seeds), about 2 points with noisy feedback, and about 2 more on top of similar-on-write. They help most when the same facts are asked again and again. Without feedback, strength is recency. On LongMemEval, recency puts the newest of two answer sessions first in 81% of knowledge-update questions (flat: 53%). The cost is 0.9 hit@1 points on all questions, and 2.3 points on known-item queries in a real store.
 4. The belief score is **not calibrated** without labels (ECE 0.114). Platt scaling on labelled feedback brings it to 0.035, but only when the feedback behaves as in training (0.092 under a shift).
 5. Ship similar-on-write and the feedback counters first: they are cheap and they collect the labels. Turn the re-rank on only after real feedback confirms a gain.
 
@@ -22,11 +22,13 @@ The recommendation, in five lines:
 | + both of the above | 0.816 | — | 4.3% |
 | Oracle supersede (upper bound) | 0.838 | 0.880 | 1.0% |
 
+The server ranking equals the eval's ranking on 2,922 of 2,922 queries, and adds no measurable latency (p50 49 ms).
+
 The sections below give the research with citations, the design, the experiments, the risks and what we did not do.
 
 ## 1. What the research says
 
-The full report, with a primary source for each claim, is in the research notes of this branch. The short version follows.
+The full literature report, with a primary source for each claim, is [memory-strength-literature.md](memory-strength-literature.md). The short version follows.
 
 **No agent-memory system has measured the gain of a per-memory score.** Generative Agents scores recency (0.995 decay per game hour), LLM importance and relevance with equal weights. MemoryBank uses an Ebbinghaus strength. MemoryOS uses a "heat". All three ablate whole modules, never the score alone ([Park et al. 2023](https://arxiv.org/html/2304.03442v2), [MemoryBank](https://arxiv.org/html/2305.10250), [MemoryOS](https://arxiv.org/html/2506.06326)). Mem0, Zep/Graphiti, A-MEM, HippoRAG and Memory-R1 keep no strength or confidence field ([Mem0](https://arxiv.org/html/2504.19413), [Zep](https://arxiv.org/html/2501.13956), [A-MEM](https://arxiv.org/html/2502.12110)).
 
@@ -197,18 +199,69 @@ Beta + Platt:
 
 The stated level carries no information (AUC 0.50). The evidence adds some (0.63). A calibrated number needs a calibrator fitted on labelled feedback, and the fit does not survive a change in agent behaviour. So the server returns the raw posterior as `belief` and calls it uncalibrated.
 
-<!-- LME -->
+### 3.4 LongMemEval_S: no feedback, so strength is recency
 
-<!-- OWNER -->
+222 questions: all 72 knowledge-update questions (abstention excluded) and 30 of each other type, about 19,000 session memories, 10 local owners. Every search ran in hybrid mode. Latency through the local API: p50 136 ms, p95 241 ms.
 
-<!-- PARITY -->
+| variant | hit@1 | recall@5 | recall@10 | MRR |
+|---|---|---|---|---|
+| flat | 0.730 | 0.923 | 0.959 | 0.809 |
+| recency w=0.25 | 0.725 | 0.923 | 0.959 | 0.807 |
+| recency w=0.5 (the shipped strength weight) | 0.721 | 0.919 | 0.959 | 0.802 |
+| recency w=1 | 0.671 | 0.896 | 0.959 | 0.771 |
+| recency w=2 | 0.500 | 0.847 | 0.946 | 0.654 |
+
+Knowledge-update questions, where the newest answer session holds the current value:
+
+| variant | newest at rank 1 | newest in top 5 | newest ranked above the older one |
+|---|---|---|---|
+| flat | 0.486 | 0.972 | 38/72 = 0.528 |
+| recency w=0.25 | 0.681 | 0.972 | 54/72 = 0.750 |
+| recency w=0.5 | 0.736 | 0.972 | 58/72 = 0.806 |
+| recency w=1 | 0.806 | 0.944 | 65/72 = 0.903 |
+
+Recall@5 by type barely moves at w=0.5 (single-session-user 1.000 → 0.933, single-session-assistant 0.767 → 0.800; the others are unchanged).
+
+What this shows: flat search finds the evidence (recall@10 0.959) but puts the stale session first half the time. A bounded recency term fixes most of that order (0.528 → 0.806) at a cost of 0.9 hit@1 points on all questions. Large weights do harm. This is retrieval only: we did not run an LLM reader.
+
+
+### 3.5 One real store (private; aggregates only)
+
+About 1,000 memories that one person's agents wrote over a month, loaded only into the local API. Nothing from this store left the machine, and no LLM saw it. There is no use log and no correctness label, so this suite checks only "no harm", latency and conflict-candidate rates.
+
+- **Stated confidence:** 95% `high`, 5% `medium`. The enum carries almost no information, which agrees with the LLM-calibration literature above.
+- **Known-item search:** 1,026 queries of 4 random content words from a memory's body. All ran in hybrid mode, at p50 72 ms and p95 138 ms.
+
+| variant | hit@1 | recall@5 | recall@10 | MRR |
+|---|---|---|---|---|
+| flat | 0.293 | 0.717 | 0.865 | 0.476 |
+| recency w=0.5 | 0.270 | 0.697 | 0.860 | 0.458 |
+| recency w=1 | 0.240 | 0.671 | 0.846 | 0.429 |
+
+With no use signal, `on` acts as recency. It costs 2.3 hit@1 points on queries that look for an old memory by its words. This is the cost side of the LongMemEval gain, and it is one more reason for the staged flag.
+
+- **Conflict candidates:** pairs in the same repo with different text above a cosine threshold. At 0.80 there are 552 pairs, about 1.07 per memory. At 0.95 there are still 533, so most are near-copies. Two of the three known supersede pairs are above 0.80, and one is above 0.85. Similar-on-write would show about one memory per write in this store, and most of them would be restatements.
+
+
+### 3.6 Server parity and latency
+
+The parity suite runs on a local API with `MEMORY_STRENGTH=on` and no feedback. For each of the 2,922 distinct queries of the test worlds, it compares the server's top 10 with the eval's re-rank of the flat top 50: **2,922/2,922 are equal**. With `collect`, which keeps search flat, only 1/2,922 is equal. This shows that the check can detect a difference.
+
+Search latency on the same queries is p50 49 ms and p95 321 ms with `on`, and p50 48 ms and p95 about 450 ms with flat search. The re-rank adds no latency that we can measure; the p95 is noise from the local machine. Every suite stayed far inside the 4 s context budget.
+
+**Storage.** Four columns (about 24 bytes) per memory, against a median memory of about 3.5 KB including its vector (under 1%). Each signal adds one `memory_feedback` row of about 60 bytes.
+
 
 ## 4. Recommendation
 
 1. **Now**: set `MEMORY_STRENGTH=collect` (similar-on-write, feedback and signals; search stays flat). Teach the agents (hub, MCP clients) to send `useful` for a memory they used and `wrong` for one they found false, and to supersede what `similar` shows.
 2. **After about 500 labelled signals**: rerun this eval on real feedback (hit@1 on queries whose answer the agent marked). Turn the re-rank on if it beats flat by more than the seed noise (about 2 points). Fit Platt on the labels before any client treats `belief` as a probability.
 3. **Keep**: flat store, hybrid RRF, verbatim compaction, explicit supersede.
-4. **Next research**: client-side citation reports (an automatic `useful`), bi-temporal valid time on supersede, and an NLI check on similar-on-write candidates if writers ignore them.
+4. **Next research**:
+   - Apply recency only to kinds that change, such as facts and decisions about current state. On LongMemEval, recency fixes the order of updated facts. On the real store, it costs 2.3 points for old memories that users look for by their words.
+   - Client-side citation reports, as an automatic `useful`.
+   - Bi-temporal valid time on supersede.
+   - An NLI check on similar-on-write candidates, if writers ignore them or if near-copies drown them.
 
 ## 5. Risks
 
@@ -218,13 +271,15 @@ The stated level carries no information (AUC 0.50). The evidence adds some (0.63
 | Wrong or poisoned feedback pushes a false memory up. | One vote per credential; only the owner's credentials vote; votes reset on new text; belief alone is weak under noise, so it has the smaller weight. |
 | A false precision number misleads clients. | The field is `belief`, documented as uncalibrated. |
 | Similar-on-write slows writes. | One embedding call with a 1 s timeout, best effort, Postgres only. |
+| Recency (strength without feedback) hides old memories that users look for by their words: -2.3 hit@1 on the real store, -0.9 on LongMemEval. | The staged flag keeps search flat in `collect`. Limit recency to kinds that change before you turn on `on`. |
 | The simulator flatters the method. | Weights chosen on train seeds, reported on held-out seeds, with a noisy-feedback shift, a need-distribution sweep and paired per-seed deltas. |
 | Writes slow down as one owner's store grows (pre-existing). | Each write takes an owner lock and sums the owner's usage; about 0.6 s per write at 20,000 memories locally. Out of scope here; a cached usage counter would fix it. |
 
 ## 6. What we did not check
 
 - Real feedback: no client sends it yet, so every re-rank gain is simulated.
-- LongMemEval and LoCoMo QA accuracy with an LLM reader: we measured retrieval only, without LLM calls.
+- LongMemEval and LoCoMo QA accuracy with an LLM reader: we measured retrieval only, without LLM calls. LoCoMo was not run at all: its licence is non-commercial, and LongMemEval covers knowledge updates better.
+- LongMemEval on all 470 questions: we ran a stratified 222, because local embedding took about 15 texts per second.
 - Multi-user sharing: feedback is owner-only.
 - The SQLite path of similar-on-write (it is off there by design).
 
