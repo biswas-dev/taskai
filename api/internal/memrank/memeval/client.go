@@ -49,7 +49,7 @@ func (c *client) do(method, path string, in, out any) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
@@ -113,7 +113,7 @@ func waitEmbedded(ctx context.Context, dsn string, owner int64) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	for {
 		var pending int
 		if err := conn.QueryRow(ctx, `SELECT COUNT(*) FROM agent_memories WHERE owner_id = $1 AND embedding IS NULL`, owner).Scan(&pending); err != nil {
@@ -137,7 +137,7 @@ func embeddings(ctx context.Context, dsn string, owner int64) (map[int64][]float
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	rows, err := conn.Query(ctx, `SELECT id, embedding::text FROM agent_memories WHERE owner_id = $1 AND embedding IS NOT NULL`, owner)
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func ownerID(ctx context.Context, dsn, email string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer conn.Close(ctx)
+	defer func() { _ = conn.Close(ctx) }()
 	var id int64
 	err = conn.QueryRow(ctx, `SELECT id FROM users WHERE email = $1`, email).Scan(&id)
 	return id, err

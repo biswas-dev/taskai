@@ -53,7 +53,7 @@ func contentWords(s string) []string {
 
 func memoryWords(s string) []string {
 	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_')
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_'
 	})
 }
 
