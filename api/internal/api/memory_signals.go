@@ -205,13 +205,20 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, memoryID, ownerID int
 	}
 	defer tx.Rollback() //nolint:errcheck
 	if signal == "useful" {
-		var last *time.Time
-		if err := tx.QueryRowContext(ctx, `SELECT last_used_at FROM agent_memories WHERE id = $1`, memoryID).Scan(&last); err != nil {
+		// One conditional UPDATE: the row lock makes a parallel "useful" re-check the new last_used_at and skip.
+		res, err := tx.ExecContext(ctx, `UPDATE agent_memories SET use_count = use_count + 1, last_used_at = $2
+			WHERE id = $1 AND (last_used_at IS NULL OR last_used_at <= $3)`, memoryID, now, now.Add(-memoryUseSpacing))
+		if err != nil {
 			return "", err
 		}
-		if last != nil && now.Sub(*last) < memoryUseSpacing {
-			return "spaced", nil
+		if n, err := res.RowsAffected(); err != nil || n == 0 {
+			return "spaced", err
 		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
+			VALUES ($1, $2, $3, $4, $5)`, memoryID, ownerID, signal, actor, now); err != nil {
+			return "", err
+		}
+		return "recorded", tx.Commit()
 	}
 	res, err := tx.ExecContext(ctx, `INSERT INTO memory_feedback (memory_id, owner_id, signal, actor, created_at)
 		VALUES ($1, $2, $3, $4, $5) ON CONFLICT (memory_id, signal, actor) WHERE signal <> 'useful' DO NOTHING`,
@@ -223,11 +230,8 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, memoryID, ownerID int
 		return "duplicate", err
 	}
 	set, args := `wrong_count = wrong_count + 1`, []any{memoryID}
-	if signal != "wrong" {
-		set, args = `use_count = use_count + 1, last_used_at = $2`, append(args, now)
-		if signal == "confirmed" {
-			set += `, confirmed_count = confirmed_count + 1`
-		}
+	if signal == "confirmed" {
+		set, args = `use_count = use_count + 1, last_used_at = $2, confirmed_count = confirmed_count + 1`, append(args, now)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE agent_memories SET `+set+` WHERE id = $1`, args...); err != nil {
 		return "", err
