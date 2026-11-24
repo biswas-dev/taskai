@@ -212,6 +212,9 @@ func merge(rs []simResult) simResult {
 func platt(c calib) func(float64) float64 {
 	logit := func(p float64) float64 { p = min(max(p, 1e-4), 1-1e-4); return math.Log(p / (1 - p)) }
 	a, b := 1.0, 0.0
+	if len(c.p) == 0 { // nothing to fit: identity
+		return func(p float64) float64 { return p }
+	}
 	for range 3000 {
 		var ga, gb float64
 		for i, p := range c.p {
