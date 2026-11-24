@@ -104,14 +104,14 @@ Similar text that isn't an exact copy is never merged: "Use X" and "Do not use X
 
 Removed rows that have an origin leave a tombstone, so a client re-sending them gets `ignored`.
 
-## Strength and confidence (optional)
+## Strength and belief (optional)
 
 A server with `MEMORY_STRENGTH=on` adds two numbers to each memory and uses them to order search results. They are additive: the protocol version stays `1`, and clients that do not know them ignore them. The evidence and the eval behind them are in [research/memory-strength.md](research/memory-strength.md).
 
 | Field (`signals`) | Meaning |
 |---|---|
 | `strength` | How much a memory is in use: ACT-R base-level activation, from its uses and how recent they are. It decays with time. The write counts as the first use. |
-| `confidence` | The probability that the memory is right: a Beta-Bernoulli posterior of `confirmed` and `wrong` votes over a prior from the stated `confidence` level. |
+| `belief` | An evidence score in (0, 1): a Beta-Bernoulli posterior of `confirmed` and `wrong` votes over a prior from the stated `confidence` level. It is not a calibrated probability until feedback labels exist to fit it. |
 | `uses`, `confirmed`, `wrong`, `last_used_at` | The evidence behind the two numbers. |
 
 Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback.
@@ -125,8 +125,8 @@ Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}`
 The rules:
 
 - **Search is not use.** A memory that search returns gets no signal, or the strong would only get stronger.
-- **Re-rank, never hide.** Strength and confidence reorder the memories that relevance found; they never add one. The most relevant memory always stays in the results.
-- **Evidence survives upserts.** A replay from a hub replaces the content, never the counters. Compaction adds a folded copy's counters to the copy it keeps, and does not merge a memory that someone confirmed or used in the last 90 days.
+- **Re-rank, never hide.** Strength and belief reorder the memories that relevance found; they never add one. The most relevant memory always stays in the results.
+- **Evidence survives replays.** A replay from a hub keeps the counters. New text resets the votes, because they judged the old text; the uses stay. Compaction adds a folded copy's counters to the copy it keeps, and does not merge a memory that someone confirmed or used in the last 90 days.
 
 ## Errors
 

@@ -120,7 +120,7 @@ func (s *Server) HandleSearchMemories(w http.ResponseWriter, r *http.Request) {
 	// With strength on, fetch a wider pool of relevant candidates and re-rank it (memory_signals.go).
 	fetch := req.Limit
 	if s.config.MemoryStrength {
-		fetch = min(req.Limit*3, 150)
+		fetch = min(max(req.Limit*3, 50), 150) // the eval tuned the weights on a pool of 50
 	}
 	var results []Memory
 	if mode == "hybrid" {

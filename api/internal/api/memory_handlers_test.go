@@ -900,18 +900,56 @@ func runMemoryTests(t *testing.T, ts *TestServer) {
 		if code, _ := feedback(outsider, id, "wrong"); code != http.StatusNotFound {
 			t.Fatalf("outsider feedback: %d", code)
 		}
-		// An upsert by origin replaces the content, never the evidence.
-		req.Body = "The staging deploy listens on port 9443"
+		// A replay keeps the evidence; new text resets the votes (they judged the old text) but keeps the uses.
+		req.Author.Session = "replay"
 		if _, resp, _ := write(u, req); resp.Outcome != "updated" {
-			t.Fatalf("upsert: %+v", resp)
+			t.Fatalf("replay: %+v", resp)
 		}
 		_, m := get(u, id)
 		sig := m.Signals
 		if sig == nil || sig.Uses != 3 || sig.Confirmed != 1 || sig.Wrong != 1 || sig.LastUsedAt == nil {
-			t.Fatalf("signals after feedback and upsert: %+v", sig)
+			t.Fatalf("signals after feedback and replay: %+v", sig)
 		}
-		if want := (1 + 0.7*2) / 4.0; sig.Confidence < want-1e-9 || sig.Confidence > want+1e-9 {
-			t.Fatalf("confidence %v, want %v", sig.Confidence, want)
+		if want := (1 + 0.7*2) / 4.0; sig.Belief < want-1e-9 || sig.Belief > want+1e-9 {
+			t.Fatalf("belief %v, want %v", sig.Belief, want)
+		}
+		req.Body = "The staging deploy listens on port 9443"
+		if _, resp, _ := write(u, req); resp.Outcome != "updated" {
+			t.Fatalf("new text: %+v", resp)
+		}
+		if _, m := get(u, id); m.Signals.Uses != 3 || m.Signals.Confirmed != 0 || m.Signals.Wrong != 0 {
+			t.Fatalf("signals after new text: %+v", m.Signals)
+		}
+		if code, resp := feedback(u, id, "confirmed"); code != http.StatusOK || resp.Outcome != "recorded" {
+			t.Fatalf("a vote on the new text: %d %q", code, resp.Outcome)
+		}
+
+		// Compaction folds a copy's evidence into the copy it keeps, and keeps a confirmed old note whole.
+		c := user("signals-compact")
+		copyReq := mem("Cache TTL", "The cache TTL is 300 seconds")
+		copyReq.OriginHost, copyReq.OriginID = "hub-c", "old"
+		_, older, _ := write(c, copyReq)
+		copyReq.OriginID = "new"
+		_, newer, _ := write(c, copyReq)
+		feedback(c, older.Memory.ID, "useful")
+		feedback(c, older.Memory.ID, "confirmed")
+		old := time.Now().UTC().Add(-100 * 24 * time.Hour)
+		var lows []int64
+		for i := range 4 {
+			lr := mem(fmt.Sprintf("Old note %d", i), fmt.Sprintf("An old low note number %d", i))
+			lr.Confidence, lr.CreatedAt = "low", &old
+			_, lw, _ := write(c, lr)
+			lows = append(lows, lw.Memory.ID)
+		}
+		feedback(c, lows[0], "confirmed")
+		if rep := compact(c); rep.DuplicatesMerged != 1 || rep.LowConfidenceSummarised != 3 {
+			t.Fatalf("compaction: %+v", rep)
+		}
+		if _, m := get(c, newer.Memory.ID); m.Status != "active" || m.Signals.Uses != 3 || m.Signals.Confirmed != 1 {
+			t.Fatalf("kept copy %s: %+v", m.Status, m.Signals)
+		}
+		if _, m := get(c, lows[0]); m.Status != "active" {
+			t.Fatalf("a confirmed old note must not be merged: %s", m.Status)
 		}
 		res := search(u, MemorySearchRequest{Query: "staging deploy port", Limit: 1})
 		if len(res.Results) != 1 || res.Results[0].ID != id || res.Results[0].Signals == nil {

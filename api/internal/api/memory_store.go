@@ -599,6 +599,9 @@ func (s *Server) upsertMemory(ctx context.Context, ownerID int64, m memoryRow) (
 		if err == nil && oldHash != m.hash {
 			err = s.clearMemoryEmbedding(ctx, tx, id)
 		}
+		if err == nil && oldHash != m.hash {
+			err = resetMemoryVotes(ctx, tx, id)
+		}
 	} else {
 		id, err = insertMemoryRow(ctx, tx, ownerID, m, supersedes)
 	}

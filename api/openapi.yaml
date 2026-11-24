@@ -1656,7 +1656,7 @@ paths:
       summary: Give Memory Feedback
       description: >-
         Owner only, and only with MEMORY_STRENGTH on (404 otherwise). useful and confirmed make a memory stronger;
-        confirmed and wrong are evidence votes for its confidence, one per signal and credential (a repeat is
+        confirmed and wrong are evidence votes for its belief score, one per signal and credential (a repeat is
         duplicate). useful counts at most once an hour per memory (a repeat is spaced). Send it only for a memory
         you used or checked; being returned by search is not a signal.
       tags: [Memories]
@@ -4618,7 +4618,7 @@ components:
           description: Only with MEMORY_STRENGTH on. Clients that do not know it ignore it.
           properties:
             strength: {type: number, description: "ACT-R base-level activation; higher is stronger, about 1.6 when just written"}
-            confidence: {type: number, description: "Probability the memory is right, from the stated level and the evidence votes"}
+            belief: {type: number, description: "Evidence score in (0,1) from the stated confidence level and the confirmed/wrong votes. Not calibrated."}
             uses: {type: integer, description: The write counts as the first use}
             confirmed: {type: integer}
             wrong: {type: integer}

@@ -11,15 +11,17 @@ import (
 	"taskai/internal/memrank"
 )
 
-// Memory strength and confidence (MEMORY_STRENGTH=on; docs/research/memory-strength.md). Strength rises when a
-// memory is useful or confirmed and decays with time (ACT-R base-level activation). Confidence is the
-// Beta-Bernoulli posterior of confirmations and wrong votes over a prior from the stated level. Search re-ranks
+// Memory strength and belief (MEMORY_STRENGTH=on; docs/research/memory-strength.md). Strength rises when a
+// memory is useful or confirmed and decays with time (ACT-R base-level activation). Belief is the
+// Beta-Bernoulli posterior of confirmations and wrong votes over a prior from the stated confidence level. Search re-ranks
 // its relevance candidates with both, and never drops the most relevant one.
 
 // MemorySignals is what a client sees of a memory's use and evidence.
 type MemorySignals struct {
 	Strength   float64    `json:"strength"`   // ACT-R activation: higher is stronger; ~1.6 when just written
-	Confidence float64    `json:"confidence"` // probability the memory is right, in (0,1)
+	// Belief is an evidence score in (0,1): confirmed and wrong votes over a prior from the stated confidence level.
+	// It is NOT calibrated until feedback labels exist to fit it (docs/research/memory-strength.md).
+	Belief float64 `json:"belief"`
 	Uses       int        `json:"uses"`       // the write counts as the first use
 	Confirmed  int        `json:"confirmed"`
 	Wrong      int        `json:"wrong"`
@@ -40,7 +42,7 @@ func (m Memory) signals(now time.Time) *MemorySignals {
 	}
 	return &MemorySignals{
 		Strength:   memrank.Strength(memrank.Use{Created: m.CreatedAt, Uses: m.use.count, LastUsed: last}, now),
-		Confidence: memrank.Confidence(memrank.Evidence{Prior: memrank.Prior(m.Confidence), Confirmed: float64(m.use.confirmed), Wrong: float64(m.use.wrong)}),
+		Belief: memrank.Confidence(memrank.Evidence{Prior: memrank.Prior(m.Confidence), Confirmed: float64(m.use.confirmed), Wrong: float64(m.use.wrong)}),
 		Uses:       m.use.count, Confirmed: m.use.confirmed, Wrong: m.use.wrong, LastUsedAt: m.use.lastUsed,
 	}
 }
@@ -63,7 +65,7 @@ func rerankMemories(cands []Memory, limit int, now time.Time) []Memory {
 	for i, m := range cands {
 		m.Signals = m.signals(now)
 		byID[m.ID] = m
-		rc[i] = memrank.Candidate{ID: m.ID, Relevance: m.Rank, Strength: m.Signals.Strength, Confidence: m.Signals.Confidence}
+		rc[i] = memrank.Candidate{ID: m.ID, Relevance: m.Rank, Strength: m.Signals.Strength, Confidence: m.Signals.Belief}
 	}
 	ranked := memrank.Rerank(rc, memoryWeights, limit)
 	out := make([]Memory, len(ranked))
@@ -71,6 +73,16 @@ func rerankMemories(cands []Memory, limit int, now time.Time) []Memory {
 		out[i] = byID[c.ID]
 	}
 	return out
+}
+
+// resetMemoryVotes: votes judged the old text, so new text starts over (uses stay: it is the same lesson). A replay
+// with the same content never gets here, so evidence survives hub retries.
+func resetMemoryVotes(ctx context.Context, q sqlQuerier, id int64) error {
+	if _, err := q.ExecContext(ctx, `UPDATE agent_memories SET confirmed_count = 0, wrong_count = 0 WHERE id = $1`, id); err != nil {
+		return err
+	}
+	_, err := q.ExecContext(ctx, `DELETE FROM memory_feedback WHERE memory_id = $1 AND signal <> 'useful'`, id)
+	return err
 }
 
 // MemoryFeedbackRequest is one signal about a memory.
