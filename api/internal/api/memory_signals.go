@@ -240,6 +240,8 @@ func (s *Server) recordMemoryFeedback(ctx context.Context, id int64, judged *tim
 	case err != nil:
 		return "", Memory{}, err
 	case judged != nil && !judged.Equal(cur.UpdatedAt):
+		// shortcut: updated_at has 1 s resolution, so an edit in the same second as the read goes unseen; add a
+		// revision column if clients need a strict precondition.
 		return "changed", Memory{}, nil // an upsert replaced what the caller judged
 	}
 	outcome := "recorded"

@@ -413,6 +413,12 @@ func TestMemoryListDeleteUsageCompact(t *testing.T) {
 	call(t, h, key, "memory_feedback", map[string]any{"memory_id": "6", "signal": "confirmed"})
 	if req := api.last("/api/memories/6/feedback"); req.Method != http.MethodPost || req.Body["signal"] != "confirmed" {
 		t.Fatalf("feedback: %+v", req)
+	} else if _, ok := req.Body["updated_at"]; ok {
+		t.Fatalf("an empty updated_at must be omitted: %+v", req.Body)
+	}
+	call(t, h, key, "memory_feedback", map[string]any{"memory_id": "6", "signal": "wrong", "updated_at": "2026-11-24T05:00:00Z"})
+	if req := api.last("/api/memories/6/feedback"); req.Body["updated_at"] != "2026-11-24T05:00:00Z" {
+		t.Fatalf("feedback precondition: %+v", req.Body)
 	}
 	call(t, h, key, "memory_usage", map[string]any{})
 	call(t, h, key, "compact_memories", map[string]any{})

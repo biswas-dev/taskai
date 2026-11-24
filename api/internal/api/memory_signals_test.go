@@ -283,6 +283,10 @@ func testMemorySignals(t *testing.T, ts *TestServer, k memoryKit) {
 	ch := mem("Region", "Deploys go to us-east-1")
 	ch.OriginHost, ch.OriginID = "hub-h", "1"
 	_, chw, _ := write(g, ch)
+	// The read happens a minute before the edit (updated_at has 1 s resolution).
+	if _, err := ts.DB.ExecContext(ctx, `UPDATE agent_memories SET updated_at = $1 WHERE id = $2`, time.Now().UTC().Add(-time.Minute).Truncate(time.Second), chw.Memory.ID); err != nil {
+		t.Fatal(err)
+	}
 	_, read := get(g, chw.Memory.ID)
 	ch.Body = "Deploys go to eu-west-1"
 	write(g, ch)
@@ -293,7 +297,7 @@ func testMemorySignals(t *testing.T, ts *TestServer, k memoryKit) {
 		ts.HandleMemoryFeedback(rec, r)
 		return rec.Code
 	}
-	if code := judge(read.UpdatedAt.Add(-time.Hour)); code != http.StatusConflict {
+	if code := judge(read.UpdatedAt); code != http.StatusConflict {
 		t.Fatalf("feedback with a stale updated_at: %d, want 409", code)
 	}
 	_, now := get(g, chw.Memory.ID)

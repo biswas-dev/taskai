@@ -114,7 +114,7 @@ A server can add two numbers to each memory. `MEMORY_STRENGTH=collect` turns on 
 | `belief` | An evidence score in (0, 1): a Beta-Bernoulli posterior of `confirmed` and `wrong` votes over a prior from the stated `confidence` level. It is not a calibrated probability until feedback labels exist to fit it. |
 | `uses`, `confirmed`, `wrong`, `last_used_at` | The evidence behind the two numbers. |
 
-Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback, and only on an active memory (400 otherwise). Send the `updated_at` of the memory you judged (from `GET /api/memories/{id}` or `get_memory`; trimmed MCP search results leave it out), and the answer is 409 if the memory changed since: read it again before you judge it.
+Tell the store how a memory did with `POST /api/memories/{id}/feedback {signal}` (MCP `memory_feedback`). Only the owner's credentials can give feedback, and only on an active, unexpired memory (400 otherwise). Send the `updated_at` of the memory you judged (from `GET /api/memories/{id}` or `get_memory`; trimmed MCP search results leave it out), and the answer is 409 if the memory changed since: read it again before you judge it. The check has a resolution of one second.
 
 | `signal` | Send it when | Effect |
 |---|---|---|
