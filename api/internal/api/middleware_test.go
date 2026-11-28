@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -285,10 +284,18 @@ func TestRateLimitMiddlewareXForwardedFor(t *testing.T) {
 	rec = httptest.NewRecorder()
 	limitedHandler.ServeHTTP(rec, req)
 
-	// Note: X-Forwarded-For is checked but then X-Real-IP overrides it if present.
-	// Without X-Real-IP, the bucket key uses the first X-Forwarded-For value.
 	if rec.Code != http.StatusTooManyRequests {
 		t.Errorf("Second request should be rate limited, got %d", rec.Code)
+	}
+
+	// X-Forwarded-For can be forged, so a new value from the same connection is still limited.
+	req = httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	req.RemoteAddr = "10.0.0.1:12346"
+	req.Header.Set("X-Forwarded-For", "198.51.100.7")
+	rec = httptest.NewRecorder()
+	limitedHandler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("A forged X-Forwarded-For must not get a new bucket, got %d", rec.Code)
 	}
 }
 
@@ -574,12 +581,12 @@ func TestAuthFailureLimit(t *testing.T) {
 }
 
 func TestAuthFailureLimitConcurrentGuesses(t *testing.T) {
-	ts := NewTestServer(t)
-	defer ts.Close()
-	// A slow auth that always fails: every guess is in flight before any 401 comes back.
+	// A slow auth that always fails: the guesses that get a token wait here until all requests have arrived.
 	release := make(chan struct{})
+	entered := make(chan struct{}, 50)
 	slowFail := func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			entered <- struct{}{}
 			<-release
 			respondError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
 		})
@@ -599,7 +606,18 @@ func TestAuthFailureLimitConcurrentGuesses(t *testing.T) {
 			codes <- rec.Code
 		}(i)
 	}
-	time.Sleep(50 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		<-entered // the three guesses that got a token are inside auth
+	}
+	// The other 47 are refused without waiting for auth; collect them before auth answers.
+	refused := 0
+	for i := 0; i < n-3; i++ {
+		if c := <-codes; c == http.StatusTooManyRequests {
+			refused++
+		} else {
+			t.Fatalf("a guess beyond the budget got %d, want 429", c)
+		}
+	}
 	close(release)
 	wg.Wait()
 	close(codes)
@@ -609,8 +627,33 @@ func TestAuthFailureLimitConcurrentGuesses(t *testing.T) {
 			checked++
 		}
 	}
-	if checked > 3 {
-		t.Fatalf("%d of %d concurrent guesses reached auth, want at most 3", checked, n)
+	if checked != 3 || refused != n-3 {
+		t.Fatalf("%d guesses reached auth and %d were refused, want 3 and %d", checked, refused, n-3)
+	}
+}
+
+func TestAuthFailureLimitSharedAcrossGroups(t *testing.T) {
+	fail := func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			respondError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
+		})
+	}
+	limited := AuthFailureLimit(3, fail) // one instance, as main.go uses for the sync and protected groups
+	syncGroup := limited(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	protected := limited(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	call := func(h http.Handler) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/x", nil)
+		req.RemoteAddr = "10.3.0.1:1"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	got := []int{call(syncGroup), call(syncGroup), call(protected), call(protected), call(syncGroup)}
+	want := []int{401, 401, 401, 429, 429}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("request %d: got %v, want %v", i+1, got, want)
+		}
 	}
 }
 
@@ -620,8 +663,10 @@ func TestClientIP(t *testing.T) {
 	}{
 		{"port is removed", "10.0.0.1:40001", "", "", "10.0.0.1"},
 		{"IPv6 port is removed", "[2001:db8::1]:443", "", "", "2001:db8::1"},
-		{"first X-Forwarded-For, trimmed", "10.0.0.1:1", " 1.2.3.4 , 5.6.7.8", "", "1.2.3.4"},
+		{"X-Forwarded-For is ignored (forgeable)", "10.0.0.1:1", " 1.2.3.4 , 5.6.7.8", "", "10.0.0.1"},
+		{"blank X-Forwarded-For is ignored", "10.0.0.1:1", " ", "", "10.0.0.1"},
 		{"X-Real-IP wins, trimmed", "10.0.0.1:1", "1.2.3.4", " 9.9.9.9 ", "9.9.9.9"},
+		{"blank X-Real-IP falls back", "10.0.0.1:1", "", " ", "10.0.0.1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

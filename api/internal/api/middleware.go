@@ -263,20 +263,17 @@ func (rl *rateLimiter) getBucket(key string, capacity, refillRate float64) *toke
 	return bucket
 }
 
-// clientIP is the key for per-IP limits: the host without the port. The API ports are not reachable from outside
-// (host firewall), and nginx always sets X-Real-IP (from Cloudflare's CF-Connecting-IP), so the headers are trusted.
+// clientIP is the key for per-IP limits: X-Real-IP, else the connection's host without the port. The API ports
+// are not reachable from outside (host firewall) and nginx always sets X-Real-IP (from Cloudflare's
+// CF-Connecting-IP), so it is trusted. X-Forwarded-For is not: a client can put any value first in it.
 func clientIP(r *http.Request) string {
-	ip := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(ip); err == nil {
-		ip = host
-	}
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		ip = strings.TrimSpace(strings.Split(forwarded, ",")[0])
-	}
 	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
-		ip = realIP
+		return realIP
 	}
-	return ip
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // refund gives back one token, up to capacity.
