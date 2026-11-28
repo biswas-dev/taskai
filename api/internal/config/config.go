@@ -32,6 +32,8 @@ type Config struct {
 
 	// Sync objects: per-user byte quota (SYNC_QUOTA_BYTES); 0 means the default, 1 GiB
 	SyncQuotaBytes int64
+	// Sync objects: requests per minute per user (SYNC_RATE_LIMIT_REQUESTS), separate from the per-IP limit
+	SyncRateLimitRequests int
 
 	// Logging
 	LogLevel       string
@@ -94,6 +96,7 @@ func Load() *Config {
 		RateLimitRequests:       getEnvAsInt("RATE_LIMIT_REQUESTS", 100),
 		RateLimitWindowMinutes:  getEnvAsInt("RATE_LIMIT_WINDOW_MINUTES", 15),
 		SyncQuotaBytes:          int64(getEnvAsInt("SYNC_QUOTA_BYTES", 0)),
+		SyncRateLimitRequests:   getEnvAsInt("SYNC_RATE_LIMIT_REQUESTS", 600),
 		LogLevel:                getEnv("LOG_LEVEL", "info"),
 		EnableSQLLog:            getEnv("ENV", "development") == "development" || getEnv("ENABLE_SQL_LOG", "false") == "true",
 		EnablePprof:             getEnv("ENABLE_PPROF", "false") == "true",

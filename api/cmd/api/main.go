@@ -429,6 +429,18 @@ func main() {
 		// User notification WebSocket — auth via ?token= query param
 		r.Get("/ws/user", server.HandleUserWebSocket)
 
+		// Opaque per-user sync objects (Brain Hub encrypted sync); keys may contain '/'. They have their own
+		// per-user bucket, not the shared per-IP one: a first sync sends many objects.
+		r.Group(func(r chi.Router) {
+			r.Use(server.JWTAuth)
+			r.Use(api.UserRateLimitMiddleware(cfg.SyncRateLimitRequests))
+			r.Use(server.APIRequestLogger)
+			r.Get("/sync/objects", server.HandleListSyncObjects)
+			r.Put("/sync/objects/*", server.HandlePutSyncObject)
+			r.Get("/sync/objects/*", server.HandleGetSyncObject)
+			r.Delete("/sync/objects/*", server.HandleDeleteSyncObject)
+		})
+
 		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(server.JWTAuth)
@@ -568,12 +580,6 @@ func main() {
 				r.Delete("/memories/{id}", server.HandleDeleteMemory)
 				r.Post("/memories/{id}/feedback", server.HandleMemoryFeedback)
 			})
-
-			// Opaque per-user sync objects (Brain Hub encrypted sync); keys may contain '/'
-			r.Get("/sync/objects", server.HandleListSyncObjects)
-			r.Put("/sync/objects/*", server.HandlePutSyncObject)
-			r.Get("/sync/objects/*", server.HandleGetSyncObject)
-			r.Delete("/sync/objects/*", server.HandleDeleteSyncObject)
 
 			// Task dependency routes
 			r.Get("/tasks/{taskId}/dependencies", server.HandleListDependencies)

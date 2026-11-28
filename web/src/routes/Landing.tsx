@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import MemoriesHero from '../components/MemoriesHero'
+import BrainHubDownloads from '../components/BrainHubDownloads'
+import BrainHubFeatures from '../components/BrainHubFeatures'
 
 interface BlogPost {
   title: string
@@ -778,6 +780,30 @@ export default function Landing() {
             </a>
           </div>
           <p className="mt-6 text-sm text-dark-text-quaternary">No credit card required. Works with Claude, Cursor, and any MCP client.</p>
+        </div>
+      </section>
+
+      {/* ── Brain Hub add-on ── */}
+      <section id="brain-hub" aria-labelledby="brain-hub-heading" className="py-16 md:py-24 border-t border-dark-border-subtle">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="max-w-3xl mb-10">
+            <p className="text-sm font-medium text-primary-400">Add-on: Brain Hub</p>
+            <h2 id="brain-hub-heading" className="mt-2 text-3xl md:text-4xl font-bold tracking-tight">
+              Brain Hub makes your coding agents faster with TaskAI
+            </h2>
+            <p className="mt-4 text-dark-text-tertiary leading-relaxed">
+              Brain Hub (llm-brain) runs Claude Code, Codex and Antigravity on every machine that you own. It gives them one set of skills, one shared memory and one record of work, and it keeps that work in TaskAI.
+            </p>
+          </div>
+          <BrainHubFeatures />
+          <div className="mt-10 p-5 sm:p-6 rounded-xl bg-dark-bg-primary border border-dark-border-subtle">
+            <h3 className="text-lg font-semibold mb-4">Download the desktop app</h3>
+            <BrainHubDownloads />
+          </div>
+          <p className="mt-6 text-sm text-dark-text-secondary">
+            Brain Hub is open source (<a href="https://github.com/anchoo2kewl/llm-brain" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300 underline underline-offset-2">MIT, source on GitHub</a>). TaskAI is proprietary.{' '}
+            <Link to="/brain-hub" className="text-primary-400 hover:text-primary-300 underline underline-offset-2">Read more about Brain Hub</Link>
+          </p>
         </div>
       </section>
 

@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -354,4 +356,28 @@ func BodyLimit(next http.Handler) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// UserRateLimitMiddleware gives each authenticated user its own token bucket (run it after JWTAuth). A refused
+// request gets 429 with Retry-After.
+func UserRateLimitMiddleware(requestsPerMinute int) func(http.Handler) http.Handler {
+	limiter := newRateLimiter()
+	capacity := float64(requestsPerMinute)
+	refillRate := capacity / 60.0
+	retryAfter := strconv.Itoa(int(math.Ceil(1 / refillRate)))
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := GetUserID(r)
+			if !ok {
+				respondError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
+				return
+			}
+			if !limiter.getBucket(strconv.FormatInt(userID, 10), capacity, refillRate).allow() {
+				w.Header().Set("Retry-After", retryAfter)
+				respondError(w, http.StatusTooManyRequests, "rate limit exceeded", "rate_limit_exceeded")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
