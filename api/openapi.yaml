@@ -37,6 +37,8 @@ tags:
     description: User profile management
   - name: Memories
     description: "Memory protocol v1 (docs/memory-protocol.md): a per-user store of short lessons that any application or LLM writes and searches, with hybrid search, sharing, quota and compaction. Every memory response carries the header TaskAI-Memory-Protocol: 1."
+  - name: Sync
+    description: Opaque per-user objects for Brain Hub encrypted sync. The server stores ciphertext bytes and never parses them.
   - name: Projects
     description: Project CRUD operations
   - name: Tasks
@@ -1709,6 +1711,165 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/sync/objects:
+    get:
+      summary: List Sync Objects
+      description: The caller's objects ordered by key (byte order), with metadata only. Pass next as after for the next page.
+      tags: [Sync]
+      operationId: listSyncObjects
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - {name: prefix, in: query, required: false, schema: {type: string, maxLength: 256}, description: Only keys that start with this text}
+        - {name: after, in: query, required: false, schema: {type: string, maxLength: 256}, description: Only keys after this key}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 1000, default: 1000}}
+      responses:
+        "200":
+          description: One page of objects
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncObjectList"
+        "400":
+          description: Invalid prefix, after or limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/sync/objects/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$, at most 256 characters, no . or .. segment. Slashes are literal, not encoded."
+        schema:
+          type: string
+          maxLength: 256
+    put:
+      summary: Put Sync Object
+      description: >-
+        Store the raw body (at most 8 MiB) under key. The server never parses it. If-None-Match: * creates only;
+        If-Match: <etag> replaces only that version; with neither header it is an upsert. The ETag is the quoted
+        SHA-256 hex of the body. 413 when the body is too large (object_too_large) or the per-user quota, default
+        1 GiB, would be exceeded (sync_quota_exceeded).
+      tags: [Sync]
+      operationId: putSyncObject
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - {name: If-None-Match, in: header, required: false, schema: {type: string, enum: ["*"]}}
+        - {name: If-Match, in: header, required: false, schema: {type: string}, description: The ETag of the version to replace}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Replaced
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncObject"
+        "201":
+          description: Created
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncObject"
+        "400":
+          description: Invalid key or precondition headers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          description: The precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: Body larger than 8 MiB, or quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    get:
+      summary: Get Sync Object
+      description: The exact stored bytes, with the ETag.
+      tags: [Sync]
+      operationId: getSyncObject
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      responses:
+        "200":
+          description: The object
+          headers:
+            ETag: {schema: {type: string}}
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      summary: Delete Sync Object
+      description: Remove key. A missing key is 204. With If-Match, only that version is removed; anything else is 412.
+      tags: [Sync]
+      operationId: deleteSyncObject
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - {name: If-Match, in: header, required: false, schema: {type: string}}
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          description: Invalid key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "412":
+          description: The precondition failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/admin/users/{id}/memory-quota:
@@ -3532,6 +3693,22 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
+    SyncObject:
+      type: object
+      required: [key, size, etag, updated_at]
+      properties:
+        key: {type: string}
+        size: {type: integer, format: int64}
+        etag: {type: string, description: SHA-256 hex of the body (the ETag header quotes it)}
+        updated_at: {type: string, format: date-time}
+    SyncObjectList:
+      type: object
+      required: [objects, next]
+      properties:
+        objects:
+          type: array
+          items: {$ref: "#/components/schemas/SyncObject"}
+        next: {type: string, description: The after value for the next page; empty on the last page}
     # ── Request Schemas ─────────────────────────────────────────────
 
     SignupRequest:
