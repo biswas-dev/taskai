@@ -341,6 +341,31 @@ func runSyncObjectTests(t *testing.T, ts *TestServer) {
 		}
 	})
 
+	t.Run("usage counter matches the stored objects after every write and delete", func(t *testing.T) {
+		rows, err := ts.DB.QueryContext(ctx, `SELECT u.id, COALESCE(c.bytes, 0), COALESCE(o.real, 0) FROM users u
+			LEFT JOIN sync_usage c ON c.owner_id = u.id
+			LEFT JOIN (SELECT owner_id, SUM(size) + COUNT(*) * $1 AS real FROM sync_objects GROUP BY owner_id) o ON o.owner_id = u.id
+			WHERE u.email LIKE $2`, syncRowOverhead, "%"+suffix+"@sync.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		n := 0
+		for rows.Next() {
+			var id, counter, real int64
+			if err := rows.Scan(&id, &counter, &real); err != nil {
+				t.Fatal(err)
+			}
+			if counter != real {
+				t.Errorf("user %d: counter %d, objects %d", id, counter, real)
+			}
+			n++
+		}
+		if n < 5 {
+			t.Fatalf("checked %d users", n)
+		}
+	})
+
 	t.Run("other users' objects are invisible", func(t *testing.T) {
 		wantStatus(t, do(alice, "PUT", "/api/sync/objects/private/x", []byte("secret"), nil), http.StatusCreated)
 		wantStatus(t, do(bob, "GET", "/api/sync/objects/private/x", nil, nil), http.StatusNotFound)
