@@ -263,32 +263,36 @@ func (rl *rateLimiter) getBucket(key string, capacity, refillRate float64) *toke
 	return bucket
 }
 
-// clientIP is the key for per-IP limits. In production nginx sets X-Real-IP from Cloudflare's CF-Connecting-IP.
+// clientIP is the key for per-IP limits: the host without the port. The API ports are not reachable from outside
+// (host firewall), and nginx always sets X-Real-IP (from Cloudflare's CF-Connecting-IP), so the headers are trusted.
 func clientIP(r *http.Request) string {
 	ip := r.RemoteAddr
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		ip = strings.Split(forwarded, ",")[0]
+	if host, _, err := net.SplitHostPort(ip); err == nil {
+		ip = host
 	}
-	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		ip = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
 		ip = realIP
 	}
 	return ip
 }
 
-// hasToken reports whether a request would be allowed now, without taking a token.
-func (tb *tokenBucket) hasToken() bool {
+// refund gives back one token, up to capacity.
+func (tb *tokenBucket) refund() {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
-	now := time.Now()
-	tb.tokens = math.Min(tb.capacity, tb.tokens+now.Sub(tb.lastRefill).Seconds()*tb.refillRate)
-	tb.lastRefill = now
-	return tb.tokens >= 1.0
+	tb.tokens = math.Min(tb.capacity, tb.tokens+1)
 }
 
-// AuthFailureLimit limits failed authentication per client IP; run it before JWTAuth. Each 401 costs the IP one
-// token, and an IP without tokens gets 429 before its credentials are checked, so key guessing is limited.
-// Requests that pass authentication cost nothing here.
-func AuthFailureLimit(failuresPerMinute int) func(http.Handler) http.Handler {
+type authBucketKey struct{}
+
+// AuthFailureLimit wraps auth (JWTAuth) with a per-IP budget of failed authentications. Every request takes a
+// token before its credentials are checked, so concurrent guesses cannot all pass, and gets it back as soon as
+// authentication succeeds. An IP without tokens gets 429 with Retry-After. Use one returned middleware for every
+// route group, so the groups share one budget.
+func AuthFailureLimit(failuresPerMinute int, auth func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	if failuresPerMinute < 1 {
 		failuresPerMinute = 100
 	}
@@ -297,18 +301,20 @@ func AuthFailureLimit(failuresPerMinute int) func(http.Handler) http.Handler {
 	refillRate := capacity / 60.0
 	retryAfter := strconv.Itoa(int(math.Ceil(1 / refillRate)))
 	return func(next http.Handler) http.Handler {
+		authed := auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if bucket, ok := r.Context().Value(authBucketKey{}).(*tokenBucket); ok {
+				bucket.refund()
+			}
+			next.ServeHTTP(w, r)
+		}))
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			bucket := limiter.getBucket(clientIP(r), capacity, refillRate)
-			if !bucket.hasToken() {
+			if !bucket.allow() {
 				w.Header().Set("Retry-After", retryAfter)
 				respondError(w, http.StatusTooManyRequests, "too many failed authentication attempts", "rate_limit_exceeded")
 				return
 			}
-			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-			next.ServeHTTP(wrapped, r)
-			if wrapped.statusCode == http.StatusUnauthorized {
-				bucket.allow()
-			}
+			authed.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authBucketKey{}, bucket)))
 		})
 	}
 }

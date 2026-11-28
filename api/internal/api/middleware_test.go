@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -531,7 +533,7 @@ func TestAuthFailureLimit(t *testing.T) {
 	userID := ts.CreateTestUser(t, "authfail@test.com", "password123")
 	good := ts.GenerateTestToken(t, userID, "authfail@test.com")
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := AuthFailureLimit(3)(ts.JWTAuth(ok)) // as main.go mounts it: before JWTAuth
+	h := AuthFailureLimit(3, ts.JWTAuth)(ok) // as main.go mounts it
 	call := func(ip, auth string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil)
 		req.RemoteAddr = ip
@@ -566,6 +568,73 @@ func TestAuthFailureLimit(t *testing.T) {
 			}
 			if tt.want == http.StatusTooManyRequests && rec.Header().Get("Retry-After") != "20" {
 				t.Fatalf("Retry-After %q, want 20 (3 per minute)", rec.Header().Get("Retry-After"))
+			}
+		})
+	}
+}
+
+func TestAuthFailureLimitConcurrentGuesses(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+	// A slow auth that always fails: every guess is in flight before any 401 comes back.
+	release := make(chan struct{})
+	slowFail := func(http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-release
+			respondError(w, http.StatusUnauthorized, "unauthorized", "unauthorized")
+		})
+	}
+	h := AuthFailureLimit(3, slowFail)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	const n = 50
+	codes := make(chan int, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil)
+			req.RemoteAddr = fmt.Sprintf("10.2.0.1:%d", 40000+i) // a new source port per connection
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			codes <- rec.Code
+		}(i)
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	close(codes)
+	checked := 0
+	for c := range codes {
+		if c == http.StatusUnauthorized {
+			checked++
+		}
+	}
+	if checked > 3 {
+		t.Fatalf("%d of %d concurrent guesses reached auth, want at most 3", checked, n)
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	tests := []struct {
+		name, remote, xff, xri, want string
+	}{
+		{"port is removed", "10.0.0.1:40001", "", "", "10.0.0.1"},
+		{"IPv6 port is removed", "[2001:db8::1]:443", "", "", "2001:db8::1"},
+		{"first X-Forwarded-For, trimmed", "10.0.0.1:1", " 1.2.3.4 , 5.6.7.8", "", "1.2.3.4"},
+		{"X-Real-IP wins, trimmed", "10.0.0.1:1", "1.2.3.4", " 9.9.9.9 ", "9.9.9.9"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = tt.remote
+			if tt.xff != "" {
+				req.Header.Set("X-Forwarded-For", tt.xff)
+			}
+			if tt.xri != "" {
+				req.Header.Set("X-Real-IP", tt.xri)
+			}
+			if got := clientIP(req); got != tt.want {
+				t.Fatalf("clientIP = %q, want %q", got, tt.want)
 			}
 		})
 	}
