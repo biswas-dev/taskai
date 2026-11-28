@@ -728,7 +728,7 @@ export interface paths {
         get: operations["getSyncObject"];
         /**
          * Put Sync Object
-         * @description Store the raw body (at most 8 MiB) under key. The server never parses it. If-None-Match: * creates only; If-Match: <etag> replaces only that version; with neither header it is an upsert. The ETag is the quoted SHA-256 hex of the body. 413 when the body is too large (object_too_large) or the per-user quota, default 1 GiB, would be exceeded (sync_quota_exceeded).
+         * @description Store the raw body (at most 8 MiB) under key. The server never parses it. If-None-Match: * creates only; If-Match: <etag> replaces only that version; with neither header it is an upsert. The ETag is the quoted SHA-256 hex of the body. 413 when the body is too large (object_too_large) or the per-user quota, default 1 GiB, would be exceeded (sync_quota_exceeded). Each object costs its size plus 256 bytes against the quota.
          */
         put: operations["putSyncObject"];
         post?: never;

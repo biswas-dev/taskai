@@ -98,6 +98,7 @@ func TestPostgresSyncObjects(t *testing.T) {
 // syncRouter mounts the sync routes as main.go does, with userID (0 = no auth) in the request context.
 func syncRouter(s *Server, userID int64) http.Handler {
 	r := chi.NewRouter()
+	r.Use(BodyLimit)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if userID != 0 {
@@ -277,6 +278,14 @@ func runSyncObjectTests(t *testing.T, ts *TestServer) {
 		syncRouter(ts.Server, alice).ServeHTTP(rec, req)
 		wantStatus(t, rec, http.StatusRequestEntityTooLarge)
 		wantStatus(t, do(alice, "PUT", "/api/sync/objects/size/max", make([]byte, syncMaxObject), nil), http.StatusCreated)
+		// Other routes keep the 1 MiB limit.
+		capped := httptest.NewRequest("POST", "/x", io.NopCloser(bytes.NewReader(make([]byte, 1<<20+1))))
+		capped.ContentLength = -1
+		BodyLimit(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, err := io.ReadAll(r.Body); err == nil {
+				t.Error("a 1 MiB + 1 body was read on a non-sync route")
+			}
+		})).ServeHTTP(httptest.NewRecorder(), capped)
 		wantStatus(t, do(alice, "DELETE", "/api/sync/objects/size/big", nil, nil), http.StatusNoContent)
 		wantStatus(t, do(alice, "DELETE", "/api/sync/objects/size/max", nil, nil), http.StatusNoContent)
 	})
