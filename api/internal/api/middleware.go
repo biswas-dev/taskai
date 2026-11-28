@@ -263,6 +263,59 @@ func (rl *rateLimiter) getBucket(key string, capacity, refillRate float64) *toke
 	return bucket
 }
 
+// clientIP is the key for per-IP limits: X-Real-IP, else the connection's host without the port. The API ports
+// are not reachable from outside (host firewall) and nginx always sets X-Real-IP (from Cloudflare's
+// CF-Connecting-IP), so it is trusted. X-Forwarded-For is not: a client can put any value first in it.
+func clientIP(r *http.Request) string {
+	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+		return realIP
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// refund gives back one token, up to capacity.
+func (tb *tokenBucket) refund() {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+	tb.tokens = math.Min(tb.capacity, tb.tokens+1)
+}
+
+type authBucketKey struct{}
+
+// AuthFailureLimit wraps auth (JWTAuth) with a per-IP budget of failed authentications. Every request takes a
+// token before its credentials are checked, so concurrent guesses cannot all pass, and gets it back as soon as
+// authentication succeeds. An IP without tokens gets 429 with Retry-After. Use one returned middleware for every
+// route group, so the groups share one budget.
+func AuthFailureLimit(failuresPerMinute int, auth func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	if failuresPerMinute < 1 {
+		failuresPerMinute = 100
+	}
+	limiter := newRateLimiter()
+	capacity := float64(failuresPerMinute)
+	refillRate := capacity / 60.0
+	retryAfter := strconv.Itoa(int(math.Ceil(1 / refillRate)))
+	return func(next http.Handler) http.Handler {
+		authed := auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if bucket, ok := r.Context().Value(authBucketKey{}).(*tokenBucket); ok {
+				bucket.refund()
+			}
+			next.ServeHTTP(w, r)
+		}))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			bucket := limiter.getBucket(clientIP(r), capacity, refillRate)
+			if !bucket.allow() {
+				w.Header().Set("Retry-After", retryAfter)
+				respondError(w, http.StatusTooManyRequests, "too many failed authentication attempts", "rate_limit_exceeded")
+				return
+			}
+			authed.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authBucketKey{}, bucket)))
+		})
+	}
+}
+
 // RateLimitMiddleware creates a rate limiting middleware
 func RateLimitMiddleware(requestsPerMinute int) func(http.Handler) http.Handler {
 	limiter := newRateLimiter()
@@ -271,16 +324,7 @@ func RateLimitMiddleware(requestsPerMinute int) func(http.Handler) http.Handler 
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Use IP address as key
-			ip := r.RemoteAddr
-			if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-				ip = strings.Split(forwarded, ",")[0]
-			}
-			if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-				ip = realIP
-			}
-
-			bucket := limiter.getBucket(ip, capacity, refillRate)
+			bucket := limiter.getBucket(clientIP(r), capacity, refillRate)
 			if !bucket.allow() {
 				respondError(w, http.StatusTooManyRequests, "rate limit exceeded", "rate_limit_exceeded")
 				return
