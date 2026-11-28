@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -205,6 +207,47 @@ func runSyncObjectTests(t *testing.T, ts *TestServer) {
 		if got := do(alice, "GET", "/api/sync/objects/p/a", nil, nil); got.Body.String() != "2" {
 			t.Fatalf("a failed precondition changed the object: %q", got.Body.String())
 		}
+		// Repeated header lines are one list (RFC 9110): the second line matches.
+		req := httptest.NewRequest("PUT", "/api/sync/objects/p/a", strings.NewReader("4"))
+		req.Header.Add("If-Match", etagOf([]byte("old")))
+		req.Header.Add("If-Match", etagOf([]byte("2")))
+		rec := httptest.NewRecorder()
+		syncRouter(ts.Server, alice).ServeHTTP(rec, req)
+		wantStatus(t, rec, http.StatusOK)
+		req = httptest.NewRequest("PUT", "/api/sync/objects/p/a", strings.NewReader("5"))
+		req.Header.Add("If-None-Match", "*")
+		req.Header.Add("If-None-Match", `"abc"`)
+		rec = httptest.NewRecorder()
+		syncRouter(ts.Server, alice).ServeHTTP(rec, req)
+		wantStatus(t, rec, http.StatusBadRequest)
+	})
+
+	t.Run("concurrent creates: exactly one wins", func(t *testing.T) {
+		const n = 8
+		codes := make(chan int, n)
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				codes <- do(alice, "PUT", "/api/sync/objects/race/one", []byte{byte(i)}, map[string]string{"If-None-Match": "*"}).Code
+			}(i)
+		}
+		wg.Wait()
+		close(codes)
+		won := 0
+		for c := range codes {
+			switch c {
+			case http.StatusCreated:
+				won++
+			case http.StatusPreconditionFailed:
+			default:
+				t.Fatalf("status %d", c)
+			}
+		}
+		if won != 1 {
+			t.Fatalf("%d creates won, want 1", won)
+		}
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -227,6 +270,12 @@ func runSyncObjectTests(t *testing.T, ts *TestServer) {
 		if !strings.Contains(rec.Body.String(), "object_too_large") {
 			t.Fatal(rec.Body.String())
 		}
+		// Unknown length (chunked): the handler's own read limit refuses it.
+		req := httptest.NewRequest("PUT", "/api/sync/objects/size/chunked", io.NopCloser(bytes.NewReader(make([]byte, syncMaxObject+1))))
+		req.ContentLength = -1
+		rec = httptest.NewRecorder()
+		syncRouter(ts.Server, alice).ServeHTTP(rec, req)
+		wantStatus(t, rec, http.StatusRequestEntityTooLarge)
 		wantStatus(t, do(alice, "PUT", "/api/sync/objects/size/max", make([]byte, syncMaxObject), nil), http.StatusCreated)
 		wantStatus(t, do(alice, "DELETE", "/api/sync/objects/size/big", nil, nil), http.StatusNoContent)
 		wantStatus(t, do(alice, "DELETE", "/api/sync/objects/size/max", nil, nil), http.StatusNoContent)
@@ -235,7 +284,7 @@ func runSyncObjectTests(t *testing.T, ts *TestServer) {
 	t.Run("quota charges only growth", func(t *testing.T) {
 		carol := user("carol")
 		old := ts.Server.config.SyncQuotaBytes
-		ts.Server.config.SyncQuotaBytes = 100
+		ts.Server.config.SyncQuotaBytes = 2*syncRowOverhead + 100
 		defer func() { ts.Server.config.SyncQuotaBytes = old }()
 		wantStatus(t, do(carol, "PUT", "/api/sync/objects/q/a", make([]byte, 60), nil), http.StatusCreated)
 		wantStatus(t, do(carol, "PUT", "/api/sync/objects/q/a", make([]byte, 90), nil), http.StatusOK)
@@ -246,6 +295,10 @@ func runSyncObjectTests(t *testing.T, ts *TestServer) {
 		}
 		wantStatus(t, do(carol, "PUT", "/api/sync/objects/q/b", make([]byte, 10), nil), http.StatusCreated)
 		wantStatus(t, do(bob, "PUT", "/api/sync/objects/q/b", make([]byte, 50), nil), http.StatusCreated) // quota is per user
+		erin := user("erin")
+		wantStatus(t, do(erin, "PUT", "/api/sync/objects/e/1", nil, nil), http.StatusCreated)
+		wantStatus(t, do(erin, "PUT", "/api/sync/objects/e/2", nil, nil), http.StatusCreated)
+		wantStatus(t, do(erin, "PUT", "/api/sync/objects/e/3", nil, nil), http.StatusRequestEntityTooLarge) // empty objects are not free
 	})
 
 	t.Run("list pages by key with an exact prefix", func(t *testing.T) {

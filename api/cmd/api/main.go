@@ -215,10 +215,11 @@ func main() {
 	})
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Sync objects set their own 8 MiB limit.
-			if !strings.HasPrefix(r.URL.Path, "/api/sync/objects/") {
-				r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
+			limit := int64(1 << 20) // 1MB
+			if r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/sync/objects/") {
+				limit = 8 << 20 // sync objects; the handler checks the exact limit
 			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 			next.ServeHTTP(w, r)
 		})
 	})

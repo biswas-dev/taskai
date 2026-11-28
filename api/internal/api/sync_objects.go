@@ -25,6 +25,7 @@ const (
 	syncMaxObject    = 8 << 20        // 8 MiB per object
 	syncDefaultQuota = int64(1) << 30 // 1 GiB per user
 	syncMaxKey       = 256
+	syncRowOverhead  = 256 // charged per object on top of its body, so empty objects are not free
 	syncMaxList      = 1000
 )
 
@@ -97,7 +98,7 @@ func (s *Server) beginSyncTx(ctx context.Context, ownerID int64) (*sql.Tx, error
 	if err != nil {
 		return nil, err
 	}
-	if s.db.Driver == "postgres" {
+	if s.db.Driver != "sqlite" { // "postgres" or "pgx"
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext('sync_objects'), hashtext($1::text))`, strconv.FormatInt(ownerID, 10)); err != nil {
 			_ = tx.Rollback()
 			return nil, err
@@ -106,7 +107,15 @@ func (s *Server) beginSyncTx(ctx context.Context, ownerID int64) (*sql.Tx, error
 	return tx, nil
 }
 
-// currentSyncETag returns the stored etag and size of key, or "" when it does not exist.
+// syncCharge is what one object costs against the quota.
+func syncCharge(size int64) int64 { return size + syncRowOverhead }
+
+// syncHeader joins every line of a precondition header, so a repeated If-Match is read in full.
+func syncHeader(r *http.Request, name string) string {
+	return strings.TrimSpace(strings.Join(r.Header.Values(name), ","))
+}
+
+// currentSyncETag returns the stored etag of key and its quota charge, or "" and 0 when it does not exist.
 func currentSyncETag(ctx context.Context, q sqlQuerier, ownerID int64, key string) (string, int64, error) {
 	var etag string
 	var size int64
@@ -114,7 +123,7 @@ func currentSyncETag(ctx context.Context, q sqlQuerier, ownerID int64, key strin
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", 0, nil
 	}
-	return etag, size, err
+	return etag, syncCharge(size), err
 }
 
 // HandlePutSyncObject stores the raw body under key (PUT /api/sync/objects/{key}).
@@ -128,7 +137,7 @@ func (s *Server) HandlePutSyncObject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ifNoneMatch, ifMatch := strings.TrimSpace(r.Header.Get("If-None-Match")), r.Header.Get("If-Match")
+	ifNoneMatch, ifMatch := syncHeader(r, "If-None-Match"), syncHeader(r, "If-Match")
 	if ifNoneMatch != "" && ifNoneMatch != "*" || ifNoneMatch != "" && ifMatch != "" {
 		respondError(w, http.StatusBadRequest, "use If-None-Match: * or If-Match: <etag>, not both", "invalid_precondition")
 		return
@@ -159,7 +168,7 @@ func (s *Server) HandlePutSyncObject(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	current, oldSize, err := currentSyncETag(ctx, tx, userID, key)
+	current, oldCharge, err := currentSyncETag(ctx, tx, userID, key)
 	if err != nil {
 		s.syncFail(w, "read", err)
 		return
@@ -169,11 +178,11 @@ func (s *Server) HandlePutSyncObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var used int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) FROM sync_objects WHERE owner_id = $1`, userID).Scan(&used); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) + COUNT(*) * $2 FROM sync_objects WHERE owner_id = $1`, userID, syncRowOverhead).Scan(&used); err != nil {
 		s.syncFail(w, "usage", err)
 		return
 	}
-	if used-oldSize+obj.Size > s.syncQuota() {
+	if used-oldCharge+syncCharge(obj.Size) > s.syncQuota() {
 		respondError(w, http.StatusRequestEntityTooLarge, "sync storage quota exceeded", "sync_quota_exceeded")
 		return
 	}
@@ -251,7 +260,7 @@ func (s *Server) HandleDeleteSyncObject(w http.ResponseWriter, r *http.Request) 
 		s.syncFail(w, "read", err)
 		return
 	}
-	if ifMatch := r.Header.Get("If-Match"); ifMatch != "" && !syncIfMatch(ifMatch, current) {
+	if ifMatch := syncHeader(r, "If-Match"); ifMatch != "" && !syncIfMatch(ifMatch, current) {
 		respondError(w, http.StatusPreconditionFailed, "precondition failed", "precondition_failed")
 		return
 	}

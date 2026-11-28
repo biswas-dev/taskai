@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 
 const REPO = 'https://github.com/anchoo2kewl/llm-brain'
 const RELEASES = `${REPO}/releases`
-const RELEASES_API = 'https://api.github.com/repos/anchoo2kewl/llm-brain/releases?per_page=30'
+const RELEASES_API = 'https://api.github.com/repos/anchoo2kewl/llm-brain/releases?per_page=100'
 
 interface GitHubRelease {
   tag_name: string
