@@ -461,6 +461,26 @@ func TestTokenBucket(t *testing.T) {
 	}
 }
 
+func TestUserRateLimitMiddlewareNonPositiveIsDefault(t *testing.T) {
+	for _, n := range []int{0, -60} {
+		limited := UserRateLimitMiddleware(n)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+		for i := 0; i < 600; i++ {
+			req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil).WithContext(context.WithValue(context.Background(), UserIDKey, int64(1)))
+			rec := httptest.NewRecorder()
+			limited.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("limit %d: request %d got %d, want the default of 600 per minute", n, i+1, rec.Code)
+			}
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil).WithContext(context.WithValue(context.Background(), UserIDKey, int64(1)))
+		rec := httptest.NewRecorder()
+		limited.ServeHTTP(rec, req)
+		if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "1" {
+			t.Fatalf("limit %d: 601st got %d Retry-After %q", n, rec.Code, rec.Header().Get("Retry-After"))
+		}
+	}
+}
+
 func TestUserRateLimitMiddleware(t *testing.T) {
 	limited := UserRateLimitMiddleware(2)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
 	call := func(userID int64, ip string) *httptest.ResponseRecorder {

@@ -30,23 +30,36 @@ const downloads: { system: string; primary: Match; others: { label: string; matc
 
 const linkClass = 'text-primary-400 hover:text-primary-300 underline underline-offset-2'
 
+// One GitHub call per page load, shared by every mount (GitHub allows 60 unauthenticated calls per hour per IP).
+let latestRelease: Promise<GitHubRelease | undefined> | undefined
+function loadLatestRelease(): Promise<GitHubRelease | undefined> {
+  latestRelease ??= fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } })
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error(`GitHub ${r.status}`))))
+    .then((data: GitHubRelease[]) => (Array.isArray(data) ? data : []).find(r => r.tag_name.startsWith('client-v') && !r.draft && !r.prerelease))
+  latestRelease.catch(() => {
+    latestRelease = undefined // a failed call can be tried again on the next mount
+  })
+  return latestRelease
+}
+
 export default function BrainHubDownloads() {
   const [release, setRelease] = useState<GitHubRelease | undefined>()
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
-    const ctrl = new AbortController()
-    fetch(RELEASES_API, { signal: ctrl.signal, headers: { Accept: 'application/vnd.github+json' } })
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`GitHub ${r.status}`))))
-      .then((data: GitHubRelease[]) => {
-        const latest = (Array.isArray(data) ? data : []).find(r => r.tag_name.startsWith('client-v') && !r.draft && !r.prerelease)
+    let live = true
+    loadLatestRelease()
+      .then(latest => {
+        if (!live) return
         if (latest) setRelease(latest)
         else setFailed(true)
       })
-      .catch((err: unknown) => {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) setFailed(true)
+      .catch(() => {
+        if (live) setFailed(true)
       })
-    return () => ctrl.abort()
+    return () => {
+      live = false
+    }
   }, [])
 
   // Until the release loads (or if GitHub does not answer), each button opens the release page.

@@ -359,8 +359,11 @@ func BodyLimit(next http.Handler) http.Handler {
 }
 
 // UserRateLimitMiddleware gives each authenticated user its own token bucket (run it after JWTAuth). A refused
-// request gets 429 with Retry-After.
+// request gets 429 with Retry-After. A limit below 1 means the default, 600 per minute.
 func UserRateLimitMiddleware(requestsPerMinute int) func(http.Handler) http.Handler {
+	if requestsPerMinute < 1 {
+		requestsPerMinute = 600
+	}
 	limiter := newRateLimiter()
 	capacity := float64(requestsPerMinute)
 	refillRate := capacity / 60.0

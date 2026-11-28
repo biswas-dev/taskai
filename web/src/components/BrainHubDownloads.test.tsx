@@ -1,6 +1,12 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import BrainHubDownloads from './BrainHubDownloads'
+
+// The release is cached per page load, so each test loads a fresh module.
+let BrainHubDownloads: (typeof import('./BrainHubDownloads'))['default']
+beforeEach(async () => {
+  vi.resetModules()
+  BrainHubDownloads = (await import('./BrainHubDownloads')).default
+})
 
 const asset = (name: string) => ({ name, browser_download_url: `https://example.test/${name}` })
 const releases = [
@@ -32,6 +38,14 @@ describe('BrainHubDownloads', () => {
     expect(screen.getByRole('link', { name: '.msi' })).toHaveAttribute('href', 'https://example.test/Brain.Hub_0.1.17_x64_en-US.msi')
     expect(screen.getByRole('link', { name: '.deb' })).toHaveAttribute('href', 'https://example.test/Brain.Hub_0.1.17_amd64.deb')
     expect(screen.getByRole('link', { name: '.rpm' })).toHaveAttribute('href', 'https://example.test/Brain.Hub-0.1.17-1.x86_64.rpm')
+  })
+
+  it('calls GitHub once for many mounts', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(releases) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<><BrainHubDownloads /><BrainHubDownloads /></>)
+    await waitFor(() => expect(screen.getAllByText(/Desktop app version 0\.1\.17\./)).toHaveLength(2))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to the release page when GitHub does not answer', async () => {

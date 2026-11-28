@@ -110,6 +110,17 @@ func (s *Server) beginSyncTx(ctx context.Context, ownerID int64) (*sql.Tx, error
 // syncCharge is what one object costs against the quota.
 func syncCharge(size int64) int64 { return size + syncRowOverhead }
 
+// addSyncUsage moves the owner's usage counter by delta bytes, in the write's transaction. The counter makes the
+// quota check O(1); summing every object on each PUT grows with the object count.
+func addSyncUsage(ctx context.Context, tx *sql.Tx, ownerID, delta int64) error {
+	if delta == 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO sync_usage (owner_id, bytes) VALUES ($1, $2)
+		ON CONFLICT (owner_id) DO UPDATE SET bytes = sync_usage.bytes + excluded.bytes`, ownerID, delta)
+	return err
+}
+
 // syncHeader joins every line of a precondition header, so a repeated If-Match is read in full.
 func syncHeader(r *http.Request, name string) string {
 	return strings.TrimSpace(strings.Join(r.Header.Values(name), ","))
@@ -178,17 +189,21 @@ func (s *Server) HandlePutSyncObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var used int64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) + COUNT(*) * $2 FROM sync_objects WHERE owner_id = $1`, userID, syncRowOverhead).Scan(&used); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT bytes FROM sync_usage WHERE owner_id = $1), 0)`, userID).Scan(&used); err != nil {
 		s.syncFail(w, "usage", err)
 		return
 	}
-	if used-oldCharge+syncCharge(obj.Size) > s.syncQuota() {
+	delta := syncCharge(obj.Size) - oldCharge
+	if used+delta > s.syncQuota() {
 		respondError(w, http.StatusRequestEntityTooLarge, "sync storage quota exceeded", "sync_quota_exceeded")
 		return
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO sync_objects (owner_id, key, body, size, etag, updated_at) VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (owner_id, key) DO UPDATE SET body = excluded.body, size = excluded.size, etag = excluded.etag, updated_at = excluded.updated_at`,
 		userID, key, body, obj.Size, obj.ETag, obj.UpdatedAt)
+	if err == nil {
+		err = addSyncUsage(ctx, tx, userID, delta)
+	}
 	if err == nil {
 		err = tx.Commit()
 	}
@@ -255,7 +270,7 @@ func (s *Server) HandleDeleteSyncObject(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer func() { _ = tx.Rollback() }()
-	current, _, err := currentSyncETag(ctx, tx, userID, key)
+	current, oldCharge, err := currentSyncETag(ctx, tx, userID, key)
 	if err != nil {
 		s.syncFail(w, "read", err)
 		return
@@ -265,6 +280,9 @@ func (s *Server) HandleDeleteSyncObject(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	_, err = tx.ExecContext(ctx, `DELETE FROM sync_objects WHERE owner_id = $1 AND key = $2`, userID, key)
+	if err == nil {
+		err = addSyncUsage(ctx, tx, userID, -oldCharge)
+	}
 	if err == nil {
 		err = tx.Commit()
 	}
