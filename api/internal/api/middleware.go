@@ -343,3 +343,15 @@ func (s *Server) APIRequestLogger(next http.Handler) http.Handler {
 		}()
 	})
 }
+
+// BodyLimit caps request bodies at 1 MiB, and a sync object PUT at syncMaxObject.
+func BodyLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		limit := int64(1 << 20)
+		if r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/sync/objects/") {
+			limit = syncMaxObject
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		next.ServeHTTP(w, r)
+	})
+}

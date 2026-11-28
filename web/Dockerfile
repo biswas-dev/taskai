@@ -127,6 +127,8 @@ http {
         location ^~ /api/ {
             proxy_pass http://api:8080/api/;
             proxy_http_version 1.1;
+            # Sync objects are up to 8 MiB; the API limits every other body to 1 MiB itself
+            client_max_body_size 9m;
             proxy_set_header Host \$host;
             proxy_set_header X-Real-IP \$remote_addr;
             proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;

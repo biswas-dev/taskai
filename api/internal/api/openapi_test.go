@@ -124,6 +124,10 @@ func buildTestRouter(server *Server) chi.Router {
 				r.Delete("/memories/{id}", server.HandleDeleteMemory)
 				r.Post("/memories/{id}/feedback", server.HandleMemoryFeedback)
 			})
+			r.Get("/sync/objects", server.HandleListSyncObjects)
+			r.Put("/sync/objects/*", server.HandlePutSyncObject)
+			r.Get("/sync/objects/*", server.HandleGetSyncObject)
+			r.Delete("/sync/objects/*", server.HandleDeleteSyncObject)
 			r.Get("/projects/{id}/github", server.HandleGetProjectGitHubSettings)
 			r.Patch("/projects/{id}/github", server.HandleUpdateProjectGitHubSettings)
 
@@ -188,6 +192,10 @@ func collectRouterRoutes(router chi.Router) []string {
 			return nil
 		}
 		// Normalize: remove trailing slash
+		// A trailing chi wildcard is the {key} path parameter in the spec (keys may contain '/')
+		if strings.HasSuffix(route, "/*") {
+			route = strings.TrimSuffix(route, "*") + "{key}"
+		}
 		route = strings.TrimRight(route, "/")
 		if route == "" {
 			route = "/"

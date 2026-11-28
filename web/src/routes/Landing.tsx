@@ -36,6 +36,7 @@ export default function Landing() {
             <a href="#features" className="hover:text-dark-text-primary transition-colors">Features</a>
             <a href="#ai" className="hover:text-dark-text-primary transition-colors">AI agents</a>
             <a href="#integrations" className="hover:text-dark-text-primary transition-colors">Integrations</a>
+            <Link to="/brain-hub" className="hover:text-dark-text-primary transition-colors">Brain Hub</Link>
             <a href="/blog/" className="hover:text-dark-text-primary transition-colors">Blog</a>
             <a href="/docs/" className="hover:text-dark-text-primary transition-colors">Docs</a>
           </div>
@@ -790,6 +791,7 @@ export default function Landing() {
           <div className="flex items-center gap-6 text-sm text-dark-text-quaternary">
             <a href="/blog/" className="hover:text-dark-text-tertiary transition-colors">Blog</a>
             <a href="/docs/" className="hover:text-dark-text-tertiary transition-colors">Docs</a>
+            <Link to="/brain-hub" className="hover:text-dark-text-tertiary transition-colors">Brain Hub</Link>
             <Link to="/login" className="hover:text-dark-text-tertiary transition-colors">Sign in</Link>
             <Link to="/signup" className="hover:text-dark-text-tertiary transition-colors">Sign up</Link>
           </div>

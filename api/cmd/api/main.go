@@ -213,12 +213,7 @@ func main() {
 			next.ServeHTTP(w, req)
 		})
 	})
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB
-			next.ServeHTTP(w, r)
-		})
-	})
+	r.Use(api.BodyLimit)
 
 	// CORS configuration
 	r.Use(cors.Handler(cors.Options{
@@ -573,6 +568,12 @@ func main() {
 				r.Delete("/memories/{id}", server.HandleDeleteMemory)
 				r.Post("/memories/{id}/feedback", server.HandleMemoryFeedback)
 			})
+
+			// Opaque per-user sync objects (Brain Hub encrypted sync); keys may contain '/'
+			r.Get("/sync/objects", server.HandleListSyncObjects)
+			r.Put("/sync/objects/*", server.HandlePutSyncObject)
+			r.Get("/sync/objects/*", server.HandleGetSyncObject)
+			r.Delete("/sync/objects/*", server.HandleDeleteSyncObject)
 
 			// Task dependency routes
 			r.Get("/tasks/{taskId}/dependencies", server.HandleListDependencies)
