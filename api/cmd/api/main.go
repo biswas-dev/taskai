@@ -429,9 +429,13 @@ func main() {
 		// User notification WebSocket — auth via ?token= query param
 		r.Get("/ws/user", server.HandleUserWebSocket)
 
+		// One per-IP budget of failed authentications, shared by the sync and protected groups.
+		authFailures := api.AuthFailureLimit(cfg.RateLimitRequests)
+
 		// Opaque per-user sync objects (Brain Hub encrypted sync); keys may contain '/'. They have their own
 		// per-user bucket, not the shared per-IP one: a first sync sends many objects.
 		r.Group(func(r chi.Router) {
+			r.Use(authFailures) // bad or missing credentials stay limited per IP
 			r.Use(server.JWTAuth)
 			r.Use(server.APIRequestLogger) // before the limiter, so 429s are logged too
 			r.Use(api.UserRateLimitMiddleware(cfg.SyncRateLimitRequests))
@@ -443,6 +447,7 @@ func main() {
 
 		// Protected routes
 		r.Group(func(r chi.Router) {
+			r.Use(authFailures)
 			r.Use(server.JWTAuth)
 			// Apply general rate limiting (100 req/min)
 			r.Use(api.RateLimitMiddleware(cfg.RateLimitRequests))

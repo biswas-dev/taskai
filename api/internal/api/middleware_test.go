@@ -524,3 +524,49 @@ func TestUserRateLimitMiddleware(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthFailureLimit(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+	userID := ts.CreateTestUser(t, "authfail@test.com", "password123")
+	good := ts.GenerateTestToken(t, userID, "authfail@test.com")
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := AuthFailureLimit(3)(ts.JWTAuth(ok)) // as main.go mounts it: before JWTAuth
+	call := func(ip, auth string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil)
+		req.RemoteAddr = ip
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	tests := []struct {
+		name, ip, auth string
+		want           int
+	}{
+		{"good token costs nothing", "10.1.0.1:1", "Bearer " + good, http.StatusOK},
+		{"good token again", "10.1.0.1:1", "Bearer " + good, http.StatusOK},
+		{"good token again", "10.1.0.1:1", "Bearer " + good, http.StatusOK},
+		{"good token again", "10.1.0.1:1", "Bearer " + good, http.StatusOK},
+		{"bad key 1", "10.1.0.2:1", "ApiKey guess-1", http.StatusUnauthorized},
+		{"no auth 2", "10.1.0.2:1", "", http.StatusUnauthorized},
+		{"bad bearer 3", "10.1.0.2:1", "Bearer nope", http.StatusUnauthorized},
+		{"4th failure from that IP is refused before the key is checked", "10.1.0.2:1", "ApiKey guess-4", http.StatusTooManyRequests},
+		{"that IP waits even with a good token", "10.1.0.2:1", "Bearer " + good, http.StatusTooManyRequests},
+		{"another IP is not affected", "10.1.0.3:1", "ApiKey guess-1", http.StatusUnauthorized},
+		{"good IP still fine", "10.1.0.1:1", "Bearer " + good, http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := call(tt.ip, tt.auth)
+			if rec.Code != tt.want {
+				t.Fatalf("status %d, want %d: %s", rec.Code, tt.want, rec.Body.String())
+			}
+			if tt.want == http.StatusTooManyRequests && rec.Header().Get("Retry-After") != "20" {
+				t.Fatalf("Retry-After %q, want 20 (3 per minute)", rec.Header().Get("Retry-After"))
+			}
+		})
+	}
+}

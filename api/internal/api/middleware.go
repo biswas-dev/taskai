@@ -263,6 +263,56 @@ func (rl *rateLimiter) getBucket(key string, capacity, refillRate float64) *toke
 	return bucket
 }
 
+// clientIP is the key for per-IP limits. In production nginx sets X-Real-IP from Cloudflare's CF-Connecting-IP.
+func clientIP(r *http.Request) string {
+	ip := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		ip = strings.Split(forwarded, ",")[0]
+	}
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		ip = realIP
+	}
+	return ip
+}
+
+// hasToken reports whether a request would be allowed now, without taking a token.
+func (tb *tokenBucket) hasToken() bool {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+	now := time.Now()
+	tb.tokens = math.Min(tb.capacity, tb.tokens+now.Sub(tb.lastRefill).Seconds()*tb.refillRate)
+	tb.lastRefill = now
+	return tb.tokens >= 1.0
+}
+
+// AuthFailureLimit limits failed authentication per client IP; run it before JWTAuth. Each 401 costs the IP one
+// token, and an IP without tokens gets 429 before its credentials are checked, so key guessing is limited.
+// Requests that pass authentication cost nothing here.
+func AuthFailureLimit(failuresPerMinute int) func(http.Handler) http.Handler {
+	if failuresPerMinute < 1 {
+		failuresPerMinute = 100
+	}
+	limiter := newRateLimiter()
+	capacity := float64(failuresPerMinute)
+	refillRate := capacity / 60.0
+	retryAfter := strconv.Itoa(int(math.Ceil(1 / refillRate)))
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			bucket := limiter.getBucket(clientIP(r), capacity, refillRate)
+			if !bucket.hasToken() {
+				w.Header().Set("Retry-After", retryAfter)
+				respondError(w, http.StatusTooManyRequests, "too many failed authentication attempts", "rate_limit_exceeded")
+				return
+			}
+			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			next.ServeHTTP(wrapped, r)
+			if wrapped.statusCode == http.StatusUnauthorized {
+				bucket.allow()
+			}
+		})
+	}
+}
+
 // RateLimitMiddleware creates a rate limiting middleware
 func RateLimitMiddleware(requestsPerMinute int) func(http.Handler) http.Handler {
 	limiter := newRateLimiter()
@@ -271,16 +321,7 @@ func RateLimitMiddleware(requestsPerMinute int) func(http.Handler) http.Handler 
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Use IP address as key
-			ip := r.RemoteAddr
-			if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-				ip = strings.Split(forwarded, ",")[0]
-			}
-			if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-				ip = realIP
-			}
-
-			bucket := limiter.getBucket(ip, capacity, refillRate)
+			bucket := limiter.getBucket(clientIP(r), capacity, refillRate)
 			if !bucket.allow() {
 				respondError(w, http.StatusTooManyRequests, "rate limit exceeded", "rate_limit_exceeded")
 				return
