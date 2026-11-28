@@ -55,6 +55,19 @@ describe('BrainHubDownloads', () => {
     expect(screen.getByRole('link', { name: 'Download for macOS' })).toHaveAttribute('href', 'https://github.com/anchoo2kewl/llm-brain/releases')
   })
 
+  it('shows the fallback on a non-OK answer, then tries again on the next mount', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: false, status: 403, json: () => Promise.resolve({}) })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(releases) })
+    vi.stubGlobal('fetch', fetchMock)
+    const first = render(<BrainHubDownloads />)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('could not be found'))
+    first.unmount()
+    render(<BrainHubDownloads />)
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Download for macOS' })).toHaveAttribute('href', 'https://example.test/BrainHub-mac-0.1.17.zip'))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('falls back when there is no published client release', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([releases[0]]) }))
     render(<BrainHubDownloads />)

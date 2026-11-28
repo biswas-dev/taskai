@@ -433,8 +433,8 @@ func main() {
 		// per-user bucket, not the shared per-IP one: a first sync sends many objects.
 		r.Group(func(r chi.Router) {
 			r.Use(server.JWTAuth)
+			r.Use(server.APIRequestLogger) // before the limiter, so 429s are logged too
 			r.Use(api.UserRateLimitMiddleware(cfg.SyncRateLimitRequests))
-			r.Use(server.APIRequestLogger)
 			r.Get("/sync/objects", server.HandleListSyncObjects)
 			r.Put("/sync/objects/*", server.HandlePutSyncObject)
 			r.Get("/sync/objects/*", server.HandleGetSyncObject)

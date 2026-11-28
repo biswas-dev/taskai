@@ -33,12 +33,15 @@ const linkClass = 'text-primary-400 hover:text-primary-300 underline underline-o
 // One GitHub call per page load, shared by every mount (GitHub allows 60 unauthenticated calls per hour per IP).
 let latestRelease: Promise<GitHubRelease | undefined> | undefined
 function loadLatestRelease(): Promise<GitHubRelease | undefined> {
-  latestRelease ??= fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } })
-    .then(r => (r.ok ? r.json() : Promise.reject(new Error(`GitHub ${r.status}`))))
-    .then((data: GitHubRelease[]) => (Array.isArray(data) ? data : []).find(r => r.tag_name.startsWith('client-v') && !r.draft && !r.prerelease))
-  latestRelease.catch(() => {
-    latestRelease = undefined // a failed call can be tried again on the next mount
-  })
+  if (!latestRelease) {
+    const pending = fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json' } })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`GitHub ${r.status}`))))
+      .then((data: GitHubRelease[]) => (Array.isArray(data) ? data : []).find(r => r.tag_name.startsWith('client-v') && !r.draft && !r.prerelease))
+    latestRelease = pending
+    pending.catch(() => {
+      if (latestRelease === pending) latestRelease = undefined // a failed call is tried again on the next mount
+    })
+  }
   return latestRelease
 }
 

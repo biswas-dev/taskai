@@ -472,11 +472,18 @@ func TestUserRateLimitMiddlewareNonPositiveIsDefault(t *testing.T) {
 				t.Fatalf("limit %d: request %d got %d, want the default of 600 per minute", n, i+1, rec.Code)
 			}
 		}
-		req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil).WithContext(context.WithValue(context.Background(), UserIDKey, int64(1)))
-		rec := httptest.NewRecorder()
-		limited.ServeHTTP(rec, req)
+		// The bucket refills 10 tokens per second, so a slow loop can earn a few more: drain until 429.
+		var rec *httptest.ResponseRecorder
+		for i := 0; i < 1000; i++ {
+			req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil).WithContext(context.WithValue(context.Background(), UserIDKey, int64(1)))
+			rec = httptest.NewRecorder()
+			limited.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				break
+			}
+		}
 		if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "1" {
-			t.Fatalf("limit %d: 601st got %d Retry-After %q", n, rec.Code, rec.Header().Get("Retry-After"))
+			t.Fatalf("limit %d: got %d Retry-After %q, want 429 and 1", n, rec.Code, rec.Header().Get("Retry-After"))
 		}
 	}
 }
