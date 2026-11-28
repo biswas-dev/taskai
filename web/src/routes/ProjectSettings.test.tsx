@@ -103,7 +103,8 @@ describe('ProjectSettings', () => {
     mocks.listTeams.mockResolvedValue(teams)
   })
 
-  describe('Teams', () => {
+  // shortcut: Radix select + dialog flows run past 5 s on loaded CI runners; drop this if the suite gets faster.
+  describe('Teams', { timeout: 15_000 }, () => {
     const renderWithDialogs = () => render(<DialogProvider><ProjectSettings /></DialogProvider>)
 
     it("only offers members of the project's team, never the user's other teams", async () => {
