@@ -49,6 +49,11 @@
     --scrollbar-thumb-hover: rgba(0, 0, 0, 0.30);
   }
 
+  /* primary-400 text is for dark backgrounds; on light ones it is below 4.5:1, so use primary-700 */
+  html.light .text-primary-400 {
+    color: #4248bb;
+  }
+
   body {
     margin: 0;
     font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',

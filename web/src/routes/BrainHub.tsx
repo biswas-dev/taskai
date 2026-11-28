@@ -14,7 +14,7 @@ export default function BrainHub() {
         <nav className="border-b border-dark-border-subtle">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
             <Link to="/" className="flex items-center gap-2.5">
-              <img src="/logo.svg" alt="TaskAI" className="w-7 h-7" />
+              <img src="/logo.svg" alt="" className="w-7 h-7" />
               <span className="text-base font-semibold tracking-tight">TaskAI</span>
             </Link>
             <Link to="/signup" className="text-sm text-dark-text-tertiary hover:text-dark-text-primary transition-colors">

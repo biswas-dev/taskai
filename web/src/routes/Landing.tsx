@@ -30,7 +30,7 @@ export default function Landing() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-dark-bg-base/80 backdrop-blur-lg border-b border-dark-border-subtle">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2.5">
-            <img src="/logo.svg" alt="TaskAI" className="w-7 h-7" />
+            <img src="/logo.svg" alt="" className="w-7 h-7" />
             <span className="text-base font-semibold tracking-tight">TaskAI</span>
           </Link>
           <div className="hidden md:flex items-center gap-8 text-sm text-dark-text-tertiary">
@@ -66,7 +66,7 @@ export default function Landing() {
           <p className="mt-6 text-lg text-dark-text-tertiary max-w-2xl mx-auto leading-relaxed">
             One workspace for people and AI agents. Tasks, roadmaps, wiki, knowledge graph and GitHub sync, in the app, over the REST API or over MCP.
           </p>
-          <p className="mt-3 text-base text-dark-text-quaternary max-w-2xl mx-auto leading-relaxed">
+          <p className="mt-3 text-base text-dark-text-tertiary max-w-2xl mx-auto leading-relaxed">
             The MCP server is built in. It works with Claude, Cursor, ChatGPT, GitHub Copilot and any other MCP client.
           </p>
 
@@ -103,7 +103,7 @@ export default function Landing() {
                 <div className="w-3 h-3 rounded-full bg-green-500/60" />
               </div>
               <div className="flex-1 flex justify-center">
-                <div className="px-3 py-0.5 text-xs text-dark-text-quaternary bg-dark-bg-tertiary rounded border border-dark-border-subtle w-48 text-center">
+                <div className="px-3 py-0.5 text-xs text-dark-text-tertiary bg-dark-bg-tertiary rounded border border-dark-border-subtle w-48 text-center">
                   taskai.cc/app/projects/1
                 </div>
               </div>
@@ -124,7 +124,7 @@ export default function Landing() {
                   </div>
                 ))}
                 <div className="mt-4 pt-3 border-t border-dark-border-subtle">
-                  <div className="text-[10px] uppercase tracking-wider text-dark-text-quaternary px-2 mb-1.5">Projects</div>
+                  <div className="text-[10px] uppercase tracking-wider text-dark-text-tertiary px-2 mb-1.5">Projects</div>
                   {['AI Dashboard', 'Mobile App', 'API v2'].map(p => (
                     <div key={p} className="flex items-center gap-2 px-2 py-1 text-xs text-dark-text-tertiary">
                       <div className="w-1.5 h-1.5 rounded-full bg-primary-500/40" />
@@ -170,9 +170,9 @@ export default function Landing() {
                                 task.tag === 'ai' ? 'bg-primary-500/15 text-primary-400' :
                                 task.tag === 'backend' ? 'bg-success-500/15 text-success-400' :
                                 task.tag === 'docs' ? 'bg-blue-500/15 text-blue-400' :
-                                'bg-dark-bg-tertiary text-dark-text-quaternary'
+                                'bg-dark-bg-tertiary text-dark-text-tertiary'
                               }`}>{task.tag}</span>
-                              <span className={`text-[10px] ${task.priority === 'high' ? 'text-red-400' : task.priority === 'medium' ? 'text-yellow-400' : 'text-dark-text-quaternary'}`}>
+                              <span className={`text-[10px] ${task.priority === 'high' ? 'text-red-400' : task.priority === 'medium' ? 'text-yellow-400' : 'text-dark-text-tertiary'}`}>
                                 {task.priority}
                               </span>
                             </div>
@@ -329,11 +329,11 @@ export default function Landing() {
                         { label: 'Remaining', pct: 13, color: 'bg-dark-border-medium' },
                       ].map(bar => (
                         <div key={bar.label} className="flex items-center gap-3">
-                          <span className="w-20 text-xs text-dark-text-quaternary">{bar.label}</span>
+                          <span className="w-20 text-xs text-dark-text-tertiary">{bar.label}</span>
                           <div className="flex-1 h-1.5 bg-dark-bg-tertiary rounded-full overflow-hidden">
                             <div className={`h-full ${bar.color} rounded-full`} style={{ width: `${bar.pct}%` }} />
                           </div>
-                          <span className="text-xs text-dark-text-quaternary w-8 text-right">{bar.pct}%</span>
+                          <span className="text-xs text-dark-text-tertiary w-8 text-right">{bar.pct}%</span>
                         </div>
                       ))}
                     </div>
@@ -341,7 +341,7 @@ export default function Landing() {
                       {[{n:'8',l:'Done'},{n:'3',l:'Active'},{n:'2',l:'Blocked'}].map(s=>(
                         <div key={s.l}>
                           <div className="text-lg font-bold text-dark-text-primary">{s.n}</div>
-                          <div className="text-[10px] text-dark-text-quaternary">{s.l}</div>
+                          <div className="text-[10px] text-dark-text-tertiary">{s.l}</div>
                         </div>
                       ))}
                     </div>
@@ -401,7 +401,7 @@ export default function Landing() {
                   <p className="text-sm text-dark-text-tertiary leading-relaxed mb-4">
                     Two-way sync with GitHub Issues and PRs. Import issues as tasks, push task changes back, sync comments and reactions. All automatically, on a schedule.
                   </p>
-                  <p className="text-xs text-dark-text-quaternary">Issue sync, PR tracking, comment sync, reactions and a sync schedule.</p>
+                  <p className="text-xs text-dark-text-tertiary">Issue sync, PR tracking, comment sync, reactions and a sync schedule.</p>
                 </div>
               </div>
 
@@ -453,7 +453,7 @@ export default function Landing() {
                       <span className="text-[10px] text-primary-400">View embed</span>
                     </div>
                     <div className="h-16 bg-gradient-to-br from-purple-500/10 to-blue-500/10 flex items-center justify-center">
-                      <span className="text-xs text-dark-text-quaternary">Figma preview</span>
+                      <span className="text-xs text-dark-text-tertiary">Figma preview</span>
                     </div>
                   </div>
                 </div>
@@ -572,7 +572,7 @@ export default function Landing() {
             ].map(stat => (
               <div key={stat.label} className="text-center p-4">
                 <div className="text-2xl font-bold text-dark-text-primary">{stat.value}</div>
-                <div className="text-xs text-dark-text-quaternary mt-1">{stat.label}</div>
+                <div className="text-xs text-dark-text-tertiary mt-1">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -622,7 +622,7 @@ export default function Landing() {
 
             <div className="space-y-4">
               <div className="p-6 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle">
-                <div className="text-xs font-semibold text-dark-text-quaternary uppercase tracking-wider mb-4">MCP tools exposed</div>
+                <div className="text-xs font-semibold text-dark-text-tertiary uppercase tracking-wider mb-4">MCP tools exposed</div>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     'list_projects', 'create_task', 'update_task', 'list_tasks',
@@ -638,9 +638,9 @@ export default function Landing() {
               </div>
 
               <div className="p-6 rounded-2xl bg-dark-bg-primary border border-dark-border-subtle">
-                <div className="text-xs font-semibold text-dark-text-quaternary uppercase tracking-wider mb-4">Configure in seconds</div>
+                <div className="text-xs font-semibold text-dark-text-tertiary uppercase tracking-wider mb-4">Configure in seconds</div>
                 <div className="bg-dark-bg-secondary rounded-lg p-3 font-mono text-xs text-dark-text-secondary border border-dark-border-subtle">
-                  <div className="text-dark-text-quaternary mb-1">// claude_desktop_config.json</div>
+                  <div className="text-dark-text-tertiary mb-1">// claude_desktop_config.json</div>
                   <div><span className="text-blue-400">"mcpServers"</span><span className="text-dark-text-tertiary">: {'{'}</span></div>
                   <div className="ml-4"><span className="text-green-400">"taskai"</span><span className="text-dark-text-tertiary">: {'{'}</span></div>
                   <div className="ml-8"><span className="text-yellow-400">"command"</span><span className="text-dark-text-tertiary">: </span><span className="text-orange-400">"npx"</span><span className="text-dark-text-tertiary">,</span></div>
@@ -685,7 +685,7 @@ export default function Landing() {
               <div key={item.title} className="p-5 rounded-xl bg-dark-bg-primary border border-dark-border-subtle hover:border-dark-border-medium transition-all duration-200 group">
                 <div className="text-2xl mb-3">{item.icon}</div>
                 <h3 className="text-sm font-semibold text-dark-text-primary mb-1.5">{item.title}</h3>
-                <p className="text-xs text-dark-text-quaternary leading-relaxed">{item.desc}</p>
+                <p className="text-xs text-dark-text-tertiary leading-relaxed">{item.desc}</p>
               </div>
             ))}
           </div>
@@ -729,7 +729,7 @@ export default function Landing() {
                     </div>
                   )}
                   <div className="p-6">
-                    <div className="text-xs text-dark-text-quaternary mb-3">{new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                    <div className="text-xs text-dark-text-tertiary mb-3">{new Date(post.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                     <h3 className="text-base font-semibold tracking-tight mb-2 group-hover:text-primary-400 transition-colors leading-snug">
                       {post.title}
                     </h3>
@@ -779,7 +779,7 @@ export default function Landing() {
               Read the docs
             </a>
           </div>
-          <p className="mt-6 text-sm text-dark-text-quaternary">No credit card required. Works with Claude, Cursor, and any MCP client.</p>
+          <p className="mt-6 text-sm text-dark-text-tertiary">No credit card required. Works with Claude, Cursor, and any MCP client.</p>
         </div>
       </section>
 
@@ -811,17 +811,17 @@ export default function Landing() {
       <footer className="py-12 border-t border-dark-border-subtle">
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2">
-            <img src="/logo.svg" alt="TaskAI" className="w-5 h-5 opacity-60" />
-            <span className="text-sm text-dark-text-quaternary font-medium">TaskAI</span>
+            <img src="/logo.svg" alt="" className="w-5 h-5 opacity-60" />
+            <span className="text-sm text-dark-text-tertiary font-medium">TaskAI</span>
           </div>
-          <div className="flex items-center gap-6 text-sm text-dark-text-quaternary">
+          <div className="flex items-center gap-6 text-sm text-dark-text-tertiary">
             <a href="/blog/" className="hover:text-dark-text-tertiary transition-colors">Blog</a>
             <a href="/docs/" className="hover:text-dark-text-tertiary transition-colors">Docs</a>
             <Link to="/brain-hub" className="hover:text-dark-text-tertiary transition-colors">Brain Hub</Link>
             <Link to="/login" className="hover:text-dark-text-tertiary transition-colors">Sign in</Link>
             <Link to="/signup" className="hover:text-dark-text-tertiary transition-colors">Sign up</Link>
           </div>
-          <p className="text-sm text-dark-text-quaternary">
+          <p className="text-sm text-dark-text-tertiary">
             Project management for AI-native teams.
           </p>
         </div>
