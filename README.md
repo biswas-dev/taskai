@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/anchoo2kewl/taskai/actions/workflows/ci.yml/badge.svg)](https://github.com/anchoo2kewl/taskai/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/anchoo2kewl/taskai)](https://goreportcard.com/report/github.com/anchoo2kewl/taskai)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
 
 > A lightweight, production-grade project management system built with Go, SQLite, React, and TypeScript.
 
@@ -437,7 +437,9 @@ npm run type-check      # Verify
 
 ## 📝 License
 
-MIT License - see [LICENSE](LICENSE) file for details
+Proprietary. Copyright (c) 2026 Anshuman Biswas. All rights reserved. See [LICENSE](LICENSE). TaskAI is not open source.
+
+[Brain Hub (llm-brain)](https://github.com/anchoo2kewl/llm-brain), the companion agent hub, is a separate open-source project under the [MIT license](https://github.com/anchoo2kewl/llm-brain/blob/main/LICENSE).
 
 ---
 

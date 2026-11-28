@@ -1,6 +1,7 @@
 {
   "name": "taskai-yjs-processor",
   "version": "1.0.0",
+  "license": "UNLICENSED",
   "description": "Yjs document processor microservice for TaskAI wiki",
   "main": "index.js",
   "scripts": {

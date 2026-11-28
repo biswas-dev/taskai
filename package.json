@@ -1,6 +1,7 @@
 {
   "name": "taskai-monorepo",
   "version": "1.0.0",
+  "license": "UNLICENSED",
   "private": true,
   "scripts": {
     "prepare": "husky"

@@ -1,6 +1,7 @@
 {
   "name": "taskai-docs",
   "version": "0.1.0",
+  "license": "UNLICENSED",
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
