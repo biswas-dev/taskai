@@ -30,6 +30,9 @@ type Config struct {
 	RateLimitRequests       int
 	RateLimitWindowMinutes  int
 
+	// Sync objects: per-user byte quota (SYNC_QUOTA_BYTES); 0 means the default, 1 GiB
+	SyncQuotaBytes int64
+
 	// Logging
 	LogLevel       string
 	EnableSQLLog   bool
@@ -90,6 +93,7 @@ func Load() *Config {
 		CORSAllowedOrigins:      getEnvAsSlice("CORS_ALLOWED_ORIGINS", []string{"http://localhost:5173", "http://localhost:3000"}),
 		RateLimitRequests:       getEnvAsInt("RATE_LIMIT_REQUESTS", 100),
 		RateLimitWindowMinutes:  getEnvAsInt("RATE_LIMIT_WINDOW_MINUTES", 15),
+		SyncQuotaBytes:          int64(getEnvAsInt("SYNC_QUOTA_BYTES", 0)),
 		LogLevel:                getEnv("LOG_LEVEL", "info"),
 		EnableSQLLog:            getEnv("ENV", "development") == "development" || getEnv("ENABLE_SQL_LOG", "false") == "true",
 		EnablePprof:             getEnv("ENABLE_PPROF", "false") == "true",

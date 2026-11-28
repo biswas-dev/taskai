@@ -671,6 +671,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memories/{id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give Memory Feedback
+         * @description Owner only, active and unexpired memories only, and only with MEMORY_STRENGTH collect or on (404 otherwise). useful and confirmed make a memory stronger; confirmed and wrong are evidence votes for its belief score, one per signal and credential (a repeat is duplicate). useful counts at most once an hour per memory (a repeat is spaced). Send it only for a memory you used or checked; being returned by search is not a signal.
+         */
+        post: operations["memoryFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/objects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sync Objects
+         * @description The caller's objects ordered by key (byte order), with metadata only. Pass next as after for the next page.
+         */
+        get: operations["listSyncObjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/objects/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$, at most 256 characters, no . or .. segment. Slashes are literal, not encoded. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get Sync Object
+         * @description The exact stored bytes, with the ETag.
+         */
+        get: operations["getSyncObject"];
+        /**
+         * Put Sync Object
+         * @description Store the raw body (at most 8 MiB) under key. The server never parses it. If-None-Match: * creates only; If-Match: <etag> replaces only that version; with neither header it is an upsert. The ETag is the quoted SHA-256 hex of the body. 413 when the body is too large (object_too_large) or the per-user quota, default 1 GiB, would be exceeded (sync_quota_exceeded). Each object costs its size plus 256 bytes against the quota.
+         */
+        put: operations["putSyncObject"];
+        post?: never;
+        /**
+         * Delete Sync Object
+         * @description Remove key. A missing key is 204. With If-Match, only that version is removed; anything else is 412.
+         */
+        delete: operations["deleteSyncObject"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/users/{id}/memory-quota": {
         parameters: {
             query?: never;
@@ -1391,6 +1462,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SyncObject: {
+            key: string;
+            /** Format: int64 */
+            size: number;
+            /** @description SHA-256 hex of the body (the ETag header quotes it) */
+            etag: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SyncObjectList: {
+            objects: components["schemas"]["SyncObject"][];
+            /** @description The after value for the next page; empty on the last page */
+            next: string;
+        };
         SignupRequest: {
             /**
              * Format: email
@@ -2233,6 +2318,19 @@ export interface components {
             updated_at?: string;
             /** @description Search results only */
             rank?: number;
+            /** @description Only with MEMORY_STRENGTH collect or on. Clients that do not know it ignore it. */
+            signals?: {
+                /** @description ACT-R base-level activation; higher is stronger, about 1.6 when just written. Decays with age for fact, decision and handoff; a gotcha or runbook stays at the strength of a 30-day-old memory, raised by uses. */
+                strength?: number;
+                /** @description Evidence score in (0,1) from the stated confidence level and the confirmed/wrong votes. Not calibrated. */
+                belief?: number;
+                /** @description The write counts as the first use */
+                uses?: number;
+                confirmed?: number;
+                wrong?: number;
+                /** Format: date-time */
+                last_used_at?: string;
+            };
         };
         MemoryList: {
             memories?: components["schemas"]["Memory"][];
@@ -2291,6 +2389,13 @@ export interface components {
             memory?: components["schemas"]["Memory"];
             /** @enum {string} */
             outcome?: "created" | "updated" | "duplicate" | "ignored";
+            /** @description Only with MEMORY_STRENGTH collect or on (Postgres with embeddings), when the write created the memory or changed its text: up to 3 active memories of the same repo whose text is close (cosine 0.80 or more). They may say the same or the opposite. Supersede the ones this memory replaces; nothing is merged or changed automatically. */
+            similar?: {
+                /** Format: int64 */
+                id?: number;
+                title?: string;
+                similarity?: number;
+            }[];
             usage?: components["schemas"]["MemoryUsage"];
         };
         MemorySearchRequest: {
@@ -4159,6 +4264,253 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    memoryFeedback: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    signal: "useful" | "confirmed" | "wrong";
+                    /**
+                     * Format: date-time
+                     * @description Optional: the updated_at of the memory you judged; 409 if it changed since
+                     */
+                    updated_at?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Whether the signal counted, and the memory with its signals */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        memory?: components["schemas"]["Memory"];
+                        /** @enum {string} */
+                        outcome?: "recorded" | "duplicate" | "spaced";
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The memory changed after the updated_at you sent; read it again before you judge it */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    listSyncObjects: {
+        parameters: {
+            query?: {
+                /** @description Only keys that start with this text */
+                prefix?: string;
+                /** @description Only keys after this key */
+                after?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of objects */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncObjectList"];
+                };
+            };
+            /** @description Invalid prefix, after or limit */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    getSyncObject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$, at most 256 characters, no . or .. segment. Slashes are literal, not encoded. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The object */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            /** @description Invalid key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    putSyncObject: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-None-Match"?: "*";
+                /** @description The ETag of the version to replace */
+                "If-Match"?: string;
+            };
+            path: {
+                /** @description ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$, at most 256 characters, no . or .. segment. Slashes are literal, not encoded. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Replaced */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncObject"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncObject"];
+                };
+            };
+            /** @description Invalid key or precondition headers */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Body larger than 8 MiB, or quota exceeded */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deleteSyncObject: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string;
+            };
+            path: {
+                /** @description ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$, at most 256 characters, no . or .. segment. Slashes are literal, not encoded. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The precondition failed */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             500: components["responses"]["InternalError"];
         };
     };

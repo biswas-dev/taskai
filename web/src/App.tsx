@@ -22,6 +22,7 @@ const Tags = lazy(() => import('./routes/Tags'))
 const Admin = lazy(() => import('./routes/Admin'))
 const Settings = lazy(() => import('./routes/Settings'))
 const Memories = lazy(() => import('./routes/Memories'))
+const BrainHub = lazy(() => import('./routes/BrainHub'))
 const Assets = lazy(() => import('./routes/Assets'))
 const AcceptTeamInvite = lazy(() => import('./routes/AcceptTeamInvite'))
 const KnowledgeGraphPage = lazy(() => import('./routes/KnowledgeGraphPage'))
@@ -104,6 +105,7 @@ function AppRoutes() {
         <Route path="/oauth/callback" element={<OAuthCallback />} />
         <Route path="/accept-invite" element={<AcceptTeamInvite />} />
         <Route path="/share/wiki/:token" element={<PublicWikiPage />} />
+        <Route path="/brain-hub" element={<BrainHub />} />
 
         {/* Protected routes */}
         <Route
@@ -127,6 +129,7 @@ function AppRoutes() {
           <Route path="admin" element={<Admin />} />
           <Route path="settings" element={<Settings />} />
           <Route path="memories" element={<Memories />} />
+          <Route path="brain-hub" element={<BrainHub />} />
         </Route>
 
         {/* Catch-all: a real 404, not a redirect. Redirecting unknown URLs
