@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import Landing from './Landing'
 
@@ -8,7 +8,30 @@ vi.mock('react-router-dom', () => ({
   ),
 }))
 
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({}) }))
+})
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('Landing', () => {
+  it('has a Brain Hub section just above the footer, with features, downloads, licenses and a link', () => {
+    const { container } = render(<Landing />)
+    const section = screen.getByRole('region', { name: 'Brain Hub makes your coding agents faster with TaskAI' })
+    expect(section).toHaveAttribute('id', 'brain-hub')
+    expect(section.nextElementSibling?.tagName).toBe('FOOTER')
+    for (const title of ['One set of skills for every CLI', 'Many hubs, many machines', 'Shared agent memory', 'Encrypted sync through TaskAI (in progress)', 'Activity and insights', 'Reviews on every change', 'Desktop apps']) {
+      expect(screen.getByRole('heading', { level: 3, name: title })).toBeInTheDocument()
+    }
+    for (const system of ['macOS', 'Windows', 'Linux']) {
+      expect(screen.getByRole('link', { name: `Download for ${system}` })).toBeInTheDocument()
+    }
+    expect(section).toHaveTextContent('Brain Hub is open source (MIT, source on GitHub). TaskAI is proprietary.')
+    expect(screen.getByRole('link', { name: 'Read more about Brain Hub' })).toHaveAttribute('href', '/brain-hub')
+    expect(container.querySelector('footer')).not.toBeNull()
+  })
+
   it('leads with the project management hero as the only h1, first on the page', () => {
     render(<Landing />)
     const h1s = screen.getAllByRole('heading', { level: 1 })

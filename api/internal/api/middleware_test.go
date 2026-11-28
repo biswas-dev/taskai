@@ -460,3 +460,67 @@ func TestTokenBucket(t *testing.T) {
 		t.Error("Request 4 should be denied (bucket empty)")
 	}
 }
+
+func TestUserRateLimitMiddlewareNonPositiveIsDefault(t *testing.T) {
+	for _, n := range []int{0, -60} {
+		limited := UserRateLimitMiddleware(n)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+		for i := 0; i < 600; i++ {
+			req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil).WithContext(context.WithValue(context.Background(), UserIDKey, int64(1)))
+			rec := httptest.NewRecorder()
+			limited.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("limit %d: request %d got %d, want the default of 600 per minute", n, i+1, rec.Code)
+			}
+		}
+		// The bucket refills 10 tokens per second, so a slow loop can earn a few more: drain until 429.
+		var rec *httptest.ResponseRecorder
+		for i := 0; i < 1000; i++ {
+			req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil).WithContext(context.WithValue(context.Background(), UserIDKey, int64(1)))
+			rec = httptest.NewRecorder()
+			limited.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				break
+			}
+		}
+		if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "1" {
+			t.Fatalf("limit %d: got %d Retry-After %q, want 429 and 1", n, rec.Code, rec.Header().Get("Retry-After"))
+		}
+	}
+}
+
+func TestUserRateLimitMiddleware(t *testing.T) {
+	limited := UserRateLimitMiddleware(2)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	call := func(userID int64, ip string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/sync/objects", nil)
+		req.RemoteAddr = ip
+		if userID != 0 {
+			req = req.WithContext(context.WithValue(req.Context(), UserIDKey, userID))
+		}
+		rec := httptest.NewRecorder()
+		limited.ServeHTTP(rec, req)
+		return rec
+	}
+	tests := []struct {
+		name   string
+		userID int64
+		ip     string
+		want   int
+	}{
+		{"user 1 first", 1, "10.0.0.1:1", http.StatusOK},
+		{"user 1 second, other IP", 1, "10.0.0.2:1", http.StatusOK},
+		{"user 1 third: one bucket per user, not per IP", 1, "10.0.0.3:1", http.StatusTooManyRequests},
+		{"user 2 has its own bucket, same IP", 2, "10.0.0.1:1", http.StatusOK},
+		{"no user", 0, "10.0.0.9:1", http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := call(tt.userID, tt.ip)
+			if rec.Code != tt.want {
+				t.Fatalf("status %d, want %d", rec.Code, tt.want)
+			}
+			if tt.want == http.StatusTooManyRequests && rec.Header().Get("Retry-After") != "30" {
+				t.Fatalf("Retry-After %q, want 30 (2 per minute)", rec.Header().Get("Retry-After"))
+			}
+		})
+	}
+}

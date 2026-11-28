@@ -38,7 +38,7 @@ tags:
   - name: Memories
     description: "Memory protocol v1 (docs/memory-protocol.md): a per-user store of short lessons that any application or LLM writes and searches, with hybrid search, sharing, quota and compaction. Every memory response carries the header TaskAI-Memory-Protocol: 1."
   - name: Sync
-    description: Opaque per-user objects for Brain Hub encrypted sync. The server stores ciphertext bytes and never parses them.
+    description: Opaque per-user objects for Brain Hub encrypted sync. The server stores ciphertext bytes and never parses them. Rate limit 600 requests per minute per user (SYNC_RATE_LIMIT_REQUESTS), separate from the per-IP API limit; 429 rate_limit_exceeded carries Retry-After.
   - name: Projects
     description: Project CRUD operations
   - name: Tasks
